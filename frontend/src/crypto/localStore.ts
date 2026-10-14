@@ -1,79 +1,131 @@
-let cachedLocalKey: CryptoKey | null = null;
-let lastSourceKey: CryptoKey | null = null;
+import type { UserIdentityKeys } from "./mlkem";
+import { bytesToBase64, base64ToBytes, sha256Bytes } from "./utils";
 
-export async function getLocalKey(privateKey: CryptoKey): Promise<CryptoKey> {
+/**
+ * Project Krypt - Local Device Storage Cryptographic Engine
+ *
+ * Implements:
+ * - NIST SP 800-56C Rev. 2: Key Derivation using HKDF-SHA-256
+ * - NIST SP 800-38D: AES-256-GCM Authenticated Encryption for local IndexedDB cache
+ *
+ * Encrypts messages and contacts before persisting to IndexedDB on the client device.
+ * Derives local storage keys from the user's ML-KEM-1024 secret key with fallback
+ * to legacy SHA-256 derivation for existing messages.
+ */
+
+let cachedLocalKey: CryptoKey | null = null;
+let lastSourceKey: UserIdentityKeys | null = null;
+
+const LOCAL_STORE_SALT = new TextEncoder().encode("KRYPT_LOCAL_STORE_SALT_V1");
+const LOCAL_STORE_INFO = new TextEncoder().encode("KRYPT_LOCAL_STORAGE_ENCRYPTION_KEY_V1");
+
+export async function getLocalKey(privateKey: UserIdentityKeys): Promise<CryptoKey> {
   if (cachedLocalKey && lastSourceKey === privateKey) {
     return cachedLocalKey;
   }
-  
-  const exported = await window.crypto.subtle.exportKey("pkcs8", privateKey);
-  const hash = await window.crypto.subtle.digest("SHA-256", exported);
-  
-  cachedLocalKey = await window.crypto.subtle.importKey(
+
+  // Derive local AES-256-GCM key using NIST SP 800-56C HKDF from KEM secret key
+  const ikm = await window.crypto.subtle.importKey(
     "raw",
-    hash,
-    { name: "AES-GCM" },
+    privateKey.kemSecretKey as unknown as BufferSource,
+    "HKDF",
     false,
-    ["encrypt", "decrypt"]
+    ["deriveKey"],
+  );
+
+  cachedLocalKey = await window.crypto.subtle.deriveKey(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: LOCAL_STORE_SALT,
+      info: LOCAL_STORE_INFO,
+    },
+    ikm,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
   );
   lastSourceKey = privateKey;
-  
+
   return cachedLocalKey;
 }
 
-export async function encryptLocal(plaintext: string, privateKey: CryptoKey): Promise<string> {
+/**
+ * Legacy key derivation helper for pre-upgrade IndexedDB entries.
+ */
+async function getLegacyLocalKey(privateKey: UserIdentityKeys): Promise<CryptoKey> {
+  const hash = await sha256Bytes(privateKey.kemSecretKey);
+  return await window.crypto.subtle.importKey(
+    "raw",
+    hash as unknown as BufferSource,
+    { name: "AES-GCM" },
+    false,
+    ["decrypt"],
+  );
+}
+
+export async function encryptLocal(
+  plaintext: string,
+  privateKey: UserIdentityKeys,
+): Promise<string> {
   const key = await getLocalKey(privateKey);
   const iv = window.crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
-  
+
   const ciphertext = await window.crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
     key,
-    encoded
+    encoded,
   );
-  
+
   const combined = new Uint8Array(iv.length + ciphertext.byteLength);
   combined.set(iv, 0);
   combined.set(new Uint8Array(ciphertext), iv.length);
-  
-  // Safe conversion for large arrays (images/media)
-  let binary = "";
-  for (let i = 0; i < combined.length; i += 8192) {
-    binary += String.fromCharCode(...combined.slice(i, i + 8192));
-  }
-  
-  // Prefix to easily identify encrypted messages later if needed, though we use try/catch fallback
-  return "LOC:" + btoa(binary);
+
+  return "LOC:" + bytesToBase64(combined);
 }
 
-export async function decryptLocal(ciphertextBase64: string, privateKey: CryptoKey): Promise<string> {
+export async function decryptLocal(
+  ciphertextBase64: string,
+  privateKey: UserIdentityKeys,
+): Promise<string> {
   if (!ciphertextBase64.startsWith("LOC:")) {
     // Legacy plaintext message
     return ciphertextBase64;
   }
 
+  const base64 = ciphertextBase64.substring(4);
+  const combined = base64ToBytes(base64);
+
+  if (combined.length < 12 + 16) {
+    return "[Corrupted Local Message]";
+  }
+
+  const iv = combined.subarray(0, 12);
+  const ciphertext = combined.subarray(12);
+
+  // 1. Attempt decryption with modern HKDF-derived key
   try {
     const key = await getLocalKey(privateKey);
-    const base64 = ciphertextBase64.substring(4);
-    const binary = atob(base64);
-    const combined = new Uint8Array(binary.length);
-    
-    for (let i = 0; i < binary.length; i++) {
-      combined[i] = binary.charCodeAt(i);
-    }
-    
-    const iv = combined.slice(0, 12);
-    const ciphertext = combined.slice(12);
-    
     const decrypted = await window.crypto.subtle.decrypt(
       { name: "AES-GCM", iv },
       key,
-      ciphertext
+      ciphertext,
     );
-    
     return new TextDecoder().decode(decrypted);
-  } catch (err) {
-    console.warn("Failed to decrypt local message.");
-    return "[Encrypted/Corrupted Message]";
+  } catch {
+    // 2. Fallback: attempt decryption with legacy SHA-256 derived key
+    try {
+      const legacyKey = await getLegacyLocalKey(privateKey);
+      const decrypted = await window.crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        legacyKey,
+        ciphertext,
+      );
+      return new TextDecoder().decode(decrypted);
+    } catch {
+      console.warn("Failed to decrypt local message with current or legacy key.");
+      return "[Encrypted/Corrupted Message]";
+    }
   }
 }

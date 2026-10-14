@@ -2,16 +2,32 @@ import { Router } from "express";
 import { prisma } from "./db.js";
 import srp from "secure-remote-password/server.js";
 const router = Router();
-const activeLoginChallenges = new Map<string, { ephemeralSecret: string }>();
+const activeLoginChallenges = new Map<string, { ephemeralSecret: string; createdAt: number }>();
+
+// TTL for SRP login challenges: 5 minutes
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+function cleanupExpiredChallenges() {
+  const now = Date.now();
+  for (const [key, value] of activeLoginChallenges.entries()) {
+    if (now - value.createdAt > CHALLENGE_TTL_MS) {
+      activeLoginChallenges.delete(key);
+    }
+  }
+}
 
 // Register a new user
 router.post("/register", async (req, res) => {
   const { username, publicKey, srpSalt, srpVerifier } = req.body;
 
+  if (!username || !publicKey || !srpSalt || !srpVerifier) {
+    return res.status(400).json({ error: "Missing required registration parameters." });
+  }
+
   try {
     const newUser = await prisma.user.create({
       data: {
-        username,
+        username: String(username).trim(),
         identityKeyPub: publicKey,
         srpSalt,
         srpVerifier,
@@ -36,6 +52,12 @@ router.post("/register", async (req, res) => {
 router.post("/login/challenge", async (req, res) => {
   const { username, clientEphemeralPublic } = req.body;
 
+  if (!username || !clientEphemeralPublic) {
+    return res.status(400).json({ error: "Username and client ephemeral public key required." });
+  }
+
+  cleanupExpiredChallenges();
+
   try {
     const user = await prisma.user.findUnique({ where: { username } });
     if (!user || !user.srpSalt || !user.srpVerifier) {
@@ -47,6 +69,7 @@ router.post("/login/challenge", async (req, res) => {
     const serverEphemeral = srp.generateEphemeral(user.srpVerifier);
     activeLoginChallenges.set(username, {
       ephemeralSecret: serverEphemeral.secret,
+      createdAt: Date.now(),
     });
 
     res.status(200).json({
@@ -63,6 +86,8 @@ router.post("/login/challenge", async (req, res) => {
 router.post("/login/verify", async (req, res) => {
   const { username, clientEphemeralPublic, clientSessionProof } = req.body;
 
+  cleanupExpiredChallenges();
+
   try {
     const user = await prisma.user.findUnique({ where: { username } });
     const challengeData = activeLoginChallenges.get(username);
@@ -71,6 +96,11 @@ router.post("/login/verify", async (req, res) => {
       return res
         .status(400)
         .json({ error: "Login session expired or invalid." });
+    }
+
+    if (Date.now() - challengeData.createdAt > CHALLENGE_TTL_MS) {
+      activeLoginChallenges.delete(username);
+      return res.status(400).json({ error: "Login challenge has expired. Please try again." });
     }
 
     const serverSession = srp.deriveSession(

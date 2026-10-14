@@ -6,7 +6,9 @@ import { Server } from "socket.io";
 import api from "./api.js";
 import { prisma } from "./db.js";
 import helmet from "helmet";
-const ALLOWED_ORIGINS = [`${process.env.FRONTEND_URL}`];
+const ALLOWED_ORIGINS = process.env.FRONTEND_URL
+  ? [process.env.FRONTEND_URL, "http://localhost:5173", "http://localhost:3000"]
+  : ["http://localhost:5173", "http://localhost:3000"];
 const app = express();
 app.use(helmet());
 app.use(
@@ -34,31 +36,42 @@ io.on("connection", (socket) => {
 
   // Register socket and broadcast presence
   socket.on("register_socket", async (username: string) => {
-    console.log(`[Socket] ${username} connected with ID: ${socket.id}`);
-    onlineUsers.set(username, socket.id);
+    const cleanUsername = String(username).trim();
+    socket.data.username = cleanUsername;
+    console.log(`[Socket] ${cleanUsername} connected with ID: ${socket.id}`);
+    onlineUsers.set(cleanUsername, socket.id);
 
     // Send full list of online users to the newly connected client
     socket.emit("online_users", Array.from(onlineUsers.keys()));
 
     // Broadcast status to all other active sockets
-    socket.broadcast.emit("user_connected", username);
+    socket.broadcast.emit("user_connected", cleanUsername);
   });
 
-  // Handle user disconnect
+  // Handle user disconnect (O(1) direct lookup)
   socket.on("disconnect", () => {
-    for (const [username, socketId] of onlineUsers.entries()) {
-      if (socketId === socket.id) {
-        onlineUsers.delete(username);
-        console.log(`[Socket] ${username} disconnected.`);
-        // Broadcast disconnection
-        io.emit("user_disconnected", username);
-        break;
+    const username = socket.data.username;
+    if (username && onlineUsers.get(username) === socket.id) {
+      onlineUsers.delete(username);
+      console.log(`[Socket] ${username} disconnected.`);
+      io.emit("user_disconnected", username);
+    } else {
+      for (const [u, socketId] of onlineUsers.entries()) {
+        if (socketId === socket.id) {
+          onlineUsers.delete(u);
+          console.log(`[Socket] ${u} disconnected.`);
+          io.emit("user_disconnected", u);
+          break;
+        }
       }
     }
   });
 
-  // Strict route private messages (Drop if offline)
+  // Strict route private messages (Drop if offline, enforce authenticated sender identity)
   socket.on("private_message", async (payload) => {
+    if (socket.data.username) {
+      payload.from = socket.data.username;
+    }
     const targetSocketId = onlineUsers.get(payload.to);
 
     if (targetSocketId) {

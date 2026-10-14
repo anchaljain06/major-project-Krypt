@@ -1,28 +1,30 @@
 import { useCallback } from "react";
 import { socket } from "../services/socket";
 import {
-  importECCPublicKey,
-  deriveSharedAESKey,
-  exportAESKeyToBase64,
-  generateECCKeyPair,
-  exportECCPublicKey,
-} from "../crypto/ecc";
+  importPublicIdentity,
+  encapsulateSharedKey,
+  decapsulateSharedKey,
+  signHandshakePayload,
+  verifyHandshakeSignature,
+  type UserIdentityKeys,
+} from "../crypto/mlkem";
 import { db } from "../services/db";
-import CryptoJS from "crypto-js";
 import { encryptLocal, decryptLocal } from "../crypto/localStore";
+import { sha256Hex } from "../crypto/utils";
 
 export interface RatchetResult {
   key: string;
   eph?: string;
+  kemCiphertext?: string;
   sig?: string;
   isHandshakeCollision?: boolean;
 }
 
-export function useRatchet(user: string, myPrivateKey: CryptoKey | null) {
+export function useRatchet(user: string, myPrivateKey: UserIdentityKeys | null) {
   const getOrCreateSessionKey = useCallback(
     async (
       targetUsername: string,
-      remoteEph?: string,
+      remoteKemCiphertext?: string,
       remoteSig?: string,
     ): Promise<RatchetResult> => {
       if (!user || !myPrivateKey) throw new Error("Auth state missing");
@@ -32,10 +34,10 @@ export function useRatchet(user: string, myPrivateKey: CryptoKey | null) {
         `session_${user}_${targetUsername}`,
       );
 
-      // If we are NOT receiving a handshake (no remoteEph), just return the saved key
-      if (savedKey && !remoteEph) return { key: savedKey };
+      // If we are NOT receiving a handshake (no remoteKemCiphertext), just return the saved key
+      if (savedKey && !remoteKemCiphertext) return { key: savedKey };
 
-      // 2. If not, we must perform the ECDH Handshake!
+      // 2. If not, we must perform the ML-KEM-1024 Handshake!
       const response = await new Promise<any>((resolve) =>
         socket.emit("request_public_key", targetUsername, resolve),
       );
@@ -43,10 +45,10 @@ export function useRatchet(user: string, myPrivateKey: CryptoKey | null) {
       if (!response.success)
         throw new Error("Could not fetch target public key.");
 
-      const serverPublicKeyBase64 = response.publicKey;
+      const serverPublicKeyStr = response.publicKey;
 
-      // 3. Security Firewall (TOFU)
-      const hashedUsername = CryptoJS.SHA256(targetUsername).toString();
+      // 3. Security Firewall (TOFU - Trust On First Use) via NIST FIPS 180-4 SHA-256
+      const hashedUsername = await sha256Hex(targetUsername);
       const existingContact = await db.contacts.get(hashedUsername);
       if (existingContact) {
         let contactObj: any = {};
@@ -61,7 +63,7 @@ export function useRatchet(user: string, myPrivateKey: CryptoKey | null) {
         }
         if (
           contactObj.publicKey &&
-          contactObj.publicKey !== serverPublicKeyBase64
+          contactObj.publicKey !== serverPublicKeyStr
         ) {
           throw new Error(
             "CRITICAL SECURITY ALERT: Target's public key has changed. Possible Man-in-the-Middle attack!",
@@ -70,7 +72,7 @@ export function useRatchet(user: string, myPrivateKey: CryptoKey | null) {
       } else {
         const contactObj = {
           username: targetUsername,
-          publicKey: serverPublicKeyBase64,
+          publicKey: serverPublicKeyStr,
         };
         await db.contacts.add({
           id: hashedUsername,
@@ -78,36 +80,29 @@ export function useRatchet(user: string, myPrivateKey: CryptoKey | null) {
         });
       }
 
-      const theirPublicKey = await importECCPublicKey(serverPublicKeyBase64);
+      const theirPublicIdentity = importPublicIdentity(serverPublicKeyStr);
 
-      // 4. Authenticated Key Exchange (AKE)
-      // First, derive the static-static shared secret for authentication
-      const authCryptoKey = await deriveSharedAESKey(
-        myPrivateKey,
-        theirPublicKey,
-      );
-      const authBase64 = await exportAESKeyToBase64(authCryptoKey);
-
-      if (remoteEph && remoteSig) {
-        //RECEIVER
-        // Verify that the ephemeral key was signed by the owner of the static private key
-        const expectedSig = CryptoJS.HmacSHA256(
-          remoteEph,
-          authBase64,
-        ).toString();
-        if (expectedSig !== remoteSig) {
+      if (remoteKemCiphertext && remoteSig) {
+        // RECEIVER
+        // 1. Verify ML-DSA-87 signature (NIST FIPS 204) to ensure sender authenticity
+        const isSigValid = verifyHandshakeSignature(
+          targetUsername,
+          user,
+          remoteKemCiphertext,
+          remoteSig,
+          theirPublicIdentity.dsaPublicKey,
+        );
+        if (!isSigValid) {
           throw new Error(
-            "Handshake Security Failure: Ephemeral key signature mismatch!",
+            "Handshake Security Failure: ML-KEM-1024 handshake signature mismatch!",
           );
         }
 
-        // Derive the root session key using our static private key and their ephemeral public key
-        const remoteEphPublicKey = await importECCPublicKey(remoteEph);
-        const rootCryptoKey = await deriveSharedAESKey(
-          myPrivateKey,
-          remoteEphPublicKey,
+        // 2. Decapsulate the ML-KEM-1024 ciphertext to obtain the root AES-256 session key
+        const rootBase64 = await decapsulateSharedKey(
+          remoteKemCiphertext,
+          myPrivateKey.kemSecretKey,
         );
-        const rootBase64 = await exportAESKeyToBase64(rootCryptoKey);
 
         // COLLISION HANDLING: If we already have a session, use a tie-breaker
         if (savedKey) {
@@ -126,31 +121,31 @@ export function useRatchet(user: string, myPrivateKey: CryptoKey | null) {
 
         localStorage.setItem(`session_${user}_${targetUsername}`, rootBase64);
         return { key: rootBase64 };
+      } else if (remoteKemCiphertext) {
+        // Enforce strict security: reject any handshake missing the ML-DSA-87 signature
+        throw new Error(
+          "Handshake Security Failure: Missing ML-DSA-87 signature on incoming handshake!",
+        );
       } else {
-        //INITIATOR
-        // Generate a fresh ephemeral key pair for this session
-        const ephemeralKeys = await generateECCKeyPair();
-        const ephPublicBase64 = await exportECCPublicKey(
-          ephemeralKeys.publicKey,
+        // INITIATOR
+        // 1. Encapsulate a fresh 32-byte shared secret using target's ML-KEM-1024 public key (NIST FIPS 203)
+        const { kemCiphertextBase64, rootBase64 } = await encapsulateSharedKey(
+          theirPublicIdentity.kemPublicKey,
         );
 
-        // Sign the ephemeral public key using the static shared secret
-        const signature = CryptoJS.HmacSHA256(
-          ephPublicBase64,
-          authBase64,
-        ).toString();
-
-        // Derive the root session key using our ephemeral private key and their static public key
-        const rootCryptoKey = await deriveSharedAESKey(
-          ephemeralKeys.privateKey,
-          theirPublicKey,
+        // 2. Sign the ML-KEM handshake payload using our ML-DSA-87 private key (NIST FIPS 204)
+        const signature = signHandshakePayload(
+          user,
+          targetUsername,
+          kemCiphertextBase64,
+          myPrivateKey.dsaSecretKey,
         );
-        const rootBase64 = await exportAESKeyToBase64(rootCryptoKey);
 
         localStorage.setItem(`session_${user}_${targetUsername}`, rootBase64);
         return {
           key: rootBase64,
-          eph: ephPublicBase64,
+          kemCiphertext: kemCiphertextBase64,
+          eph: kemCiphertextBase64, // Alias for wire compatibility
           sig: signature,
         };
       }

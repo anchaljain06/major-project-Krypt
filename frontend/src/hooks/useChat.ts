@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import { encryptLocal, decryptLocal } from "../crypto/localStore";
 import { ratchetKey } from "../crypto/ratchet";
 import type { RatchetResult } from "./useRatchet";
+import type { UserIdentityKeys } from "../crypto/mlkem";
 
 export interface DecryptedMessage {
   id?: number;
@@ -20,7 +21,7 @@ export interface DecryptedMessage {
 
 export function useChat(
   user: string,
-  myPrivateKey: CryptoKey | null,
+  myPrivateKey: UserIdentityKeys | null,
   getOrCreateSessionKey: (target: string) => Promise<RatchetResult>,
 ) {
   const [activeChat, setActiveChat] = useState<string | null>(null);

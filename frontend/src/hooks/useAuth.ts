@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { socket } from "../services/socket";
-import { generateECCKeyPair, exportECCPublicKey } from "../crypto/ecc";
+import {
+  generateUserIdentityKeys,
+  exportPublicIdentity,
+  exportPrivateIdentity,
+  importPrivateIdentity,
+  type UserIdentityKeys,
+} from "../crypto/mlkem";
 import srp from "secure-remote-password/client";
 import toast from "react-hot-toast";
 import { db } from "../services/db";
@@ -13,10 +19,10 @@ import {
 
 export function useAuth() {
   const [user, setUser] = useState(localStorage.getItem("currentUser") || "");
-  const [myPrivateKey, setMyPrivateKey] = useState<CryptoKey | null>(null);
+  const [myPrivateKey, setMyPrivateKey] = useState<UserIdentityKeys | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Auto-restore private key from encrypted cache on page refresh
+  // Auto-restore private identity keys from encrypted cache on page refresh
   useEffect(() => {
     if (!user || myPrivateKey) return;
     const restoreKey = async () => {
@@ -24,22 +30,12 @@ export function useAuth() {
       const cachedKey = localStorage.getItem(`encryptedPrivateKey_${user}`);
       if (!cachedPassword || !cachedKey) return;
       try {
-        const base64PrivateKey = await decryptVaultData(
+        const decryptedPrivateStr = await decryptVaultData(
           cachedKey,
           cachedPassword,
         );
-        const binaryDerString = window.atob(base64PrivateKey);
-        const binaryDer = new Uint8Array(binaryDerString.length);
-        for (let i = 0; i < binaryDerString.length; i++)
-          binaryDer[i] = binaryDerString.charCodeAt(i);
-        const loadedKey = await window.crypto.subtle.importKey(
-          "pkcs8",
-          binaryDer.buffer,
-          { name: "ECDH", namedCurve: "P-256" },
-          true,
-          ["deriveKey", "deriveBits"],
-        );
-        setMyPrivateKey(loadedKey);
+        const loadedKeys = importPrivateIdentity(decryptedPrivateStr);
+        setMyPrivateKey(loadedKeys);
       } catch (err) {
         sessionStorage.removeItem("sessionPassword");
         // No toast here to avoid annoying the user on every fresh load if they aren't logged in
@@ -62,8 +58,8 @@ export function useAuth() {
         const privateKey = srp.derivePrivateKey(salt, username, password);
         const verifier = srp.deriveVerifier(privateKey);
 
-        const keys = await generateECCKeyPair();
-        const base64PublicKey = await exportECCPublicKey(keys.publicKey);
+        const keys = generateUserIdentityKeys();
+        const publicKeyStr = exportPublicIdentity(keys);
 
         const res = await fetch(
           `${import.meta.env.VITE_API_URL}/api/register`,
@@ -72,7 +68,7 @@ export function useAuth() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               username,
-              publicKey: base64PublicKey,
+              publicKey: publicKeyStr,
               srpSalt: salt,
               srpVerifier: verifier,
             }),
@@ -86,17 +82,11 @@ export function useAuth() {
           );
         }
 
-        setMyPrivateKey(keys.privateKey);
-        const exportedPrivate = await window.crypto.subtle.exportKey(
-          "pkcs8",
-          keys.privateKey,
-        );
-        const base64PrivateKey = btoa(
-          String.fromCharCode(...new Uint8Array(exportedPrivate)),
-        );
-        // Securely cache the private key for returning logins
+        setMyPrivateKey(keys);
+        const privateKeyStr = exportPrivateIdentity(keys);
+        // Securely cache the private identity key for returning logins
         const encryptedCache = await encryptVaultData(
-          base64PrivateKey,
+          privateKeyStr,
           password,
         );
         localStorage.setItem(`encryptedPrivateKey_${username}`, encryptedCache);
@@ -151,7 +141,7 @@ export function useAuth() {
         }
 
         // If vaultFile is missing, try to load from secure cache
-        let base64PrivateKeyToImport = "";
+        let privateKeyStrToImport = "";
 
         if (!vaultFile) {
           const cachedKey = localStorage.getItem(
@@ -163,7 +153,7 @@ export function useAuth() {
             );
           }
           try {
-            base64PrivateKeyToImport = await decryptVaultData(
+            privateKeyStrToImport = await decryptVaultData(
               cachedKey,
               password,
             );
@@ -197,11 +187,11 @@ export function useAuth() {
           if (!vault.privateKey) {
             throw new Error("Invalid vault file: Missing identity key.");
           }
-          base64PrivateKeyToImport = vault.privateKey;
+          privateKeyStrToImport = vault.privateKey;
 
           // Securely cache the newly imported private key
           const encryptedCache = await encryptVaultData(
-            base64PrivateKeyToImport,
+            privateKeyStrToImport,
             password,
           );
           localStorage.setItem(
@@ -220,18 +210,8 @@ export function useAuth() {
           }
         }
 
-        const binaryDerString = window.atob(base64PrivateKeyToImport);
-        const binaryDer = new Uint8Array(binaryDerString.length);
-        for (let i = 0; i < binaryDerString.length; i++)
-          binaryDer[i] = binaryDerString.charCodeAt(i);
-        const loadedKey = await window.crypto.subtle.importKey(
-          "pkcs8",
-          binaryDer.buffer,
-          { name: "ECDH", namedCurve: "P-256" },
-          true,
-          ["deriveKey", "deriveBits"],
-        );
-        setMyPrivateKey(loadedKey);
+        const loadedKeys = importPrivateIdentity(privateKeyStrToImport);
+        setMyPrivateKey(loadedKeys);
       }
 
       localStorage.setItem("currentUser", username);
@@ -268,16 +248,10 @@ export function useAuth() {
   const handleDownloadVault = async (vaultPassword?: string) => {
     if (!myPrivateKey || !user) return;
     try {
-      const exportedPrivate = await window.crypto.subtle.exportKey(
-        "pkcs8",
-        myPrivateKey,
-      );
-      const base64PrivateKey = btoa(
-        String.fromCharCode(...new Uint8Array(exportedPrivate)),
-      );
+      const privateKeyStr = exportPrivateIdentity(myPrivateKey);
       const contacts = await db.contacts.toArray();
       const vaultData = JSON.stringify({
-        privateKey: base64PrivateKey,
+        privateKey: privateKeyStr,
         contacts,
       });
 
@@ -335,7 +309,7 @@ export function useAuth() {
     try {
       await db.messages.clear();
       await db.contacts.clear();
-      // Optional: wipe ratchet state
+      // Wipe ratchet session state
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);

@@ -6,10 +6,11 @@ import toast from "react-hot-toast";
 import { encryptLocal } from "../crypto/localStore";
 import { ratchetKey } from "../crypto/ratchet";
 import type { RatchetResult } from "./useRatchet";
+import type { UserIdentityKeys } from "../crypto/mlkem";
 
 interface SocketListenersProps {
   user: string;
-  myPrivateKey: CryptoKey | null;
+  myPrivateKey: UserIdentityKeys | null;
   activeChat: string | null;
   setActiveChat: (name: string | null) => void;
   setPendingRequests: React.Dispatch<React.SetStateAction<string[]>>;
@@ -87,9 +88,10 @@ export function useSocketListeners({
       try {
         if (!myPrivateKey) return;
 
-        // 1. Get current key (optionally perform handshake if eph/sig are present)
+        // 1. Get current key (optionally perform ML-KEM handshake if kemCiphertext/eph and sig are present)
+        const incomingKemCiphertext = payload.kemCiphertext || payload.eph;
         const { key: currentAesKey, isHandshakeCollision } =
-          await getOrCreateSessionKey(payload.from, payload.eph, payload.sig);
+          await getOrCreateSessionKey(payload.from, incomingKemCiphertext, payload.sig);
 
         // 2. Decrypt the message
         const plaintext = await decryptAES(payload.ciphertext, currentAesKey);
