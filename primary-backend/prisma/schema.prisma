@@ -61,4 +61,15 @@ model BlockedUser {
   // Prevent duplicate blocks
   @@unique([blockerUsername, blockedUsername])
 }
+
+model OfflineMessage {
+  id        String   @id @default(uuid())
+  to        String
+  from      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([to])
+}
+
 

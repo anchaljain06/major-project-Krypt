@@ -34,7 +34,7 @@ const onlineUsers = new Map<string, string>();
 io.on("connection", (socket) => {
   console.log(`[+] Socket connected: ${socket.id}`);
 
-  // Register socket and broadcast presence
+  // Register socket, broadcast presence, and flush pending zero-knowledge offline mailbox
   socket.on("register_socket", async (username: string) => {
     const cleanUsername = String(username).trim();
     socket.data.username = cleanUsername;
@@ -46,6 +46,31 @@ io.on("connection", (socket) => {
 
     // Broadcast status to all other active sockets
     socket.broadcast.emit("user_connected", cleanUsername);
+
+    // Deliver and immediately purge pending encrypted offline messages (Zero-Footprint store-and-forward)
+    try {
+      const pendingMessages = await prisma.offlineMessage.findMany({
+        where: { to: cleanUsername },
+        orderBy: { createdAt: "asc" },
+      });
+
+      if (pendingMessages.length > 0) {
+        console.log(
+          `[Mailbox] Delivering ${pendingMessages.length} queued offline message(s) to ${cleanUsername}`,
+        );
+        for (const msg of pendingMessages) {
+          socket.emit("receive_message", msg.payload);
+        }
+
+        // Immediately delete from database to restore zero server disk footprint
+        await prisma.offlineMessage.deleteMany({
+          where: { to: cleanUsername },
+        });
+        console.log(`[Mailbox] Zero-knowledge purge complete for ${cleanUsername}`);
+      }
+    } catch (err) {
+      console.error(`[Mailbox] Error delivering queued messages to ${cleanUsername}:`, err);
+    }
   });
 
   // Handle user disconnect (O(1) direct lookup)
@@ -67,8 +92,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Strict route private messages (Drop if offline, enforce authenticated sender identity)
-  socket.on("private_message", async (payload) => {
+  // Strict route private messages (Direct delivery if online, Ephemeral ZK Mailbox if offline)
+  socket.on("private_message", async (payload, callback) => {
     if (socket.data.username) {
       payload.from = socket.data.username;
     }
@@ -79,12 +104,38 @@ io.on("connection", (socket) => {
         `[Router] Instant delivery from ${payload.from} to ${payload.to}`,
       );
       io.to(targetSocketId).emit("receive_message", payload);
+      if (typeof callback === "function") {
+        callback({ success: true, status: "delivered_online" });
+      }
     } else {
-      console.log(`[Router] ${payload.to} is offline. Dropping message.`);
-      socket.emit("message_failed", {
-        to: payload.to,
-        error: "User is offline. Message dropped.",
-      });
+      console.log(
+        `[Router] ${payload.to} is offline. Storing in ephemeral zero-knowledge mailbox.`,
+      );
+      try {
+        await prisma.offlineMessage.create({
+          data: {
+            to: payload.to,
+            from: payload.from,
+            payload: payload,
+          },
+        });
+        socket.emit("message_queued", {
+          to: payload.to,
+          status: "queued_offline",
+        });
+        if (typeof callback === "function") {
+          callback({ success: true, status: "queued_offline" });
+        }
+      } catch (err) {
+        console.error(`[Router] Failed to queue offline message for ${payload.to}:`, err);
+        socket.emit("message_failed", {
+          to: payload.to,
+          error: "Failed to queue offline message.",
+        });
+        if (typeof callback === "function") {
+          callback({ success: false, error: "Failed to queue message." });
+        }
+      }
     }
   });
 

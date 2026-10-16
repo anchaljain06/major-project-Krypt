@@ -115,7 +115,7 @@ export async function decryptVaultData(
     const key = await window.crypto.subtle.deriveKey(
       {
         name: "PBKDF2",
-        salt: salt,
+        salt: salt as unknown as BufferSource,
         iterations: iterations,
         hash: "SHA-256",
       },
@@ -128,10 +128,10 @@ export async function decryptVaultData(
     const plaintext = await window.crypto.subtle.decrypt(
       {
         name: "AES-GCM",
-        iv: iv,
+        iv: iv as unknown as BufferSource,
       },
       key,
-      ciphertext,
+      ciphertext as unknown as BufferSource,
     );
 
     return new TextDecoder().decode(plaintext);

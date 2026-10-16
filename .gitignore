@@ -33,3 +33,6 @@ Thumbs.db
 *.njsproj
 *.sln
 *.swp
+
+# Local team discussion and scratch notes
+TEAM_DISCUSSION.md

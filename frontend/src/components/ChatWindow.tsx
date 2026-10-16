@@ -44,7 +44,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }, [messages]);
 
   const isTargetOnline = activeChat ? onlineUsers.includes(activeChat) : false;
-  const isInputDisabled = isSending || !isTargetOnline;
+  const isInputDisabled = isSending;
 
   return (
     <div
@@ -61,22 +61,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <h3 className="text-lg font-bold text-slate-100">
                   {activeChat}
                 </h3>
-                <p className="text-xs text-green-400 font-medium flex items-center gap-1">
-                  <svg
-                    className="w-3 h-3"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                    ></path>
-                  </svg>
-                  AES-256 / ML-KEM-1024 Ratchet
-                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span
+                    className={`inline-block w-2 h-2 rounded-full ${
+                      isTargetOnline ? "bg-emerald-400 shadow-sm shadow-emerald-400/50" : "bg-amber-400"
+                    }`}
+                  />
+                  <p className="text-xs text-slate-400 font-medium">
+                    {isTargetOnline ? "Online" : "Offline"} • ML-KEM-1024 / AES-GCM {isTargetOnline ? "" : "(Mailbox Active)"}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -225,11 +219,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
               <input
                 placeholder={
-                  !isTargetOnline
-                    ? "Target is offline. Connection locked."
-                    : isSending
-                      ? "Calculating cryptographic handshake..."
-                      : `Secure message to ${activeChat}...`
+                  isSending
+                    ? "Calculating cryptographic handshake..."
+                    : isTargetOnline
+                      ? `Secure message to ${activeChat}...`
+                      : `Secure message to ${activeChat} (queued offline)...`
                 }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

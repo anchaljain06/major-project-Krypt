@@ -84,45 +84,62 @@ export function useSocketListeners({
       setPendingRequests((prev) => prev.filter((u) => u !== senderUsername));
     });
 
-    socket.on("receive_message", async (payload: any) => {
-      try {
-        if (!myPrivateKey) return;
+    // FIFO Queue for serial message processing (prevents concurrent ratchet race condition)
+    let processingQueue = Promise.resolve();
 
-        // 1. Get current key (optionally perform ML-KEM handshake if kemCiphertext/eph and sig are present)
-        const incomingKemCiphertext = payload.kemCiphertext || payload.eph;
-        const { key: currentAesKey, isHandshakeCollision } =
-          await getOrCreateSessionKey(payload.from, incomingKemCiphertext, payload.sig);
+    socket.on("message_queued", (data: any) => {
+      toast(`Message encrypted & queued for ${data?.to || "recipient"} (offline).`, {
+        icon: "📬",
+        style: { background: "#1e293b", color: "#f8fafc", border: "1px solid #334155" },
+      });
+    });
 
-        // 2. Decrypt the message
-        const plaintext = await decryptAES(payload.ciphertext, currentAesKey);
+    socket.on("message_failed", (data: any) => {
+      toast.error(`Delivery failed: ${data.error || "Unknown error"}`);
+    });
 
-        // 3. THE RATCHET: Move the lock forward
-        // CRITICAL: If this was a handshake collision and we won, DO NOT ratchet.
-        // We want to keep our own session state for future messages.
-        if (!isHandshakeCollision) {
-          const nextKey = await ratchetKey(currentAesKey);
-          localStorage.setItem(`session_${user}_${payload.from}`, nextKey);
+    socket.on("receive_message", (payload: any) => {
+      processingQueue = processingQueue.then(async () => {
+        try {
+          if (!myPrivateKey) return;
+
+          // 1. Get current key (optionally perform ML-KEM handshake if kemCiphertext/eph and sig are present)
+          const incomingKemCiphertext = payload.kemCiphertext || payload.eph;
+          const { key: currentAesKey, isHandshakeCollision } =
+            await getOrCreateSessionKey(payload.from, incomingKemCiphertext, payload.sig);
+
+          // 2. Decrypt the message
+          const plaintext = await decryptAES(payload.ciphertext, currentAesKey);
+
+          // 3. THE RATCHET: Move the lock forward
+          // CRITICAL: If this was a handshake collision and we won, DO NOT ratchet.
+          if (!isHandshakeCollision) {
+            const nextKey = await ratchetKey(currentAesKey);
+            localStorage.setItem(`session_${user}_${payload.from}`, nextKey);
+          }
+
+          const msgObj = {
+            from: payload.from,
+            to: user,
+            decryptedText: plaintext,
+            ciphertext: payload.ciphertext,
+            type: payload.type || "text",
+            timestamp: Date.now(),
+          };
+
+          await db.messages.add({
+            payload: await encryptLocal(JSON.stringify(msgObj), myPrivateKey),
+          });
+        } catch (error: any) {
+          toast.error("Decryption failed: " + (error.message || "Unknown error"));
         }
-
-        const msgObj = {
-          from: payload.from,
-          to: user,
-          decryptedText: plaintext,
-          ciphertext: payload.ciphertext,
-          type: payload.type || "text",
-          timestamp: Date.now(),
-        };
-
-        await db.messages.add({
-          payload: await encryptLocal(JSON.stringify(msgObj), myPrivateKey),
-        });
-      } catch (error: any) {
-        toast.error("Decryption failed: " + (error.message || "Unknown error"));
-      }
+      });
     });
 
     return () => {
       socket.off("receive_message");
+      socket.off("message_queued");
+      socket.off("message_failed");
       socket.off("receive_friend_request");
       socket.off("request_accepted");
       socket.off("request_rejected");

@@ -108,9 +108,9 @@ export async function decryptLocal(
   try {
     const key = await getLocalKey(privateKey);
     const decrypted = await window.crypto.subtle.decrypt(
-      { name: "AES-GCM", iv },
+      { name: "AES-GCM", iv: iv as unknown as BufferSource },
       key,
-      ciphertext,
+      ciphertext as unknown as BufferSource,
     );
     return new TextDecoder().decode(decrypted);
   } catch {
@@ -118,9 +118,9 @@ export async function decryptLocal(
     try {
       const legacyKey = await getLegacyLocalKey(privateKey);
       const decrypted = await window.crypto.subtle.decrypt(
-        { name: "AES-GCM", iv },
+        { name: "AES-GCM", iv: iv as unknown as BufferSource },
         legacyKey,
-        ciphertext,
+        ciphertext as unknown as BufferSource,
       );
       return new TextDecoder().decode(decrypted);
     } catch {
