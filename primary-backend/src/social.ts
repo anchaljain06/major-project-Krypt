@@ -22,23 +22,26 @@ export function clearRelationshipCache() {
   cache.clear();
 }
 
-/** Can `from` send a private message to `to`? */
-export async function messagePolicy(from: string, to: string): Promise<MessagePolicy> {
-  const key = pairKey(from, to);
+/** Can `from` (the authenticated user) send a private message to username `to`? */
+export async function messagePolicy(
+  from: { userId: string; username: string },
+  to: string,
+): Promise<MessagePolicy> {
+  const key = pairKey(from.username, to);
   const hit = cache.get(key);
   if (hit && hit.expires > Date.now()) return hit.value;
 
   const [block, friendship] = await Promise.all([
     prisma.blockedUser.findFirst({
-      where: { blockerUsername: to, blockedUsername: from },
+      where: { blocker: { username: to }, blockedId: from.userId },
       select: { id: true },
     }),
     prisma.friendRequest.findFirst({
       where: {
         status: "accepted",
         OR: [
-          { senderUsername: from, receiverUsername: to },
-          { senderUsername: to, receiverUsername: from },
+          { senderId: from.userId, receiver: { username: to } },
+          { sender: { username: to }, receiverId: from.userId },
         ],
       },
       select: { id: true },

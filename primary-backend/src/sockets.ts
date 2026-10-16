@@ -93,6 +93,7 @@ export function registerSocketHandlers(io: Server) {
 
   io.on("connection", (socket) => {
     const username: string = socket.data.username;
+    const userId: string = socket.data.userId;
     console.log(`[Socket] ${username} connected with ID: ${socket.id}`);
 
     // Handlers are attached before the async flush so nothing sent meanwhile is lost.
@@ -130,7 +131,7 @@ export function registerSocketHandlers(io: Server) {
       const payload = { ...parsed.data, from: username };
 
       try {
-        const policy = await messagePolicy(username, payload.to);
+        const policy = await messagePolicy({ userId, username }, payload.to);
         if (policy !== "ok") {
           const error =
             policy === "blocked"
@@ -196,7 +197,7 @@ export function registerSocketHandlers(io: Server) {
       const { receiver } = parsed.data;
       void notify(receiver, "receive_friend_request", () =>
         prisma.friendRequest.findFirst({
-          where: { senderUsername: username, receiverUsername: receiver, status: "pending" },
+          where: { senderId: userId, receiver: { username: receiver }, status: "pending" },
           select: { id: true },
         }),
       );
@@ -208,7 +209,7 @@ export function registerSocketHandlers(io: Server) {
       const { sender } = parsed.data;
       void notify(sender, "request_accepted", () =>
         prisma.friendRequest.findFirst({
-          where: { senderUsername: sender, receiverUsername: username, status: "accepted" },
+          where: { sender: { username: sender }, receiverId: userId, status: "accepted" },
           select: { id: true },
         }),
       );
@@ -220,7 +221,7 @@ export function registerSocketHandlers(io: Server) {
       const { sender } = parsed.data;
       void notify(sender, "request_rejected", () =>
         prisma.friendRequest.findFirst({
-          where: { senderUsername: sender, receiverUsername: username, status: "rejected" },
+          where: { sender: { username: sender }, receiverId: userId, status: "rejected" },
           select: { id: true },
         }),
       );
@@ -232,7 +233,7 @@ export function registerSocketHandlers(io: Server) {
       const { blocked } = parsed.data;
       void notify(blocked, "user_blocked_you", () =>
         prisma.blockedUser.findFirst({
-          where: { blockerUsername: username, blockedUsername: blocked },
+          where: { blockerId: userId, blocked: { username: blocked } },
           select: { id: true },
         }),
       );

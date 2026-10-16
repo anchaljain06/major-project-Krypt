@@ -78,13 +78,15 @@ describe("authenticated REST routes", () => {
 
   it("serves the token user, matching case-insensitively", async () => {
     db.friendRequest.findMany.mockResolvedValue([
-      { senderUsername: "alice", receiverUsername: "bob" },
+      { senderId: "u-alice", sender: { username: "alice" }, receiver: { username: "bob" } },
+      { senderId: "u-carol", sender: { username: "carol" }, receiver: { username: "alice" } },
     ]);
     const res = await get("/friends/ALICE", aliceToken);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ friends: ["bob"] });
+    expect(await res.json()).toEqual({ friends: ["bob", "carol"] });
+    // The query is scoped by the token's User.id, not by the URL.
     const where = db.friendRequest.findMany.mock.calls[0]![0].where;
-    expect(where.OR).toEqual([{ senderUsername: "alice" }, { receiverUsername: "alice" }]);
+    expect(where.OR).toEqual([{ senderId: "u-alice" }, { receiverId: "u-alice" }]);
   });
 
   it("returns 400 for a malformed body and hides DB error details", async () => {

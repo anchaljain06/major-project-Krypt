@@ -19,7 +19,7 @@ model User {
   // Cryptographic Identity
   identityKeyPub String?  // The user's public key
   
-  // Friend System Relations (Linked via username for easy API lookups)
+  // Friend System Relations (linked via User.id)
   sentRequests     FriendRequest[] @relation("SentRequests")
   receivedRequests FriendRequest[] @relation("ReceivedRequests")
 
@@ -33,33 +33,35 @@ model User {
 model FriendRequest {
   id               String   @id @default(uuid())
   
-  senderUsername   String
-  sender           User     @relation("SentRequests", fields: [senderUsername], references: [username])
-  
-  receiverUsername String
-  receiver         User     @relation("ReceivedRequests", fields: [receiverUsername], references: [username])
-  
-  status           String   @default("pending") // pending, accepted, rejected
-  
-  createdAt        DateTime @default(now())
+  senderId   String
+  sender     User     @relation("SentRequests", fields: [senderId], references: [id])
+
+  receiverId String
+  receiver   User     @relation("ReceivedRequests", fields: [receiverId], references: [id])
+
+  status     String   @default("pending") // pending, accepted, rejected
+
+  createdAt  DateTime @default(now())
 
   // Prevent Alice from spamming 100 requests to Bob
-  @@unique([senderUsername, receiverUsername]) 
+  @@unique([senderId, receiverId])
+  @@index([receiverId])
 }
 
 model BlockedUser {
-  id              String   @id @default(uuid())
+  id        String   @id @default(uuid())
 
-  blockerUsername  String
-  blocker         User     @relation("BlockedByMe", fields: [blockerUsername], references: [username])
+  blockerId String
+  blocker   User     @relation("BlockedByMe", fields: [blockerId], references: [id])
 
-  blockedUsername  String
-  blocked         User     @relation("BlockedMe", fields: [blockedUsername], references: [username])
+  blockedId String
+  blocked   User     @relation("BlockedMe", fields: [blockedId], references: [id])
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   // Prevent duplicate blocks
-  @@unique([blockerUsername, blockedUsername])
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
 }
 
 model OfflineMessage {
