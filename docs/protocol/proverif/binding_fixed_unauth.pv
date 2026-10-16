@@ -1,0 +1,204 @@
+(* ======================================================================
+   Krypt v1 -- KEM binding experiment (strategy 4.8, plan step 2.4)
+
+   VARIANT: FIXED, UNAUTHENTICATED (ablation, NOT the spec)
+            ctx = epoch || H(ek)   (H(ek) added back, still no H(ct))
+            ct and ek are NOT in the AEAD AD.
+            Purpose: same ablation as binding_weak_unauth.pv, showing what
+            H(ek) alone buys.
+
+   The four binding_*.pv files are identical except for the two letfuns
+   marked  >>> VARIANT <<<  (rootctx and hdrad):
+
+     file                      rootctx                 header in AD?
+     binding_weak.pv           e || H(ct)              yes (spec)
+     binding_fixed.pv          e || H(ek) || H(ct)     yes (spec)  = Krypt v1
+     binding_weak_unauth.pv    e                       no  (ablation)
+     binding_fixed_unauth.pv   e || H(ek)              no  (ablation)
+
+   KEM theory: deliberately NON-binding, as in the PQXDH models of
+   Bhargavan, Jacomme, Kiefer, Schmidt (Inria-Prosecco/pqxdh-analysis,
+   revision1): the encapsulator picks ss independently of the public key,
+   ct = kem_enc(ek, ss). Anyone who learns ss (e.g. by decapsulating with a
+   compromised dk) can re-encapsulate the SAME ss to ANY other ek. The
+   shared secret therefore does not bind ek (no X-BIND-K-PK).
+   ML-KEM is binding; this theory stands for "the KEM gets swapped".
+
+   Attacker: active Dolev-Yao, plus one compromised ratchet key: Bob's
+   first ratchet dk_B1 is published as soon as it is generated, and the
+   attacker can always make its own KEM key pairs.
+
+   One honest session, epochs 0-3 unrolled (as in ratchet.pv, no state leak).
+   ====================================================================== *)
+
+free c: channel.
+
+(* Non-binding KEM (PQXDH revision1 style) *)
+type kemsk.
+type kempub.
+fun kempk(kemsk): kempub.
+fun kem_enc(kempub, bitstring): bitstring.
+fun kem_dec(kemsk, bitstring): bitstring
+  reduc forall sk: kemsk, ss: bitstring; kem_dec(sk, kem_enc(kempk(sk), ss)) = ss.
+
+type sigsk.
+type sigpub.
+fun sigpk(sigsk): sigpub.
+fun sign(sigsk, bitstring): bitstring.
+fun verify(sigpub, bitstring, bitstring): bool
+  reduc forall sk: sigsk, m: bitstring; verify(sigpk(sk), m, sign(sk, m)) = true.
+fun getmess(bitstring): bitstring
+  reduc forall sk: sigsk, m: bitstring; getmess(sign(sk, m)) = m.
+
+fun H(bitstring): bitstring.
+fun Hek(kempub): bitstring.
+
+type key.
+fun x3k_rk(bitstring, bitstring): key.
+fun x3k_ck(bitstring, bitstring): key.
+fun kdf_rk(key, bitstring, bitstring): key.
+fun kdf_ck(key, bitstring, bitstring): key.
+fun ctx1(bitstring): bitstring [data].
+fun ctx2(bitstring, bitstring): bitstring [data].
+fun ctx3(bitstring, bitstring, bitstring): bitstring [data].
+
+const b01, b02: bitstring.
+fun hmac(key, bitstring): key.
+
+fun aead_enc(key, bitstring, bitstring): bitstring.
+fun aead_dec(key, bitstring, bitstring): bitstring
+  reduc forall k: key, m: bitstring, ad: bitstring;
+        aead_dec(k, aead_enc(k, m, ad), ad) = m.
+
+const lbl_v1, lbl_spk, lbl_opk, lbl_init: bitstring.
+const e0, e1, e2, e3, n0: bitstring.
+fun prekey_tbs(bitstring, kempub): bitstring [data].
+fun init_tbs(bitstring, bitstring): bitstring [data].
+fun transcript(bitstring, sigpub, sigpub, kempub, kempub, bitstring, bitstring, kempub): bitstring [data].
+fun ikm(bitstring, bitstring): bitstring [data].
+fun hdr0(bitstring, bitstring, bitstring, bitstring, bitstring, kempub, bitstring): bitstring [data].
+fun hdr(bitstring, bitstring, bitstring, bitstring, kempub): bitstring [data].
+fun hdr_noek(bitstring, bitstring, bitstring): bitstring [data].
+fun ad(bitstring, bitstring): bitstring [data].
+
+(* >>> VARIANT <<< root KDF context *)
+letfun rootctx(e: bitstring, ek: kempub, ct: bitstring) = ctx2(e, Hek(ek)).
+(* >>> VARIANT <<< AD of a ratchet message: H(T) || header *)
+letfun hdrad(hT: bitstring, e: bitstring, ct: bitstring, ek: kempub) = ad(hT, hdr_noek(hT, e, n0)).
+
+free m0, m1, m2, m3: bitstring [private].
+
+(* Root step events: (epoch, ek encapsulated to, ct, new RK) *)
+event SendRoot(bitstring, kempub, bitstring, key).
+event RecvRoot(bitstring, kempub, bitstring, key).
+event Done.
+
+(* Sanity: the honest run completes (expected "is false" = reachable). *)
+query event(Done).
+
+(* Secrecy of every message. Expected true in all four variants: the root
+   key is the HKDF salt, so knowing one KEM secret (dk_B1) is not enough. *)
+query attacker(m0).
+query attacker(m1).
+query attacker(m2).
+query attacker(m3).
+
+(* Root-step agreement: when a receiver accepts epoch e (after AEAD
+   verification) with (ek, ct, RK'), the sender did the same root step. *)
+query e: bitstring, ek: kempub, ct: bitstring, k: key;
+  event(RecvRoot(e, ek, ct, k)) ==> event(SendRoot(e, ek, ct, k)).
+
+(* KEM binding at protocol level: two root steps that produce the same new
+   root key used the same ek. A re-encapsulation attack shows up here as
+   ek1 <> ek2 with equal RK'. *)
+query e, e': bitstring, ek1, ek2: kempub, ct1, ct2: bitstring, k: key;
+  event(RecvRoot(e, ek1, ct1, k)) && event(SendRoot(e', ek2, ct2, k)) ==> ek1 = ek2.
+
+let Alice(ikA: sigsk, ikB_pub: sigpub) =
+  let ikA_pub = sigpk(ikA) in
+  in(c, (spk_ek: kempub, spk_sig: bitstring, opk_ek: kempub, opk_sig: bitstring));
+  if verify(ikB_pub, prekey_tbs(lbl_spk, spk_ek), spk_sig) then
+  if verify(ikB_pub, prekey_tbs(lbl_opk, opk_ek), opk_sig) then
+  new ss1: bitstring; new ss2: bitstring;
+  let ct1 = kem_enc(spk_ek, ss1) in
+  let ct2 = kem_enc(opk_ek, ss2) in
+  new dkA1: kemsk;
+  let ekA1 = kempk(dkA1) in
+  let hT = H(transcript(lbl_v1, ikA_pub, ikB_pub, spk_ek, opk_ek, ct1, ct2, ekA1)) in
+  let rk0 = x3k_rk(ikm(ss1, ss2), hT) in
+  let ck0 = x3k_ck(ikm(ss1, ss2), hT) in
+  let sigA = sign(ikA, init_tbs(lbl_init, hT)) in
+  out(c, (spk_ek, opk_ek, ct1, ct2, ekA1, sigA,
+          aead_enc(hmac(ck0, b01), m0, ad(hT, hdr0(hT, e0, n0, ct1, ct2, ekA1, sigA)))));
+  (* receive epoch 1 *)
+  in(c, (=e1, ctB1: bitstring, ekB1: kempub, cB1: bitstring));
+  let s1 = kem_dec(dkA1, ctB1) in
+  let rk1 = kdf_rk(rk0, s1, rootctx(e1, ekA1, ctB1)) in
+  let ckr1 = kdf_ck(rk0, s1, rootctx(e1, ekA1, ctB1)) in
+  let x1 = aead_dec(hmac(ckr1, b01), cB1, hdrad(hT, e1, ctB1, ekB1)) in
+  event RecvRoot(e1, ekA1, ctB1, rk1);
+  (* send epoch 2: encapsulate to the ek found in Bob's header *)
+  new s2: bitstring;
+  let ctA2 = kem_enc(ekB1, s2) in
+  new dkA2: kemsk;
+  let ekA2 = kempk(dkA2) in
+  let rk2 = kdf_rk(rk1, s2, rootctx(e2, ekB1, ctA2)) in
+  let cks2 = kdf_ck(rk1, s2, rootctx(e2, ekB1, ctA2)) in
+  event SendRoot(e2, ekB1, ctA2, rk2);
+  out(c, (e2, ctA2, ekA2, aead_enc(hmac(cks2, b01), m2, hdrad(hT, e2, ctA2, ekA2))));
+  (* receive epoch 3 *)
+  in(c, (=e3, ctB3: bitstring, ekB3: kempub, cB3: bitstring));
+  let s3 = kem_dec(dkA2, ctB3) in
+  let rk3 = kdf_rk(rk2, s3, rootctx(e3, ekA2, ctB3)) in
+  let ckr3 = kdf_ck(rk2, s3, rootctx(e3, ekA2, ctB3)) in
+  let x3 = aead_dec(hmac(ckr3, b01), cB3, hdrad(hT, e3, ctB3, ekB3)) in
+  event RecvRoot(e3, ekA2, ctB3, rk3);
+  event Done.
+
+let Bob(ikB: sigsk, ikA_pub: sigpub) =
+  let ikB_pub = sigpk(ikB) in
+  new spk_dk: kemsk; new opk_dk: kemsk;
+  let spk_ek = kempk(spk_dk) in
+  let opk_ek = kempk(opk_dk) in
+  out(c, (spk_ek, sign(ikB, prekey_tbs(lbl_spk, spk_ek)),
+          opk_ek, sign(ikB, prekey_tbs(lbl_opk, opk_ek))));
+  in(c, (=spk_ek, =opk_ek, ct1: bitstring, ct2: bitstring, ekA1: kempub, sigA: bitstring, c0: bitstring));
+  let hT = H(transcript(lbl_v1, ikA_pub, ikB_pub, spk_ek, opk_ek, ct1, ct2, ekA1)) in
+  if verify(ikA_pub, init_tbs(lbl_init, hT), sigA) then
+  let ss1 = kem_dec(spk_dk, ct1) in
+  let ss2 = kem_dec(opk_dk, ct2) in
+  let rk0 = x3k_rk(ikm(ss1, ss2), hT) in
+  let ck0 = x3k_ck(ikm(ss1, ss2), hT) in
+  let x0 = aead_dec(hmac(ck0, b01), c0, ad(hT, hdr0(hT, e0, n0, ct1, ct2, ekA1, sigA))) in
+  (* send epoch 1 (bootstrap) *)
+  new dkB1: kemsk;
+  let ekB1 = kempk(dkB1) in
+  (* THE compromised ratchet dk *)
+  out(c, dkB1);
+  new s1: bitstring;
+  let ctB1 = kem_enc(ekA1, s1) in
+  let rk1 = kdf_rk(rk0, s1, rootctx(e1, ekA1, ctB1)) in
+  let cks1 = kdf_ck(rk0, s1, rootctx(e1, ekA1, ctB1)) in
+  event SendRoot(e1, ekA1, ctB1, rk1);
+  out(c, (e1, ctB1, ekB1, aead_enc(hmac(cks1, b01), m1, hdrad(hT, e1, ctB1, ekB1))));
+  (* receive epoch 2 *)
+  in(c, (=e2, ctA2: bitstring, ekA2: kempub, cA2: bitstring));
+  let s2 = kem_dec(dkB1, ctA2) in
+  let rk2 = kdf_rk(rk1, s2, rootctx(e2, ekB1, ctA2)) in
+  let ckr2 = kdf_ck(rk1, s2, rootctx(e2, ekB1, ctA2)) in
+  let x2 = aead_dec(hmac(ckr2, b01), cA2, hdrad(hT, e2, ctA2, ekA2)) in
+  event RecvRoot(e2, ekB1, ctA2, rk2);
+  (* send epoch 3 *)
+  new s3: bitstring;
+  let ctB3 = kem_enc(ekA2, s3) in
+  new dkB3: kemsk;
+  let ekB3 = kempk(dkB3) in
+  let rk3 = kdf_rk(rk2, s3, rootctx(e3, ekA2, ctB3)) in
+  let cks3 = kdf_ck(rk2, s3, rootctx(e3, ekA2, ctB3)) in
+  event SendRoot(e3, ekA2, ctB3, rk3);
+  out(c, (e3, ctB3, ekB3, aead_enc(hmac(cks3, b01), m3, hdrad(hT, e3, ctB3, ekB3)))).
+
+process
+  new ikA: sigsk; new ikB: sigsk;
+  out(c, (sigpk(ikA), sigpk(ikB)));
+  ( Alice(ikA, sigpk(ikB)) | Bob(ikB, sigpk(ikA)) )
