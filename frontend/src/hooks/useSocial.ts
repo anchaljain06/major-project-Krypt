@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { socket } from "../services/socket";
+import { apiFetch, apiPostJson } from "../services/api";
 import toast from "react-hot-toast";
 
 export function useSocial(
@@ -23,8 +24,8 @@ export function useSocial(
     }
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/users/search?q=${searchQuery}&current_user=${user}`,
+        const res = await apiFetch(
+          `/api/users/search?q=${encodeURIComponent(searchQuery)}&current_user=${encodeURIComponent(user)}`,
         );
         if (!res.ok) return setSearchResults([]);
         const data = await res.json();
@@ -49,10 +50,13 @@ export function useSocial(
       { url: `blocked/${user}`, setter: setBlockedUsers, key: "blocked" },
     ];
     endpoints.forEach(({ url, setter, key }) => {
-      fetch(`${import.meta.env.VITE_API_URL}/api/${url}`)
+      apiFetch(`/api/${url}`)
         .then((res) => res.json())
         .then((data) => {
           if (data && data[key]) setter(data[key]);
+        })
+        .catch(() => {
+          // 401 is handled globally by apiFetch (logout); other failures leave lists empty.
         });
     });
   }, [user]);
@@ -61,14 +65,10 @@ export function useSocial(
     async (targetUser: string) => {
       if (targetUser === user) return toast.error("You cannot add yourself!");
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/request/send`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender: user, receiver: targetUser }),
-          },
-        );
+        const res = await apiPostJson("/api/request/send", {
+          sender: user,
+          receiver: targetUser,
+        });
         const data = await res.json();
         if (!res.ok)
           return toast.error(data.error || "Failed to send request.");
@@ -90,14 +90,10 @@ export function useSocial(
   const acceptRequest = useCallback(
     async (requester: string) => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/request/accept`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender: requester, receiver: user }),
-          },
-        );
+        const res = await apiPostJson("/api/request/accept", {
+          sender: requester,
+          receiver: user,
+        });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || "Failed to accept request.");
@@ -119,14 +115,10 @@ export function useSocial(
   const rejectRequest = useCallback(
     async (requester: string) => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/request/reject`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender: requester, receiver: user }),
-          },
-        );
+        const res = await apiPostJson("/api/request/reject", {
+          sender: requester,
+          receiver: user,
+        });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || "Failed to reject request.");
@@ -147,14 +139,10 @@ export function useSocial(
   const revokeRequest = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/request/revoke`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender: user, receiver: targetUser }),
-          },
-        );
+        const res = await apiPostJson("/api/request/revoke", {
+          sender: user,
+          receiver: targetUser,
+        });
         const data = await res.json();
         if (!res.ok)
           return toast.error(data.error || "Failed to revoke request.");
@@ -175,10 +163,9 @@ export function useSocial(
   const blockUser = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/block`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blocker: user, blocked: targetUser }),
+        const res = await apiPostJson("/api/block", {
+          blocker: user,
+          blocked: targetUser,
         });
         const data = await res.json();
         if (!res.ok) return toast.error(data.error);
@@ -199,10 +186,9 @@ export function useSocial(
   const unblockUser = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/unblock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blocker: user, blocked: targetUser }),
+        const res = await apiPostJson("/api/unblock", {
+          blocker: user,
+          blocked: targetUser,
         });
         if (!res.ok) {
           const data = await res.json();

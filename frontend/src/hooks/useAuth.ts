@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
-import { socket } from "../services/socket";
+import { socket, connectSocket, disconnectSocket } from "../services/socket";
+import { apiPostJson, setUnauthorizedHandler, notifyUnauthorized } from "../services/api";
+import { getToken, setToken, clearToken } from "../services/authToken";
 import {
   generateUserIdentityKeys,
   exportPublicIdentity,
@@ -17,10 +19,47 @@ import {
   importChatBackup,
 } from "../crypto/vault";
 
+// sessionStorage key for a one-shot message shown after a forced reload
+const FLASH_KEY = "krypt_flash";
+
+/**
+ * Ends the server session after the token was rejected (REST 401 or socket
+ * "unauthorized"): drop the token and socket, then reload into the login screen.
+ */
+let isExpiring = false;
+function expireSession() {
+  if (isExpiring) return;
+  isExpiring = true;
+  clearToken();
+  disconnectSocket();
+  localStorage.removeItem("currentUser");
+  sessionStorage.setItem(FLASH_KEY, "Session expired. Please log in again.");
+  window.location.reload();
+}
+
 export function useAuth() {
   const [user, setUser] = useState(localStorage.getItem("currentUser") || "");
   const [myPrivateKey, setMyPrivateKey] = useState<UserIdentityKeys | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Route every token rejection (REST or socket) to the same logout path.
+  useEffect(() => {
+    const flash = sessionStorage.getItem(FLASH_KEY);
+    if (flash) {
+      sessionStorage.removeItem(FLASH_KEY);
+      toast.error(flash);
+    }
+
+    setUnauthorizedHandler(expireSession);
+    const onConnectError = (err: Error) => {
+      if (err?.message === "unauthorized") notifyUnauthorized();
+    };
+    socket.on("connect_error", onConnectError);
+    return () => {
+      setUnauthorizedHandler(null);
+      socket.off("connect_error", onConnectError);
+    };
+  }, []);
 
   // Auto-restore private identity keys from encrypted cache on page refresh
   useEffect(() => {
@@ -28,7 +67,8 @@ export function useAuth() {
     const restoreKey = async () => {
       const cachedPassword = sessionStorage.getItem("sessionPassword");
       const cachedKey = localStorage.getItem(`encryptedPrivateKey_${user}`);
-      if (!cachedPassword || !cachedKey) return;
+      // Without a server token the session cannot be resumed; require login.
+      if (!getToken() || !cachedPassword || !cachedKey) return;
       try {
         const decryptedPrivateStr = await decryptVaultData(
           cachedKey,
@@ -52,6 +92,9 @@ export function useAuth() {
     vaultPassword?: string,
   ) => {
     setIsLoading(true);
+    // Any previous session token is discarded; login/registration run unauthenticated.
+    clearToken();
+    let sessionToken = "";
     try {
       if (isRegistering) {
         const salt = srp.generateSalt();
@@ -61,26 +104,23 @@ export function useAuth() {
         const keys = generateUserIdentityKeys();
         const publicKeyStr = exportPublicIdentity(keys);
 
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/register`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username,
-              publicKey: publicKeyStr,
-              srpSalt: salt,
-              srpVerifier: verifier,
-            }),
-          },
-        );
+        const res = await apiPostJson("/api/register", {
+          username,
+          publicKey: publicKeyStr,
+          srpSalt: salt,
+          srpVerifier: verifier,
+        });
 
+        const registerData = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const data = await res.json();
           throw new Error(
-            data.error || "Registration failed. Username might be taken.",
+            registerData.error || "Registration failed. Username might be taken.",
           );
         }
+        if (typeof registerData.token !== "string" || !registerData.token) {
+          throw new Error("Registration failed: server did not issue a session.");
+        }
+        sessionToken = registerData.token;
 
         setMyPrivateKey(keys);
         const privateKeyStr = exportPrivateIdentity(keys);
@@ -95,17 +135,10 @@ export function useAuth() {
         // User must click Download Vault in the UI.
       } else {
         const clientEphemeral = srp.generateEphemeral();
-        const challengeRes = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/login/challenge`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username,
-              clientEphemeralPublic: clientEphemeral.public,
-            }),
-          },
-        );
+        const challengeRes = await apiPostJson("/api/login/challenge", {
+          username,
+          clientEphemeralPublic: clientEphemeral.public,
+        });
 
         if (!challengeRes.ok) {
           const data = await challengeRes.json();
@@ -122,23 +155,20 @@ export function useAuth() {
           privateKey,
         );
 
-        const verifyRes = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/login/verify`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username,
-              clientEphemeralPublic: clientEphemeral.public,
-              clientSessionProof: clientSession.proof,
-            }),
-          },
-        );
+        const verifyRes = await apiPostJson("/api/login/verify", {
+          username,
+          clientEphemeralPublic: clientEphemeral.public,
+          clientSessionProof: clientSession.proof,
+        });
 
+        const verifyData = await verifyRes.json().catch(() => ({}));
         if (!verifyRes.ok) {
-          const data = await verifyRes.json();
-          throw new Error(data.error || "Invalid password!");
+          throw new Error(verifyData.error || "Invalid password!");
         }
+        if (typeof verifyData.token !== "string" || !verifyData.token) {
+          throw new Error("Login failed: server did not issue a session.");
+        }
+        sessionToken = verifyData.token;
 
         // If vaultFile is missing, try to load from secure cache
         let privateKeyStrToImport = "";
@@ -214,10 +244,10 @@ export function useAuth() {
         setMyPrivateKey(loadedKeys);
       }
 
+      setToken(sessionToken);
       localStorage.setItem("currentUser", username);
       sessionStorage.setItem("sessionPassword", password);
       setUser(username);
-      socket.connect();
     } catch (err: any) {
       console.error("Login Error:", err);
       toast.error(err?.message || "An unknown error occurred during login.");
@@ -226,23 +256,16 @@ export function useAuth() {
     }
   };
 
+  // Connect the socket once keys are loaded (after login, registration or restore).
+  // The server binds the socket to the user from the token; no register_socket emit.
   useEffect(() => {
     if (!user || !myPrivateKey) return;
-
-    const onConnect = () => {
-      socket.emit("register_socket", user);
-    };
-
-    if (socket.connected) {
-      onConnect();
+    const token = getToken();
+    if (!token) {
+      notifyUnauthorized();
+      return;
     }
-
-    socket.on("connect", onConnect);
-    socket.connect();
-
-    return () => {
-      socket.off("connect", onConnect);
-    };
+    connectSocket(token);
   }, [user, myPrivateKey]);
 
   const handleDownloadVault = async (vaultPassword?: string) => {
@@ -346,6 +369,8 @@ export function useAuth() {
     }
 
     // Secure sign out
+    disconnectSocket();
+    clearToken();
     localStorage.removeItem("currentUser");
     sessionStorage.removeItem("sessionPassword");
     setMyPrivateKey(null);
