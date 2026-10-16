@@ -1,0 +1,20 @@
+{
+  "name": "krypt-witness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Actions witness that checks and cosigns Krypt key transparency tree heads.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "witness": "node witness.mjs",
+    "keygen": "node scripts/keygen.mjs",
+    "vendor": "node scripts/vendor-shared.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@noble/post-quantum": "0.7.1"
+  }
+}
