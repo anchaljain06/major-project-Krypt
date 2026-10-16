@@ -35,7 +35,7 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
         <div className="bg-linear-to-r from-indigo-600 to-indigo-800 px-8 py-10 text-center text-white">
           <h1 className="text-3xl font-extrabold tracking-tight mb-2">Krypt</h1>
           <p className="text-indigo-200 text-sm font-medium">
-            Zero-Knowledge Authentication
+            SRP-6a Password Login (Augmented PAKE)
           </p>
         </div>
 
