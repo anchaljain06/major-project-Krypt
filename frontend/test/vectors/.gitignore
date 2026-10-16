@@ -1,0 +1,4 @@
+# Raw KAT downloads and the large vector files (fetch with: npm run vectors:fetch)
+raw/
+wycheproof-mlkem-1024.json
+wycheproof-mldsa87-verify.json
