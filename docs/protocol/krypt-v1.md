@@ -1,0 +1,539 @@
+# Krypt v1 protocol specification
+
+Status: implemented in `frontend/src/crypto/` (branch `wt/protocol-core`).
+This document is the source of truth. If the code and this document disagree,
+the code has a bug or this document needs a reviewed change (see section 13).
+
+Design rationale lives in `Krypt_Major_Project_Strategy.md` sections 4.2-4.9.
+This document fixes every byte.
+
+| Module | Role |
+|---|---|
+| `encoding.ts` | Length-prefixed encoding, labels, strict base64url, constant-time compare |
+| `kdf.ts` | SHA-256, HMAC-SHA-256, HKDF-SHA-256 (Web Crypto), root/chain/message-key KDFs |
+| `pq.ts` | ML-KEM-768, ML-KEM-1024, X-Wing, ML-DSA-87 wrappers with exact length checks |
+| `prekeys.ts` | Prekey generation, signing, wire shapes, bundle verification, `PrekeyStore` |
+| `handshake.ts` | Krypt-X3K `initiate` / `respond`, transcript `T` |
+| `envelope.ts` | Header and envelope types, canonical header bytes, JSON and binary codecs |
+| `session.ts` | `SessionManager`: the KEM ratchet state machine |
+| `session-store.ts` | `SessionStore` (memory + encrypted IndexedDB), IndexedDB `PrekeyStore` |
+
+---
+
+## 1. Notation and encoding
+
+- `‖` is concatenation. **Every** composite input in this protocol is encoded
+  with `lp(...)`, never by raw concatenation:
+
+  ```
+  lp(x1, ..., xk) = u32be(len(x1)) ‖ x1 ‖ ... ‖ u32be(len(xk)) ‖ xk
+  ```
+
+  Length prefixes make the encoding injective: two different field lists can
+  never produce the same bytes, so a key of one type can never be read as a key
+  of another type (the PQXDH encoding fix).
+- `u32(x)` is the 4-byte big-endian encoding of an integer `0 ≤ x < 2^32`.
+  Inside `lp` it is a 4-byte field like any other.
+- `ε` is the empty byte string. An absent optional field is encoded as `ε`
+  (its length prefix is `00 00 00 00`). Because key ids are never 0 and keys are
+  never empty, `ε` is unambiguous.
+- Strings (usernames, labels, suite names, content types) are UTF-8 bytes.
+- `H(x)` = SHA-256. `HMAC(k, m)` = HMAC-SHA-256. `HKDF(salt, ikm, info, L)` =
+  HKDF-SHA-256 (RFC 5869) via Web Crypto. `0^32` is 32 zero bytes.
+- Base64url (RFC 4648 section 5, **no padding**) is used only at the network
+  edge. Decoding is strict: characters outside `[A-Za-z0-9_-]`, padding,
+  length `≡ 1 (mod 4)`, and non-zero unused trailing bits are all rejected, so
+  every byte string has exactly one accepted encoding.
+
+### 1.1 Labels
+
+| Label (ASCII) | Used in |
+|---|---|
+| `Krypt-v1` | First field of the handshake transcript `T` |
+| `Krypt-X3K` | Handshake HKDF info |
+| `Krypt-init` | Initiator signature `σ_A` |
+| `Krypt-SPK` | Signed prekey signature |
+| `Krypt-OPK` | One-time prekey signature |
+| `Krypt-RK` | Root KDF info |
+| `Krypt-MK` | Message key + IV HKDF info |
+| `Krypt-AAD-v1` | AES-GCM associated data |
+| `krypt-session-v1` | Associated data for session state encrypted at rest |
+| `mlkem768`, `xwing` | Ratchet suite identifiers |
+
+## 2. Algorithms and key hierarchy
+
+| Use | Algorithm | Sizes (bytes) |
+|---|---|---|
+| Identity signature `IK` | ML-DSA-87 (FIPS 204) | pk 2592, sk 4896, sig 4627 |
+| Signed prekey `SPK`, one-time prekeys `OPK` | ML-KEM-1024 (FIPS 203) | ek 1568, dk 3168, ct 1568, ss 32 |
+| Ratchet keys, suite `mlkem768` | ML-KEM-768 | ek 1184, dk 2400, ct 1088, ss 32 |
+| Ratchet keys, suite `xwing` | X-Wing (ML-KEM-768 + X25519), `ml_kem768_x25519` | ek 1216, dk 32 (seed), ct 1120, ss 32 |
+| Symmetric | HKDF/HMAC-SHA-256, AES-256-GCM (96-bit IV, 128-bit tag) | |
+
+ML-DSA signatures sign a domain-separated message (`lp(label, ...)`) with the
+FIPS 204 context string left empty. The label already separates every use; an
+empty context keeps the signatures verifiable by any FIPS 204 implementation.
+
+```text
+IK (ML-DSA-87, long-term) ──signs──> SPK, OPK[i] (ML-KEM-1024)
+                          ──signs──> σ_A over H(T) (initiator only)
+
+ss1 = KEM(SPK), ss2 = KEM(OPK) ──HKDF "Krypt-X3K"──> RK0 ‖ CK0       (epoch 0)
+
+RK ──KDF_RK(RK, ss, ctx)──> RK' ‖ CK_e     (one root step per new epoch e)
+
+CK ──HMAC 0x02──> CK'    (chain step)
+CK ──HMAC 0x01──> mk ──HKDF "Krypt-MK"──> key(32) ‖ iv(12)   (one per message)
+```
+
+The identity key used today is the ML-DSA-87 key in the account's existing
+identity bundle (`mlkem.ts`): the server's `identityKey` field is the JSON
+string `{"version": ..., "kem": <base64>, "dsa": <base64>}` (standard base64
+with padding). Krypt v1 reads only `dsa`; the long-term ML-KEM-1024 `kem` key is
+not used by v1 (prekeys replace it).
+
+## 3. Prekeys
+
+Bob generates and uploads, once and then on refill:
+
+- one **signed prekey** `SPK` (ML-KEM-1024), rotated weekly;
+- `N` (default 100) **one-time prekeys** `OPK[i]` (ML-KEM-1024).
+
+Each prekey has a `keyId`: a random integer in `[1, 2^31 - 1]` (fits a Postgres
+`int4` and a JSON number). Signatures:
+
+```
+sig_SPK = Sign(IK_B, lp("Krypt-SPK", u32(keyId), ek_SPK))
+sig_OPK = Sign(IK_B, lp("Krypt-OPK", u32(keyId), ek_OPK))
+```
+
+### 3.1 Wire shapes (shared with the backend, `POST /prekeys`, `GET /bundle/:user`)
+
+```jsonc
+// upload
+{ "signedPrekey":   { "keyId": 123, "publicKey": "<b64url>", "signature": "<b64url>" },
+  "oneTimePrekeys": [ { "keyId": 456, "publicKey": "<b64url>", "signature": "<b64url>" } ] }
+
+// bundle (one OPK row is claimed and deleted atomically by the server)
+{ "username": "bob",
+  "identityKey": "{\"version\":...,\"kem\":\"...\",\"dsa\":\"...\"}",
+  "signedPrekey":  { "keyId": 123, "publicKey": "...", "signature": "..." } | null,
+  "oneTimePrekey": { "keyId": 456, "publicKey": "...", "signature": "..." } | null }
+```
+
+`verifyBundle` (initiator) rejects the bundle unless: `signedPrekey` is present,
+every base64url field decodes strictly to the exact length, both signatures
+verify under the `dsa` key parsed from `identityKey`, and the two key ids differ.
+A missing `oneTimePrekey` is allowed (empty pool: SPK-only fallback, section 4.3).
+Identity-key trust (key transparency, step 3.1 of the plan) is a separate hook:
+`SessionManager` calls `trustIdentity(username, dsaPub)` before using any key.
+
+### 3.2 Private halves and lifecycle (`PrekeyStore`)
+
+- OPK private keys are deleted after the first successful handshake that used
+  them (after AES-GCM verified the first message, section 6).
+- SPK private keys stay until rotation plus a grace period (recommended: delete
+  the previous SPK two weeks after its replacement is uploaded) so that inits
+  already in flight still work. Deleting an SPK also deletes its replay cache.
+- Replay cache: for every handshake accepted **without** an OPK, Bob stores
+  `H(T)` under that SPK's id and rejects a second init with the same `H(T)`.
+  Handshakes that used an OPK need no cache entry: the OPK private key is gone,
+  so a replay cannot be decapsulated.
+
+## 4. Handshake: Krypt-X3K
+
+### 4.1 Initiator (Alice)
+
+1. `bundle = fetchBundle("bob")`; `verifyBundle(bundle)`; `trustIdentity("bob", IK_B)`.
+2. `(ct1, ss1) = Encaps_1024(SPK_B)`.
+3. If the bundle has an OPK: `(ct2, ss2) = Encaps_1024(OPK_B)`; else `ct2 = ss2 = ε`.
+4. `(ek_A¹, dk_A¹) = KeyGen_suite()` (first ratchet key, suite `mlkem768` or `xwing`).
+5. Transcript:
+
+   ```
+   T = lp("Krypt-v1", suite, "alice", "bob", IK_A, IK_B,
+          u32(spkId), SPK_B, u32(opkId) | ε, OPK_B | ε,
+          ct1, ct2 | ε, ek_A¹)
+   ```
+
+6. `RK0 ‖ CK0 = HKDF(0^32, lp(ss1, ss2 | ε), lp("Krypt-X3K", H(T)), 64)`
+7. `σ_A = Sign(IK_A, lp("Krypt-init", H(T)))`
+8. `sessionId = H(T)` (32 bytes).
+
+Alice's state: `RK = RK0`, `CKs = CK0` (epoch 0), no receiving chain, her
+pending ratchet pair `(ek_A¹, dk_A¹)`. The **init header**
+`{spkId, opkId, ct1, ct2, ek = ek_A¹, sig = σ_A}` is attached to **every**
+epoch-0 message until a message from Bob is received (lost first message,
+section 4.4).
+
+### 4.2 Responder (Bob)
+
+On an envelope whose `sessionId` he does not have and which carries `init`:
+
+1. Check `epoch = 0`, `pn = 0`, no `kem` field; reject tombstoned session ids.
+2. `IK_A = fetchIdentity(from)`; `trustIdentity(from, IK_A)`. (Bob does **not**
+   fetch Alice's bundle: that would consume one of her OPKs.)
+3. Load `SPK_B[spkId]` and, if `opkId` is set, `OPK_B[opkId]`; missing → reject.
+4. Rebuild `T` from his own copies of `SPK_B`, `OPK_B`, `IK_B` and the header's
+   `ct1, ct2, ek`; require `H(T) = sessionId`.
+5. SPK-only (`opkId = null`): reject if `H(T)` is in the SPK's replay cache.
+6. Verify `σ_A` under `IK_A`.
+7. `ss1 = Decaps(dk_SPK, ct1)`, `ss2 = Decaps(dk_OPK, ct2)` or `ε`; derive `RK0 ‖ CK0`.
+8. Set `RK = RK0`, `CKr = CK0` (epoch 0), `CKs = ⊥`, peer ratchet key `ek_A¹`.
+9. Decrypt the message on `CK0`. **Only if AES-GCM verifies**: persist the
+   session, delete `dk_OPK`, and (SPK-only) record `H(T)` in the replay cache.
+
+Why Alice signs: a KEM authenticates only the receiver. The cost is
+deniability: Bob can prove that Alice started the session.
+
+### 4.3 Empty one-time pool
+
+If the server has no OPK left, the bundle's `oneTimePrekey` is `null` and the
+handshake uses `ss1` only. Epoch-0 messages are then exposed if `dk_SPK` leaks
+before it is deleted at rotation; later epochs are protected by the ratchet.
+
+### 4.4 Lost first message and repeated init headers
+
+Every epoch-0 message from Alice carries the same init header (until she
+receives anything from Bob). If message 0 is lost, Bob starts the session from
+whichever epoch-0 message arrives first and caches skipped keys for the earlier
+numbers. A repeated init header whose `sessionId` matches Bob's live session is
+the **same** session: it goes down the normal chain path and never resets state.
+
+### 4.5 Session replacement and simultaneous initiation
+
+There is at most one live session per peer. Each peer record also keeps the ids
+of the last 32 closed or replaced sessions (tombstones). When an init header
+with session id `X` arrives from peer `P` and the live session is `S`:
+
+| Condition | Action |
+|---|---|
+| `X` is tombstoned | Reject `SESSION_CLOSED` (covers replays of closed sessions) |
+| `S.sessionId = X` | Same session; normal chain processing |
+| No `S` | Respond (section 4.2) |
+| `S` was initiated by us and **unconfirmed** (nothing received from `P` on it yet) | Simultaneous initiation. Keep the session whose id is **bytewise smaller**. If `X < S.sessionId`: respond to `X`, tombstone `S`. Otherwise reject `SESSION_SUPERSEDED` and keep `S` |
+| Otherwise (`S` confirmed, or we are `S`'s responder) | The peer started over (lost state, new device). Respond to `X`, tombstone `S` |
+
+Both sides know both ids, so they apply the same comparison and converge on
+the same session without any extra round trip. The rule uses the transcript
+hash, not usernames, so the relay cannot choose the winner. Messages already
+sent on the losing session cannot be decrypted by the peer
+(`SESSION_SUPERSEDED`); the application should re-send them.
+
+All of these actions happen only after the incoming init passes every check in
+section 4.2, including AES-GCM verification of its message.
+
+## 5. The KEM ratchet
+
+### 5.1 State
+
+| Field | Meaning |
+|---|---|
+| `sessionId`, `peer`, `role`, `suite` | Fixed at the handshake |
+| `rk` | Root key |
+| `sendEpoch`, `cks`, `ns`, `pn` | Current sending chain: epoch (`-1` = none), chain key (`⊥` = none), next message number, length of the previous sending chain |
+| `sendKem` | `(ct, ek)` attached to headers of the current sending chain (epoch ≥ 1) |
+| `init` | Init header (initiator, epoch 0, until confirmed) |
+| `peerAcked` | The peer has proved it holds our current chain's ratchet data |
+| `ourEk`, `ourDk` | Our pending ratchet pair; the peer's next epoch encapsulates to it |
+| `peerEk` | The peer's newest `ek` that we have not yet encapsulated to |
+| `recvEpoch`, `ckr`, `nr` | Current receiving chain |
+| `skipped` | Cached message keys `(epoch, n) → mk` with an expiry time |
+| `established` | Something from the peer has been authenticated on this session |
+
+Epoch parity is fixed: the initiator sends on even epochs (0, 2, 4, ...), the
+responder on odd epochs (1, 3, 5, ...). An epoch number therefore names exactly
+one chain and its direction.
+
+### 5.2 Chain step and message encryption
+
+```
+mk  = HMAC(CK, 0x01)
+CK' = HMAC(CK, 0x02)
+key ‖ iv = HKDF(0^32, mk, "Krypt-MK", 44)        // key = 32 bytes, iv = 12 bytes
+body = AES-256-GCM(key, iv, plaintext, AAD)     // ciphertext ‖ 16-byte tag
+```
+
+Each `mk` is used once. The IV is derived because the key is unique per
+message; the pair (key, IV) can repeat only if chain state is rolled back
+(section 7).
+
+### 5.3 Root step and the epoch rule
+
+```
+ctx(e, ek, ct)    = lp(u32(e), H(ek), H(ct))
+KDF_RK(RK, ss, c) = HKDF(salt = RK, ikm = ss, info = lp("Krypt-RK", c), 64) → RK' ‖ CK
+```
+
+**Epoch rule:** every root step uses the epoch number of the chain it creates.
+`ctx` binds the KEM output to the exact key and ciphertext (`H(ek)`), so the
+protocol stays safe even with a KEM that does not bind its public key.
+
+### 5.4 Sending (`encrypt`)
+
+1. If there is no session: run the handshake (section 4.1). `CKs = CK0`, `sendEpoch = 0`.
+2. **Send step** if `CKs = ⊥` (Bob's bootstrap) or (`peerEk` is set and
+   `ns ≥ K`, see 5.6):
+   - `(ct, ss) = Encaps_suite(peerEk)`; `(ek', dk') = KeyGen_suite()`
+   - `e' = recvEpoch + 1` (the epoch after the chain that delivered `peerEk`)
+   - `(RK, CKs) = KDF_RK(RK, ss, ctx(e', peerEk, ct))`
+   - `pn = ns` (0 if there was no sending chain), `ns = 0`, `sendEpoch = e'`,
+     `sendKem = (ct, ek')`, `ourEk, ourDk = ek', dk'`, `peerEk = ⊥`,
+     `peerAcked = false`, `init = ⊥`.
+3. Chain step on `CKs`; the header gets `n = ns`, `pn`, and:
+   - `kem = sendKem` and/or `init` **while `peerAcked = false`**;
+   - nothing extra once `peerAcked = true` (only reachable when K > 1).
+4. **Persist** the advanced state (`CKs'`, `ns + 1`) **before** encrypting and
+   returning the envelope. If persisting fails, nothing is encrypted.
+
+**Bob's bootstrap** is step 2 with `CKs = ⊥`: his first send encapsulates to
+`ek_A¹` and creates epoch 1 with `ctx(1, ek_A¹, ct_B)`.
+
+Alice's send step happens lazily at her next `encrypt`, not at the moment she
+receives Bob's new key. The bytes on the wire are identical to the eager
+description in the strategy; lazy evaluation means a state snapshot taken
+between receive and send holds no fresh `dk` yet.
+
+### 5.5 Receiving (`decrypt`)
+
+All work happens on a copy of the state. **The copy is committed only after
+AES-GCM verifies**; on any error the stored state is unchanged.
+
+1. Validate the envelope strictly (section 8); `to` must be us.
+2. Tombstoned `sessionId` → `SESSION_CLOSED`. Unknown `sessionId`: with `init`,
+   go to section 4.2 / 4.5; without, `UNKNOWN_SESSION`.
+3. `suite` must equal the session's suite. `epoch` must have the peer's parity.
+4. If `(epoch, n)` is in the skipped cache: use that `mk` (removed on success).
+5. Else if `epoch = recvEpoch`: `n < nr` → `DUPLICATE`; `n - nr > MAX_SKIP` →
+   `TOO_MANY_SKIPPED`; otherwise cache `mk` for `nr..n-1` and use `mk_n`.
+6. Else if `epoch > recvEpoch` (a new chain from the peer):
+   - require `epoch = sendEpoch + 1`, our `dk` present and a `kem` field;
+     otherwise `BAD_EPOCH`;
+   - finish the previous receiving chain: `pn < nr` → `BAD_HEADER`;
+     cache `mk` for `nr..pn-1` (gap capped by `MAX_SKIP`);
+   - **receive step:** `ss = Decaps(ourDk, kem.ct)`;
+     `(RK, CKr) = KDF_RK(RK, ss, ctx(epoch, ourEk, kem.ct))`; erase `ourDk`;
+   - cache `mk` for `0..n-1` of the new chain, use `mk_n`;
+   - `peerEk = kem.ek`, `peerAcked = true`, `init = ⊥`, drop skipped keys of
+     epochs older than `epoch - 2`.
+7. Else (`epoch < recvEpoch`, key not cached) → `STALE_EPOCH`.
+8. AES-GCM decrypt with the header as AAD. Failure → `AUTH_FAILED`.
+9. Commit: `established = true`, store the new skipped keys, persist.
+
+Why there are no ratchet collisions: a root step fires only when a **new peer
+key** arrives, never because of arrival timing, and epochs alternate by parity,
+so both sides apply root updates in the same order.
+
+### 5.6 Sparse mode (`ratchetEveryK`, experiment E7)
+
+`K = 1` (default) is the alternating ratchet: every message of a new epoch
+carries `(ct, ek)`, and a party ratchets on its first send after receiving the
+peer's new key. With `K > 1` a party keeps sending on its current chain until it
+has sent `K` messages on it, and only then performs the send step. Once the peer
+has acknowledged the chain's ratchet data (`peerAcked`), headers stop carrying
+it, which is where the bandwidth saving comes from. Larger `K` means fewer
+ratchet steps and therefore slower healing (section 9).
+
+## 6. Skipped keys and limits
+
+| Limit | Value | Enforced |
+|---|---|---|
+| `MAX_SKIP` | 1000 keys per chain per message | Gap in the current chain, the `pn` catch-up, and the new chain's `n` |
+| `MAX_SKIPPED_TOTAL` | 2000 keys per session | Oldest entries evicted first |
+| `SKIPPED_TTL` | 7 days | Expired keys deleted on every operation |
+| Epoch window | Current and previous receiving epoch | Keys of older epochs deleted at each receive step |
+| Usernames | 1-64 UTF-8 bytes | Envelope parser |
+| `contentType` | 1-64 UTF-8 bytes | Envelope parser |
+| `body` | 16 bytes to 64 MiB + 16 | Envelope parser |
+| `epoch`, `n`, `pn` | `0 ≤ x < 2^32` | Envelope parser; encrypt refuses to wrap `n` |
+| Tombstones | 32 per peer | Session store |
+
+Skipped keys are created only when a message authenticates, so an attacker who
+cannot produce valid ciphertexts cannot fill the cache.
+
+## 7. No-rollback rules (nonce safety)
+
+A rolled-back chain would reuse `mk` (and so the AES-GCM key and IV) for a new
+plaintext, which breaks GCM completely. Three rules prevent it:
+
+1. **Persist before send.** `encrypt` saves the advanced chain before it encrypts.
+2. **One writer.** Every `encrypt`/`decrypt` runs inside
+   `lock("krypt-session-" + peer, ...)`. The default lock is `navigator.locks`
+   (shared across tabs of the origin) when present, else an in-process mutex.
+   The state is reloaded from the store inside the lock, so a second tab never
+   works from a stale copy.
+3. **No ratchet state in backups.** Session state is never exported in vault or
+   chat backups (enforced at integration, `vault.ts`).
+
+## 8. Wire format
+
+### 8.1 Header (canonical bytes, used as AAD)
+
+```
+header = lp(u32(1), suite, sessionId, from, to, contentType,
+            u32(epoch), u32(n), u32(pn), kemField, initField)
+
+kemField  = lp(kem.ct, kem.ek)                                  or ε
+initField = lp(u32(spkId), u32(opkId) | ε, ct1, ct2 | ε, ek, sig)  or ε
+
+AAD = lp("Krypt-AAD-v1", header)
+```
+
+Every field of the header, including `contentType`, `from`, `to`, `sessionId`
+(= `H(T)`), `epoch`, `n`, `pn` and all KEM material, is authenticated.
+
+### 8.2 JSON envelope (what the relay carries)
+
+```jsonc
+{
+  "v": 1,
+  "suite": "mlkem768",              // or "xwing"
+  "sessionId": "<b64url 32 B>",
+  "from": "alice",
+  "to": "bob",
+  "contentType": "text",            // "text" | "image" | "audio" | any 1-64 byte string
+  "epoch": 2,
+  "n": 0,
+  "pn": 3,
+  "kem":  { "ct": "<b64url>", "ek": "<b64url>" },                 // optional
+  "init": { "spkId": 123, "opkId": 456, "ct1": "...", "ct2": "...",
+            "ek": "...", "sig": "..." },                           // optional, epoch 0 only; opkId/ct2 may be null
+  "body": "<b64url ciphertext ‖ tag>"
+}
+```
+
+The parser is strict: unknown keys, missing keys, wrong JSON types, non-integer
+numbers, out-of-range values, non-canonical base64url, and wrong byte lengths
+(per suite) are all `MALFORMED`. `kem` and `init` are omitted, never `null`.
+
+### 8.3 Binary envelope
+
+`binary = lp(header, body)`. It carries exactly the same information as the
+JSON form and is provided for the bandwidth experiment (E5).
+
+### 8.4 Sizes at K = 1 (suite `mlkem768`)
+
+| Message | KEM material in header |
+|---|---|
+| Alice, epoch 0 | init: 2 × 1568 (ct1, ct2) + 1184 (ek) + 4627 (sig) ≈ 8.9 KB |
+| Any later message | kem: 1088 (ct) + 1184 (ek) = 2272 B |
+
+## 9. Security properties (claims, stated precisely)
+
+| Property | Claim | Not claimed |
+|---|---|---|
+| Confidentiality | IND-CCA KEM + HKDF + AES-GCM; PQ against harvest-now-decrypt-later | Security if the device is owned |
+| Forward secrecy | A compromise at time t does not reveal messages whose keys were already erased | Messages whose skipped keys are still cached (hence the cap and TTL) |
+| Post-compromise security | Against a **passive** attacker holding party P's full state: secrecy returns at P's next ratchet step, the first message P sends after receiving the peer's next new `ek`. Messages in P's current epoch and in the peer's next epoch stay exposed (the peer encapsulates to P's stolen `dk`) | Against an **active** attacker who uses the stolen state to inject keys (impossible for any ratchet) |
+| Authentication | Injective agreement on the handshake transcript, given Bob's `H(T)` replay cache for SPK-only handshakes | Deniability (the initiator signs) |
+| Ordering | Any delivery order inside MAX_SKIP decrypts; replays are rejected | Unbounded gaps |
+
+DH ratchets also need a round trip to heal both directions. What KEMs cost is
+bandwidth. With sparse mode (`K > 1`) P's "next ratchet step" happens only after
+P has sent `K` messages on its current chain, so healing is delayed accordingly.
+
+Further limits that an examiner should hear from us first:
+
+- noble's ML-KEM / ML-DSA make no constant-time claim; X-Wing mode hedges this
+  with X25519.
+- Liveness is not claimed against a malicious relay: it can drop messages, and
+  by reordering a simultaneous-initiation race it can make the two sides keep
+  different sessions (both then report `SESSION_CLOSED`/`SESSION_SUPERSEDED`;
+  the app recovers with `closeSession` and a new handshake). It cannot read,
+  forge or replay messages.
+- JavaScript cannot guarantee that erased keys are gone from memory.
+
+## 10. Error policy
+
+`decrypt` throws `DecryptError` with a `code`; nothing is returned and **no
+state changes** (stored session, prekeys, replay cache) happen on any error.
+A failed message does not close the session: otherwise any unauthenticated
+garbage could kill a conversation. The app drops the message and may show a
+neutral warning.
+
+| Code | Meaning |
+|---|---|
+| `MALFORMED` | Envelope failed strict parsing or length checks |
+| `UNSUPPORTED_VERSION` | `v ≠ 1` |
+| `NOT_FOR_ME` | `to` is not our username |
+| `UNKNOWN_SESSION` | No such session and no init header |
+| `SESSION_CLOSED` | Session id is tombstoned (closed or replaced) |
+| `SESSION_SUPERSEDED` | Init lost the simultaneous-initiation tie-break |
+| `UNKNOWN_PREKEY` | SPK or OPK private key not found (OPK already used) |
+| `INIT_REPLAY` | SPK-only init seen before (`H(T)` cache) |
+| `BAD_SIGNATURE` | `σ_A` does not verify, or `H(T) ≠ sessionId` |
+| `UNTRUSTED_IDENTITY` | `trustIdentity` refused the peer's key |
+| `BAD_EPOCH` | Epoch has the wrong parity, skips ahead, lacks ratchet data, or suite mismatch |
+| `BAD_HEADER` | Header fields contradict state (e.g. `pn < nr`) |
+| `DUPLICATE` | `n` already received in the current chain |
+| `STALE_EPOCH` | Message from an old epoch with no cached key |
+| `TOO_MANY_SKIPPED` | Gap larger than `MAX_SKIP` |
+| `AUTH_FAILED` | AES-GCM verification failed |
+
+Handshake-side failures while encrypting (bad bundle) throw `HandshakeError`
+with codes `NO_SIGNED_PREKEY`, `BAD_BUNDLE`, `BAD_PREKEY_SIGNATURE`,
+`UNTRUSTED_IDENTITY`.
+
+## 11. `SessionManager` API
+
+```ts
+new SessionManager({
+  self: { username: string, identity: { dsaPub: Uint8Array, dsaSec: Uint8Array } },
+  store: SessionStore,
+  prekeys: PrekeyStore,
+  fetchBundle: (username: string) => Promise<PrekeyBundleWire>,
+  fetchIdentity: (username: string) => Promise<string>,  // identityKey JSON (as in the bundle)
+  trustIdentity?: (username: string, dsaPub: Uint8Array) => Promise<boolean>, // default: accept
+  suite?: 'mlkem768' | 'xwing',          // ratchet suite for sessions we initiate (default mlkem768)
+  ratchetEveryK?: number,                // sparse mode, default 1
+  lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>,
+  now?: () => number,                    // ms clock, for TTL tests
+})
+
+encrypt(peer, plaintext: Uint8Array, contentType: string): Promise<EnvelopeV1>
+decrypt(env: unknown): Promise<{ peer, plaintext, contentType, sessionId, epoch, n }>
+getStatus(peer): Promise<SessionStatus | null>
+closeSession(peer): Promise<void>
+```
+
+The responder's suite is whatever the initiator chose (it is bound in `T`);
+both suites are always accepted.
+
+## 12. Session state at rest
+
+`SessionStore` stores one record per peer: `{ session, closed[] }`. The
+IndexedDB implementation serialises the record to JSON (bytes as base64url) and
+encrypts it with a caller-provided AES-GCM `CryptoKey` (derived from the vault
+key at integration): random 12-byte IV, `AAD = lp("krypt-session-v1", peer)`,
+so a record cannot be moved to another peer's slot. The same scheme protects
+prekey private keys in `IndexedDbPrekeyStore` (AAD label `krypt-prekeys-v1`).
+
+## 13. Changes relative to the strategy document
+
+The strategy (sections 4.2-4.9) is the design; these are the places where this
+spec had to choose or tighten something:
+
+1. **Transcript fields.** `T` also binds the suite id, both usernames and both
+   prekey ids (handoff section 11: algorithm ids, role ordering, identities).
+   Absent OPK fields are `ε`.
+2. **OPK signature label.** OPKs are signed under `Krypt-OPK`, not `Krypt-SPK`,
+   so the server cannot present a one-time key as a signed prekey or vice versa.
+3. **Composite KDF inputs are length-prefixed** too: `info` of the handshake,
+   root and AAD, and the handshake IKM `lp(ss1, ss2)`.
+4. **AAD.** The strategy's `AD = H(T) ‖ header` is `lp("Krypt-AAD-v1", header)`
+   with `H(T)` carried inside the header as `sessionId`.
+5. **Lazy send step** (section 5.4): wire-identical, smaller window for a
+   snapshot to capture a fresh `dk`.
+6. **Responder identity lookup** via `fetchIdentity`, so Bob never consumes
+   Alice's OPKs to check `σ_A`.
+7. **`pn` and the previous chain** are specified (Double-Ratchet style): the
+   header's `pn` lets the receiver cache keys left in its previous receiving
+   chain when a new epoch arrives.
+8. **Replay cache scope**: only SPK-only handshakes are cached; OPK handshakes
+   are protected by deleting the OPK. Tombstones additionally reject inits of
+   closed sessions without any public-key work.
+9. **Session replacement and simultaneous initiation** (section 4.5) were not
+   specified; the handoff's chain labels (`KRYPT/CK/v1`, ...) and hash-derived
+   nonce are superseded by the strategy's `0x01`/`0x02` chain step and the
+   HKDF-derived IV.
+10. **ML-DSA context string** is empty; domain separation is in the message.
