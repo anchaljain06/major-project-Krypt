@@ -2,6 +2,7 @@ import LoginForm from "./components/LoginForm";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import ImagePreview from "./components/ImagePreview";
+import VaultBackupModal from "./components/VaultBackupModal";
 import { useAuth } from "./hooks/useAuth";
 import { useSocial } from "./hooks/useSocial";
 import { useChat } from "./hooks/useChat";
@@ -16,6 +17,8 @@ export default function App() {
     handleLogin,
     handleLogout,
     handleDownloadVault,
+    needsVaultBackup,
+    confirmVaultBackup,
     handleExportChats,
     handleImportChats,
     handleWipeCache,
@@ -88,6 +91,30 @@ export default function App() {
           }}
         />
         <LoginForm onLogin={handleLogin} isLoading={isLoading} />
+      </div>
+    );
+  }
+
+  // After registration the dashboard stays locked until an encrypted vault is saved.
+  if (needsVaultBackup) {
+    return (
+      <div className="bg-slate-950 min-h-screen">
+        <Toaster
+          position="top-right"
+          reverseOrder={false}
+          toastOptions={{
+            style: {
+              background: "#1e293b",
+              color: "#f8fafc",
+              border: "1px solid #334155",
+            },
+          }}
+        />
+        <VaultBackupModal
+          user={user}
+          onDownload={handleDownloadVault}
+          onContinue={confirmVaultBackup}
+        />
       </div>
     );
   }

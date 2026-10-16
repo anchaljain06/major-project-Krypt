@@ -22,10 +22,17 @@ import {
   decryptVaultData,
   exportChatBackup,
   importChatBackup,
+  MIN_VAULT_PASSWORD_LENGTH,
 } from "../crypto/vault";
 
 // sessionStorage key for a one-shot message shown after a forced reload
 const FLASH_KEY = "krypt_flash";
+
+// localStorage marker: account registered here but no encrypted vault downloaded yet
+const vaultPendingKey = (username: string) => `vaultPending_${username}`;
+
+const errorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : "Unknown error";
 
 /**
  * Ends the server session after the token was rejected (REST 401 or socket
@@ -47,6 +54,11 @@ export function useAuth() {
   const [user, setUser] = useState(localStorage.getItem("currentUser") || "");
   const [myPrivateKey, setMyPrivateKey] = useState<UserIdentityKeys | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // True until a freshly registered user has downloaded an encrypted vault
+  const [needsVaultBackup, setNeedsVaultBackup] = useState(() => {
+    const current = localStorage.getItem("currentUser");
+    return !!current && !!localStorage.getItem(vaultPendingKey(current));
+  });
 
   // Route every token rejection (REST or socket) to the same logout path.
   useEffect(() => {
@@ -144,6 +156,9 @@ export function useAuth() {
           password,
         );
         localStorage.setItem(`encryptedPrivateKey_${username}`, encryptedCache);
+
+        // Vault birth: the dashboard stays locked until an encrypted vault is downloaded.
+        localStorage.setItem(vaultPendingKey(username), "1");
       } else {
         const clientEphemeral = srp.generateEphemeral();
         const challengeRes = await apiPostJson("/api/login/challenge", {
@@ -281,6 +296,7 @@ export function useAuth() {
         console.warn("Session cache unavailable; refresh will require login.", cacheErr);
       }
       // Set together so the socket only connects once the token is in place.
+      setNeedsVaultBackup(!!localStorage.getItem(vaultPendingKey(username)));
       setMyPrivateKey(loadedKeys);
       setUser(username);
     } catch (err: any) {
@@ -303,8 +319,18 @@ export function useAuth() {
     connectSocket(token);
   }, [user, myPrivateKey]);
 
-  const handleDownloadVault = async (vaultPassword?: string) => {
-    if (!myPrivateKey || !user) return;
+  /**
+   * Downloads the identity vault, always encrypted under `vaultPassword`.
+   * @returns true if the file was produced and handed to the browser
+   */
+  const handleDownloadVault = async (vaultPassword: string): Promise<boolean> => {
+    if (!myPrivateKey || !user) return false;
+    if (!vaultPassword || vaultPassword.length < MIN_VAULT_PASSWORD_LENGTH) {
+      toast.error(
+        `Vault password must be at least ${MIN_VAULT_PASSWORD_LENGTH} characters.`,
+      );
+      return false;
+    }
     try {
       const privateKeyStr = exportPrivateIdentity(myPrivateKey);
       const contacts = await db.contacts.toArray();
@@ -326,10 +352,20 @@ export function useAuth() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success("Vault downloaded securely.");
-    } catch (err: any) {
-      toast.error("Failed to download vault: " + err.message);
+      // The registration-time backup requirement is satisfied.
+      localStorage.removeItem(vaultPendingKey(user));
+      toast.success("Encrypted vault downloaded.");
+      return true;
+    } catch (err) {
+      toast.error("Failed to download vault: " + errorMessage(err));
+      return false;
     }
+  };
+
+  // Called when the user leaves the post-registration vault backup screen.
+  const confirmVaultBackup = () => {
+    if (user && localStorage.getItem(vaultPendingKey(user))) return;
+    setNeedsVaultBackup(false);
   };
 
   const handleExportChats = async (password: string) => {
@@ -388,13 +424,14 @@ export function useAuth() {
 
   const handleLogout = async (
     shouldDownload: boolean = false,
-    vaultPassword?: string,
+    vaultPassword: string = "",
     clearCache: boolean = false,
   ) => {
     if (!myPrivateKey || !user) return;
 
     if (shouldDownload) {
-      await handleDownloadVault(vaultPassword);
+      // Do not sign out if the requested backup could not be produced.
+      if (!(await handleDownloadVault(vaultPassword))) return;
       await new Promise((resolve) => setTimeout(resolve, 1500)); // Ensure download begins before reload
     }
 
@@ -421,6 +458,8 @@ export function useAuth() {
     handleLogin,
     handleLogout,
     handleDownloadVault,
+    needsVaultBackup,
+    confirmVaultBackup,
     handleExportChats,
     handleImportChats,
     handleWipeCache,

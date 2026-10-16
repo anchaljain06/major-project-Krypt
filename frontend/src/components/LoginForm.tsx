@@ -91,7 +91,7 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Vault Password{" "}
                   <span className="text-slate-500 text-xs font-normal">
-                    (if encrypted)
+                    (required with a vault file)
                   </span>
                 </label>
                 <input
@@ -99,8 +99,9 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
                   value={vaultPassword}
                   onChange={(e) => setVaultPassword(e.target.value)}
                   disabled={isLoading}
+                  required={!!vaultFile}
                   className="w-full px-4 py-3 bg-slate-950/50 border border-slate-700 text-slate-100 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none disabled:opacity-50 placeholder-slate-500"
-                  placeholder="Leave blank if not encrypted"
+                  placeholder="Password used to encrypt the vault"
                 />
               </div>
             </div>

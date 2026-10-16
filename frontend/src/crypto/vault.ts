@@ -18,13 +18,36 @@ import { bytesToBase64, base64ToBytes } from "./utils";
 const MODERN_ITERATIONS = 600000;
 const LEGACY_ITERATIONS = 100000;
 
+/** Minimum length for a vault (.vault export) password. */
+export const MIN_VAULT_PASSWORD_LENGTH = 8;
+
+/**
+ * Checks a new vault password and its confirmation.
+ * @returns an error message, or null if the password is acceptable
+ */
+export function validateVaultPassword(
+  password: string,
+  confirm: string,
+): string | null {
+  if (password.length < MIN_VAULT_PASSWORD_LENGTH) {
+    return `Vault password must be at least ${MIN_VAULT_PASSWORD_LENGTH} characters.`;
+  }
+  if (password !== confirm) {
+    return "Vault passwords do not match.";
+  }
+  return null;
+}
+
+/**
+ * Encrypts data under a password (PBKDF2-HMAC-SHA256 -> AES-256-GCM).
+ * A password is mandatory: unencrypted export is refused.
+ */
 export async function encryptVaultData(
   data: string,
-  password?: string,
+  password: string,
 ): Promise<string> {
   if (!password) {
-    // Unencrypted vault export
-    return bytesToBase64(new TextEncoder().encode(data));
+    throw new Error("A password is required. Unencrypted export is not allowed.");
   }
 
   const enc = new TextEncoder();
