@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Krypt crypto bench</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 16px; max-width: 1100px; }
+      code, pre, td.num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      table { border-collapse: collapse; font-size: 13px; width: 100%; }
+      th, td { padding: 3px 8px; border-bottom: 1px solid #8884; text-align: left; }
+      td.num { text-align: right; }
+      .muted { opacity: 0.65; }
+      #controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+      .bad { color: #c0392b; }
+    </style>
+  </head>
+  <body>
+    <h1>Krypt crypto benchmark (C3: E1-E4)</h1>
+    <p class="muted">
+      Query params: <code>mode=worker|main</code>, <code>quick=1</code>, <code>filter=&lt;regex on id&gt;</code>,
+      <code>autorun=0</code>. Results are exposed as <code>window.__results</code>.
+    </p>
+    <div id="env"></div>
+    <div id="controls">
+      <button id="run">Run</button>
+      <button id="copy" disabled>Copy JSON</button>
+      <a id="download" hidden>Download JSON</a>
+    </div>
+    <p id="status">idle</p>
+    <table>
+      <thead>
+        <tr><th>id</th><th>status</th><th>median</th><th>p95</th><th>95% CI (median)</th><th>ops/s</th><th>batch</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <script type="module" src="./bench.ts"></script>
+  </body>
+</html>
