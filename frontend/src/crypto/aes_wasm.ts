@@ -1,19 +1,27 @@
-import { getWasmModule } from "../services/wasmLoader";
 import { bytesToBase64, base64ToBytes, sha256Bytes } from "./utils";
 
 /**
  * Project Krypt - Symmetric Encryption Engine
  *
- * Primary Engine: NIST SP 800-38D AES-256-GCM (Authenticated Encryption with Associated Data)
- * - 256-bit symmetric encryption key derived from ML-KEM-1024 / PFS ratchet
+ * NIST SP 800-38D AES-256-GCM (Authenticated Encryption with Associated Data)
+ * via the browser's native Web Cryptography API.
+ * - 256-bit symmetric encryption key derived from ML-KEM-1024 / symmetric hash ratchet
  * - Cryptographically random 96-bit (12-byte) initialization vector (IV/Nonce) per message
  * - 128-bit authentication tag for authenticated integrity protection (AEAD)
- * - Constant-time, hardware-accelerated execution via native Web Cryptography API
  *
- * Legacy Fallback: WASM-powered AES-CBC (for backward compatibility with pre-upgrade messages)
+ * There is no legacy decryption path. The old C/WASM AES-CBC code (c_source/) is not
+ * used for live traffic: any ciphertext without the "GCM:" prefix is rejected.
  */
 
-const LEGACY_IV = "initialvector123";
+/**
+ * Raised when a ciphertext is not in the only accepted format ("GCM:<base64>").
+ */
+export class CiphertextFormatError extends Error {
+  constructor(message = 'Unsupported ciphertext format: expected "GCM:" prefix.') {
+    super(message);
+    this.name = "CiphertextFormatError";
+  }
+}
 
 /**
  * Normalizes an arbitrary key string into a strict 32-byte (256-bit) AES key.
@@ -70,104 +78,55 @@ export async function encryptAES(
 /**
  * Decrypts a ciphertext message using NIST SP 800-38D AES-256-GCM.
  * Verifies the 128-bit authentication tag before releasing decrypted plaintext.
- * If the ciphertext is in legacy format, gracefully falls back to the WASM CBC decryptor.
+ * Fails closed: anything that is not a well-formed "GCM:" payload throws.
  *
  * @param base64Ciphertext The encrypted string
  * @param decryptedAesKey The 256-bit session key (Base64)
  * @returns The original plaintext or media string
+ * @throws CiphertextFormatError if the payload is not a well-formed "GCM:" payload
  */
 export async function decryptAES(
   base64Ciphertext: string,
   decryptedAesKey: string,
 ): Promise<string> {
+  if (typeof base64Ciphertext !== "string") {
+    throw new CiphertextFormatError("Ciphertext must be a string.");
+  }
   const trimmed = base64Ciphertext.trim();
 
-  // Primary Path: NIST SP 800-38D AES-256-GCM
-  if (trimmed.startsWith("GCM:")) {
-    const combined = base64ToBytes(trimmed.substring(4));
-    if (combined.length < 12 + 16) {
-      throw new Error("Invalid AES-GCM ciphertext payload: length too short.");
-    }
-
-    const iv = combined.subarray(0, 12);
-    const ciphertext = combined.subarray(12);
-
-    const keyBytes = await get256BitKey(decryptedAesKey);
-    const cryptoKey = await window.crypto.subtle.importKey(
-      "raw",
-      keyBytes as unknown as BufferSource,
-      { name: "AES-GCM" },
-      false,
-      ["decrypt"],
-    );
-
-    const decryptedBuffer = await window.crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: iv as unknown as BufferSource },
-      cryptoKey,
-      ciphertext as unknown as BufferSource,
-    );
-
-    return new TextDecoder().decode(decryptedBuffer);
+  if (!trimmed.startsWith("GCM:")) {
+    throw new CiphertextFormatError();
   }
 
-  // Legacy Fallback Path: WASM AES-CBC engine (for pre-upgrade messages)
-  return decryptLegacyWASM(trimmed, decryptedAesKey);
-}
-
-/**
- * Fallback decryptor for legacy pre-upgrade WASM CBC ciphertexts.
- */
-async function decryptLegacyWASM(
-  base64Ciphertext: string,
-  decryptedAesKey: string,
-): Promise<string> {
+  let combined: Uint8Array;
   try {
-    const Module = await getWasmModule();
-    const cipherBytes = base64ToBytes(base64Ciphertext);
-
-    // Converts bytes to a C pointer in WASM memory
-    const cipherPtr = Module._malloc(cipherBytes.length);
-    Module.HEAPU8.set(cipherBytes, cipherPtr);
-
-    const keyBytes = new TextEncoder().encode(decryptedAesKey);
-    const keyPtr = Module._malloc(keyBytes.length);
-    Module.HEAPU8.set(keyBytes, keyPtr);
-
-    const ivBytes = new TextEncoder().encode(LEGACY_IV);
-    const ivPtr = Module._malloc(ivBytes.length);
-    Module.HEAPU8.set(ivBytes, ivPtr);
-
-    const outLenPtr = Module._malloc(4);
-
-    const outPtr = Module._decrypt_wrapper(
-      cipherPtr,
-      cipherBytes.length,
-      keyPtr,
-      keyBytes.length,
-      ivPtr,
-      outLenPtr,
-    );
-
-    if (!outPtr) {
-      Module._free(cipherPtr);
-      Module._free(keyPtr);
-      Module._free(ivPtr);
-      Module._free(outLenPtr);
-      throw new Error("Legacy WASM decryption failed.");
-    }
-
-    const outLen = Module.HEAP32[outLenPtr >> 2];
-    const decryptedBytes = new Uint8Array(Module.HEAPU8.buffer, outPtr, outLen);
-    const plaintext = new TextDecoder().decode(decryptedBytes);
-
-    Module._free(cipherPtr);
-    Module._free(keyPtr);
-    Module._free(ivPtr);
-    Module._free(outLenPtr);
-    Module._free_buffer(outPtr);
-
-    return plaintext;
-  } catch (err: any) {
-    throw new Error(`Decryption failed: ${err.message || "Unknown error"}`);
+    combined = base64ToBytes(trimmed.substring(4));
+  } catch {
+    throw new CiphertextFormatError("Invalid AES-GCM ciphertext: not valid Base64.");
   }
+  if (combined.length < 12 + 16) {
+    throw new CiphertextFormatError(
+      "Invalid AES-GCM ciphertext payload: length too short.",
+    );
+  }
+
+  const iv = combined.subarray(0, 12);
+  const ciphertext = combined.subarray(12);
+
+  const keyBytes = await get256BitKey(decryptedAesKey);
+  const cryptoKey = await window.crypto.subtle.importKey(
+    "raw",
+    keyBytes as unknown as BufferSource,
+    { name: "AES-GCM" },
+    false,
+    ["decrypt"],
+  );
+
+  const decryptedBuffer = await window.crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: iv as unknown as BufferSource },
+    cryptoKey,
+    ciphertext as unknown as BufferSource,
+  );
+
+  return new TextDecoder().decode(decryptedBuffer);
 }
