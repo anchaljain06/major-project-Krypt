@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+# Playwright caches / reports (browsers themselves live in ~/Library/Caches/ms-playwright)
+.cache/
+playwright-report/
+test-results/
+# Raw results stay local; only curated samples are committed
+results/*
+!results/sample-*/
