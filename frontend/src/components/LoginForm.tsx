@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { db } from "../services/db";
+import { deleteSessionKeyDatabase } from "../services/sessionCache";
 
 interface LoginFormProps {
   onLogin: (
@@ -159,7 +160,15 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
               sessionStorage.clear();
               try {
                 await db.delete();
-              } catch {}
+              } catch {
+                // Database may already be gone.
+              }
+              try {
+                // Also drop the non-extractable session key store.
+                await deleteSessionKeyDatabase();
+              } catch {
+                // Database may already be gone.
+              }
               window.location.reload();
             }}
             disabled={isLoading}

@@ -3,6 +3,11 @@ import { socket, connectSocket, disconnectSocket } from "../services/socket";
 import { apiPostJson, setUnauthorizedHandler, notifyUnauthorized } from "../services/api";
 import { getToken, setToken, clearToken } from "../services/authToken";
 import {
+  createSessionCache,
+  restoreSessionCache,
+  clearSessionCache,
+} from "../services/sessionCache";
+import {
   generateUserIdentityKeys,
   exportPublicIdentity,
   exportPrivateIdentity,
@@ -27,11 +32,12 @@ const FLASH_KEY = "krypt_flash";
  * "unauthorized"): drop the token and socket, then reload into the login screen.
  */
 let isExpiring = false;
-function expireSession() {
+async function expireSession() {
   if (isExpiring) return;
   isExpiring = true;
   clearToken();
   disconnectSocket();
+  await clearSessionCache().catch(() => {});
   localStorage.removeItem("currentUser");
   sessionStorage.setItem(FLASH_KEY, "Session expired. Please log in again.");
   window.location.reload();
@@ -61,28 +67,34 @@ export function useAuth() {
     };
   }, []);
 
-  // Auto-restore private identity keys from encrypted cache on page refresh
+  // Auto-restore private identity keys on page refresh within the same tab.
+  // Uses the non-extractable session key (services/sessionCache.ts); never a password.
   useEffect(() => {
+    // Migration: older builds kept the plaintext login password here.
+    sessionStorage.removeItem("sessionPassword");
+
     if (!user || myPrivateKey) return;
+    let cancelled = false;
     const restoreKey = async () => {
-      const cachedPassword = sessionStorage.getItem("sessionPassword");
-      const cachedKey = localStorage.getItem(`encryptedPrivateKey_${user}`);
-      // Without a server token the session cannot be resumed; require login.
-      if (!getToken() || !cachedPassword || !cachedKey) return;
+      if (!getToken()) {
+        // No server session in this tab: drop any leftover cache, require login.
+        await clearSessionCache().catch(() => {});
+        return;
+      }
       try {
-        const decryptedPrivateStr = await decryptVaultData(
-          cachedKey,
-          cachedPassword,
-        );
-        const loadedKeys = importPrivateIdentity(decryptedPrivateStr);
-        setMyPrivateKey(loadedKeys);
-      } catch (err) {
-        sessionStorage.removeItem("sessionPassword");
+        const bundle = await restoreSessionCache(user);
+        if (!bundle || cancelled) return;
+        setMyPrivateKey(importPrivateIdentity(bundle));
+      } catch {
+        await clearSessionCache(user).catch(() => {});
         // No toast here to avoid annoying the user on every fresh load if they aren't logged in
       }
     };
     restoreKey();
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, myPrivateKey]);
 
   const handleLogin = async (
     username: string,
@@ -95,6 +107,8 @@ export function useAuth() {
     // Any previous session token is discarded; login/registration run unauthenticated.
     clearToken();
     let sessionToken = "";
+    let loadedKeys: UserIdentityKeys;
+    let privateKeyBundle: string;
     try {
       if (isRegistering) {
         const salt = srp.generateSalt();
@@ -122,17 +136,14 @@ export function useAuth() {
         }
         sessionToken = registerData.token;
 
-        setMyPrivateKey(keys);
-        const privateKeyStr = exportPrivateIdentity(keys);
-        // Securely cache the private identity key for returning logins
+        loadedKeys = keys;
+        privateKeyBundle = exportPrivateIdentity(keys);
+        // Password-encrypted copy for returning logins on this device
         const encryptedCache = await encryptVaultData(
-          privateKeyStr,
+          privateKeyBundle,
           password,
         );
         localStorage.setItem(`encryptedPrivateKey_${username}`, encryptedCache);
-
-        // Vault Birth: Do not download automatically anymore.
-        // User must click Download Vault in the UI.
       } else {
         const clientEphemeral = srp.generateEphemeral();
         const challengeRes = await apiPostJson("/api/login/challenge", {
@@ -257,13 +268,20 @@ export function useAuth() {
           }
         }
 
-        const loadedKeys = importPrivateIdentity(privateKeyStrToImport);
-        setMyPrivateKey(loadedKeys);
+        loadedKeys = importPrivateIdentity(privateKeyStrToImport);
+        privateKeyBundle = privateKeyStrToImport;
       }
 
       setToken(sessionToken);
       localStorage.setItem("currentUser", username);
-      sessionStorage.setItem("sessionPassword", password);
+      try {
+        // Lets a refresh in this tab resume without the password (see sessionCache.ts).
+        await createSessionCache(username, privateKeyBundle);
+      } catch (cacheErr) {
+        console.warn("Session cache unavailable; refresh will require login.", cacheErr);
+      }
+      // Set together so the socket only connects once the token is in place.
+      setMyPrivateKey(loadedKeys);
       setUser(username);
     } catch (err: any) {
       console.error("Login Error:", err);
@@ -388,8 +406,8 @@ export function useAuth() {
     // Secure sign out
     disconnectSocket();
     clearToken();
+    await clearSessionCache(user).catch(() => {});
     localStorage.removeItem("currentUser");
-    sessionStorage.removeItem("sessionPassword");
     setMyPrivateKey(null);
     setUser("");
     window.location.reload();
