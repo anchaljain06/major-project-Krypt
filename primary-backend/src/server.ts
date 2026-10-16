@@ -1,42 +1,12 @@
 import "dotenv/config";
-import express, { type NextFunction, type Request, type Response } from "express";
-import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import api from "./api.js";
+import { ALLOWED_ORIGINS, createApp } from "./app.js";
 import { prisma } from "./db.js";
-import helmet from "helmet";
-import { MAX_JSON_BODY, MAX_SOCKET_MESSAGE_BYTES } from "./schemas.js";
+import { MAX_SOCKET_MESSAGE_BYTES } from "./schemas.js";
 import { purgeExpiredMailbox, registerSocketHandlers } from "./sockets.js";
-const ALLOWED_ORIGINS = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL, "http://localhost:5173", "http://localhost:3000"]
-  : ["http://localhost:5173", "http://localhost:3000"];
-const app = express();
-app.use(helmet());
-app.use(
-  cors({
-    origin: ALLOWED_ORIGINS,
-    methods: ["GET", "POST"],
-  }),
-);
-app.use(express.json({ limit: MAX_JSON_BODY }));
-app.use("/api", api);
 
-// Last-resort error handler: log server-side, never leak internals to clients.
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  const status = typeof err?.status === "number" && err.status >= 400 && err.status < 500
-    ? err.status
-    : 500;
-  if (status === 500) console.error("[HTTP] Unhandled error:", err);
-  const message =
-    err?.type === "entity.too.large"
-      ? "Request body too large."
-      : status === 500
-        ? "Internal server error."
-        : "Malformed request.";
-  res.status(status).json({ error: message });
-});
-
+const app = createApp();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {

@@ -2,6 +2,7 @@ import type { Server, Socket } from "socket.io";
 import { prisma } from "./db.js";
 import { socketAuth } from "./auth.js";
 import { enqueue, flush, MAILBOX_TTL_MS, prismaMailboxStore } from "./mailbox.js";
+import { PREKEYS_LOW_WATERMARK, prekeyStatus } from "./prekeys.js";
 import { onlineUsers, setIo } from "./realtime.js";
 import {
   acceptOrRejectBody,
@@ -84,6 +85,16 @@ async function bringOnline(io: Server, socket: Socket, username: string) {
     await flush(mailbox, username, deliver);
   } catch (err) {
     console.error(`[Mailbox] Error in post-online flush for ${username}:`, err);
+  }
+
+  // Prekey clients that went offline while their pool drained should refill now.
+  try {
+    const status = await prekeyStatus(socket.data.userId);
+    if (status.hasSignedPrekey && status.oneTimeRemaining < PREKEYS_LOW_WATERMARK) {
+      socket.emit("prekeys_low", { remaining: status.oneTimeRemaining });
+    }
+  } catch (err) {
+    console.error(`[Prekeys] Status check failed for ${username}:`, err);
   }
 }
 

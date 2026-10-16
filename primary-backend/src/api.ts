@@ -1,14 +1,14 @@
-import { Router, type Request, type Response } from "express";
-import type { z } from "zod";
+import { Router, type Request } from "express";
 import { prisma } from "./db.js";
 import srp from "secure-remote-password/server.js";
 import { issueToken, requireAuth, requireSelf, sameUsername } from "./auth.js";
+import prekeys from "./prekeys.js";
 import {
   acceptOrRejectBody,
   blockBody,
-  firstIssue,
   loginChallengeBody,
   loginVerifyBody,
+  parseOr400,
   registerBody,
   searchQuery,
   sendOrRevokeBody,
@@ -34,20 +34,6 @@ function cleanupExpiredChallenges() {
       activeLoginChallenges.delete(key);
     }
   }
-}
-
-/** Parse input with a zod schema; on failure send 400 and return null. */
-export function parseOr400<T extends z.ZodType>(
-  schema: T,
-  input: unknown,
-  res: Response,
-): z.infer<T> | null {
-  const result = schema.safeParse(input ?? {});
-  if (!result.success) {
-    res.status(400).json({ error: firstIssue(result.error) });
-    return null;
-  }
-  return result.data;
 }
 
 /** The authenticated username. Only call after requireAuth. */
@@ -185,6 +171,9 @@ router.post("/login/verify", async (req, res) => {
 // acting user are kept for compatibility and must match it (else 403).
 
 router.use(requireAuth);
+
+// POST /prekeys, GET /prekeys/count, GET /bundle/:username
+router.use(prekeys);
 
 async function searchUsers(req: Request, query: string, take: number) {
   const current = myId(req);

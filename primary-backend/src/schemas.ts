@@ -1,3 +1,4 @@
+import type { Response } from "express";
 import { z } from "zod";
 
 // Input validation for every REST body and socket payload.
@@ -8,6 +9,8 @@ export const MAX_USERNAME_LENGTH = 64;
 export const MAX_SOCKET_MESSAGE_BYTES = 16 * 1024 * 1024;
 // express.json body cap.
 export const MAX_JSON_BODY = "1mb";
+// POST /api/prekeys only: 200 OPKs of (1568 + 4627) bytes in base64url is ~1.65 MB.
+export const MAX_PREKEY_JSON_BODY = "2mb";
 
 // No control characters; trimmed; length-limited.
 export const usernameSchema = z
@@ -124,6 +127,20 @@ export const socketUsernameArg = usernameSchema;
 // Friend/block socket notifications reuse the REST body shapes:
 // send/revoke: { sender: me, receiver }   accept/reject: { sender, receiver: me }
 // block: { blocker: me, blocked }
+
+/** Parse input with a zod schema; on failure send 400 and return null. */
+export function parseOr400<T extends z.ZodType>(
+  schema: T,
+  input: unknown,
+  res: Response,
+): z.infer<T> | null {
+  const result = schema.safeParse(input ?? {});
+  if (!result.success) {
+    res.status(400).json({ error: firstIssue(result.error) });
+    return null;
+  }
+  return result.data;
+}
 
 /** First issue message from a zod error, safe to show to a client. */
 export function firstIssue(error: z.ZodError): string {

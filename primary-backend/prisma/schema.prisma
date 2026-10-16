@@ -26,7 +26,11 @@ model User {
   // Block System Relations
   blockedByMe      BlockedUser[] @relation("BlockedByMe")
   blockedMe        BlockedUser[] @relation("BlockedMe")
-  
+
+  // Prekeys (Krypt-X3K handshake)
+  signedPrekey     SignedPrekey?
+  oneTimePrekeys   OneTimePrekey[]
+
   createdAt      DateTime @default(now())
 }
 
@@ -72,6 +76,34 @@ model OfflineMessage {
   createdAt DateTime @default(now())
 
   @@index([to])
+  @@index([to, createdAt])
+  @@index([createdAt])
+}
+
+// ML-KEM-1024 signed prekey; one active per user, replaced on rotation.
+// publicKey and signature are base64url (signature is ML-DSA-87 by the identity key).
+model SignedPrekey {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keyId     Int
+  publicKey String
+  signature String
+  createdAt DateTime @default(now())
+}
+
+// ML-KEM-1024 one-time prekeys; each row is handed out once, then deleted.
+model OneTimePrekey {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keyId     Int
+  publicKey String
+  signature String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, keyId])
+  @@index([userId, createdAt])
 }
 
 
