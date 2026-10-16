@@ -165,6 +165,23 @@ export function useAuth() {
         if (!verifyRes.ok) {
           throw new Error(verifyData.error || "Invalid password!");
         }
+
+        // SRP-6a mutual authentication: the server must prove (M2) that it knows
+        // the verifier for this account. Without this check an impostor server
+        // could accept any password. verifySession throws on mismatch.
+        if (typeof verifyData.serverProof !== "string" || !verifyData.serverProof) {
+          throw new Error("Login aborted: server did not prove its identity.");
+        }
+        try {
+          srp.verifySession(
+            clientEphemeral.public,
+            clientSession,
+            verifyData.serverProof,
+          );
+        } catch {
+          throw new Error("Login aborted: server proof is invalid.");
+        }
+
         if (typeof verifyData.token !== "string" || !verifyData.token) {
           throw new Error("Login failed: server did not issue a session.");
         }
