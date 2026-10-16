@@ -73,25 +73,28 @@ export async function decryptVaultData(
   data: string,
   password?: string,
 ): Promise<string> {
-  const isV2 = data.startsWith("ENC:v2:");
-  const isV1 = !isV2 && data.startsWith("ENC:");
+  const trimmed = data.trim();
+  const isV2 = trimmed.startsWith("ENC:v2:");
+  const isV1 = !isV2 && trimmed.startsWith("ENC:");
 
   if (!isV1 && !isV2) {
-    // Treat as simple base64 (unencrypted) or plaintext JSON fallback
-    try {
-      const decodedBytes = base64ToBytes(data);
-      return new TextDecoder().decode(decodedBytes);
-    } catch {
-      return data;
-    }
+    // Fail closed: unencrypted (plain Base64 / JSON) vaults and backups are rejected.
+    throw new Error(
+      "This file is not encrypted. Unencrypted vault and backup files are no longer accepted.",
+    );
   }
 
   if (!password) {
     throw new Error("Password is required to decrypt this vault file.");
   }
 
-  const base64 = isV2 ? data.substring(7) : data.substring(4);
-  const combined = base64ToBytes(base64);
+  const base64 = isV2 ? trimmed.substring(7) : trimmed.substring(4);
+  let combined: Uint8Array;
+  try {
+    combined = base64ToBytes(base64);
+  } catch {
+    throw new Error("Invalid vault payload: corrupted or incomplete file.");
+  }
 
   if (combined.length < 16 + 12 + 16) {
     throw new Error("Invalid vault payload: corrupted or incomplete file.");

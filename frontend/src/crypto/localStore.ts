@@ -85,20 +85,38 @@ export async function encryptLocal(
   return "LOC:" + bytesToBase64(combined);
 }
 
+/**
+ * Raised when a local IndexedDB entry is not a valid "LOC:" ciphertext or fails
+ * authentication. Callers must treat the entry as unreadable, never as plaintext.
+ */
+export class LocalStoreDecryptError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LocalStoreDecryptError";
+  }
+}
+
+/**
+ * Decrypts a "LOC:" entry. Fails closed: unprefixed (plaintext) input, malformed
+ * payloads and authentication failures all throw LocalStoreDecryptError.
+ */
 export async function decryptLocal(
   ciphertextBase64: string,
   privateKey: UserIdentityKeys,
 ): Promise<string> {
-  if (!ciphertextBase64.startsWith("LOC:")) {
-    // Legacy plaintext message
-    return ciphertextBase64;
+  if (typeof ciphertextBase64 !== "string" || !ciphertextBase64.startsWith("LOC:")) {
+    throw new LocalStoreDecryptError("Local entry is not encrypted; refusing to read it.");
   }
 
-  const base64 = ciphertextBase64.substring(4);
-  const combined = base64ToBytes(base64);
+  let combined: Uint8Array;
+  try {
+    combined = base64ToBytes(ciphertextBase64.substring(4));
+  } catch {
+    throw new LocalStoreDecryptError("Local entry is corrupted (invalid Base64).");
+  }
 
   if (combined.length < 12 + 16) {
-    return "[Corrupted Local Message]";
+    throw new LocalStoreDecryptError("Local entry is corrupted (too short).");
   }
 
   const iv = combined.subarray(0, 12);
@@ -124,8 +142,9 @@ export async function decryptLocal(
       );
       return new TextDecoder().decode(decrypted);
     } catch {
-      console.warn("Failed to decrypt local message with current or legacy key.");
-      return "[Encrypted/Corrupted Message]";
+      throw new LocalStoreDecryptError(
+        "Failed to decrypt local entry with current or legacy key.",
+      );
     }
   }
 }

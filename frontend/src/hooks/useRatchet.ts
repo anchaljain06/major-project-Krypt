@@ -51,15 +51,18 @@ export function useRatchet(user: string, myPrivateKey: UserIdentityKeys | null) 
       const hashedUsername = await sha256Hex(targetUsername);
       const existingContact = await db.contacts.get(hashedUsername);
       if (existingContact) {
-        let contactObj: any = {};
+        let contactObj: { publicKey?: string };
         try {
           const jsonStr = await decryptLocal(
             existingContact.payload,
             myPrivateKey,
           );
           contactObj = JSON.parse(jsonStr);
-        } catch (e) {
-          // Fallback if legacy or corrupt
+        } catch {
+          // Fail closed: an unreadable pinned contact must not silently skip the TOFU check.
+          throw new Error(
+            "SECURITY ALERT: Stored contact record could not be verified. Refusing to continue the handshake.",
+          );
         }
         if (
           contactObj.publicKey &&
