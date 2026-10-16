@@ -1,11 +1,18 @@
 import { Router } from "express";
 import { prisma } from "./db.js";
 import srp from "secure-remote-password/server.js";
+import { issueToken } from "./auth.js";
 const router = Router();
-const activeLoginChallenges = new Map<string, { ephemeralSecret: string; createdAt: number }>();
 
-// TTL for SRP login challenges: 5 minutes
-const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+// SRP login challenges.
+// Decision: keep keying by username so the existing client (which sends only
+// username + A to /login/verify) keeps working. A new /login/challenge for the
+// same user overwrites the old one, each challenge lives 2 minutes, and it is
+// single use: the first /login/verify attempt consumes it, pass or fail.
+// A challenge-id scheme would stop one login from cancelling another's
+// challenge, but needs a client change; today an overwrite only costs a retry.
+const activeLoginChallenges = new Map<string, { ephemeralSecret: string; createdAt: number }>();
+const CHALLENGE_TTL_MS = 2 * 60 * 1000;
 
 function cleanupExpiredChallenges() {
   const now = Date.now();
@@ -33,9 +40,11 @@ router.post("/register", async (req, res) => {
         srpVerifier,
       },
     });
-    res
-      .status(200)
-      .json({ success: true, message: "Zero-Knowledge Identity Created" });
+    res.status(200).json({
+      success: true,
+      message: "Zero-Knowledge Identity Created",
+      token: issueToken({ userId: newUser.id, username: newUser.username }),
+    });
   } catch (error: any) {
     if (error?.code === "P2002") {
       console.error(
@@ -89,8 +98,10 @@ router.post("/login/verify", async (req, res) => {
   cleanupExpiredChallenges();
 
   try {
-    const user = await prisma.user.findUnique({ where: { username } });
+    // Single use: consume the challenge before checking anything else.
     const challengeData = activeLoginChallenges.get(username);
+    activeLoginChallenges.delete(username);
+    const user = await prisma.user.findUnique({ where: { username } });
 
     if (!user || !challengeData) {
       return res
@@ -99,7 +110,6 @@ router.post("/login/verify", async (req, res) => {
     }
 
     if (Date.now() - challengeData.createdAt > CHALLENGE_TTL_MS) {
-      activeLoginChallenges.delete(username);
       return res.status(400).json({ error: "Login challenge has expired. Please try again." });
     }
 
@@ -112,15 +122,16 @@ router.post("/login/verify", async (req, res) => {
       clientSessionProof,
     );
 
-    activeLoginChallenges.delete(username);
-
+    // deriveSession throws if the client proof (M1) is wrong, so reaching
+    // here means the password was verified. Return M2 and a session token.
     res.status(200).json({
       success: true,
       serverSessionProof: serverSession.proof,
+      serverProof: serverSession.proof,
+      token: issueToken({ userId: user.id, username: user.username }),
     });
   } catch (error) {
     console.error("[SRP] Verification Failed.");
-    activeLoginChallenges.delete(username);
     res.status(401).json({ error: "Invalid password." });
   }
 });
