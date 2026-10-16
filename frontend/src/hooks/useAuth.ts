@@ -230,7 +230,7 @@ export function useAuth() {
               cachedKey,
               password,
             );
-          } catch (err) {
+          } catch {
             throw new Error(
               "Wrong password! Could not decrypt your local security cache.",
             );
@@ -244,7 +244,7 @@ export function useAuth() {
               fileContent,
               vaultPassword,
             );
-          } catch (err) {
+          } catch {
             throw new Error(
               "Failed to decrypt vault file. Check your vault password.",
             );
@@ -253,7 +253,7 @@ export function useAuth() {
           let vault;
           try {
             vault = JSON.parse(decryptedContent);
-          } catch (err) {
+          } catch {
             throw new Error("Invalid vault file format.");
           }
 
@@ -275,7 +275,7 @@ export function useAuth() {
           if (vault.contacts && Array.isArray(vault.contacts)) {
             await db.contacts.clear();
             const validContacts = vault.contacts.filter(
-              (c: any) => c.id && c.payload,
+              (c: { id?: string; payload?: string }) => c.id && c.payload,
             );
             if (validContacts.length > 0) {
               await db.contacts.bulkAdd(validContacts);
@@ -299,9 +299,13 @@ export function useAuth() {
       setNeedsVaultBackup(!!localStorage.getItem(vaultPendingKey(username)));
       setMyPrivateKey(loadedKeys);
       setUser(username);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Login Error:", err);
-      toast.error(err?.message || "An unknown error occurred during login.");
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "An unknown error occurred during login.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -384,8 +388,8 @@ export function useAuth() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success("Chat history backed up securely.");
-    } catch (err: any) {
-      toast.error("Failed to backup chats: " + err.message);
+    } catch (err) {
+      toast.error("Failed to backup chats: " + errorMessage(err));
     }
   };
 
@@ -394,8 +398,8 @@ export function useAuth() {
       const content = await file.text();
       await importChatBackup(content, password);
       toast.success("Chat history restored successfully.");
-    } catch (err: any) {
-      toast.error("Failed to restore chats: " + err.message);
+    } catch (err) {
+      toast.error("Failed to restore chats: " + errorMessage(err));
     }
   };
 
@@ -417,8 +421,8 @@ export function useAuth() {
 
       toast.success("Local cache completely wiped.");
       setTimeout(() => window.location.reload(), 1500);
-    } catch (err: any) {
-      toast.error("Failed to wipe cache: " + err.message);
+    } catch (err) {
+      toast.error("Failed to wipe cache: " + errorMessage(err));
     }
   };
 
