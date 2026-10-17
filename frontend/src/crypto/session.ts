@@ -366,7 +366,6 @@ export class SessionManager {
   /** Spec 4.2 and 4.5: an init header for a session we do not have. */
   private async acceptInit(peer: string, rec: PeerRecord, env: Envelope, now: number): Promise<DecryptResult> {
     const h = env.header;
-    const init = h.init!;
     if (h.pn !== 0 || h.kem) fail("MALFORMED", "init header with ratchet fields");
 
     // Simultaneous initiation: our own unconfirmed session wins if its id is
