@@ -3,6 +3,7 @@ import {
   base64Paths,
   createEvilRelay,
   duplicate,
+  flipContentType,
   flipType,
   loadEvilRelay,
   parseBase64Field,
@@ -68,6 +69,22 @@ describe("pure transforms", () => {
     const m = msg(1);
     expect(flipType(m).type).toBe("image");
     expect(m.type).toBe("text");
+  });
+
+  it("flip_content_type flips the envelope's contentType, not the outer type", () => {
+    const m = msg(1, { envelope: { contentType: "text", body: "x" } });
+    const out = flipContentType(m);
+    expect(out.envelope).toEqual({ contentType: "image", body: "x" });
+    expect(out.type).toBe("text");
+    expect((m.envelope as { contentType: string }).contentType).toBe("text"); // input untouched
+    expect((flipContentType(out).envelope as { contentType: string }).contentType).toBe("text");
+  });
+
+  it("flip_content_type leaves frames without an envelope alone", () => {
+    const m = msg(1);
+    expect(flipContentType(m)).toBe(m);
+    const bad = msg(1, { envelope: { contentType: 7 } });
+    expect(flipContentType(bad)).toBe(bad);
   });
 
   it("duplicate returns two equal, independent copies", () => {
@@ -166,6 +183,16 @@ describe("relay pipeline", () => {
     const [out] = r.process(msg(1, { ciphertext: ct }));
     expect(out!.type).toBe("image");
     expect(out!.ciphertext).not.toBe(ct);
+  });
+
+  it("flip_content_type applies in the relay pipeline", () => {
+    const r = relay(["flip_content_type"]);
+    const [out] = r.process(msg(1, { envelope: { contentType: "text" } }));
+    expect((out!.envelope as { contentType: string }).contentType).toBe("image");
+  });
+
+  it("parses flip_content_type from EVIL_MODE", () => {
+    expect([...parseEvilConfig({ EVIL_MODE: "flip_content_type" })!.attacks]).toEqual(["flip_content_type"]);
   });
 
   it("swap_key serves EVIL_SWAP_WITH's keys for everyone else", () => {

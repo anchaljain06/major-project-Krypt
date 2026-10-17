@@ -9,7 +9,10 @@
 //   drop       drop every Nth message per pair (N = EVIL_DROP_EVERY, default 3)
 //   duplicate  deliver every message twice
 //   tamper     flip one bit in one random base64 field of the payload
-//   flip_type  set payload.type to "image"
+//   flip_type  set payload.type to "image" (the outer, unauthenticated field)
+//   flip_content_type
+//              set payload.envelope.contentType, the v1 header field inside
+//              the AAD, to "image" ("text" if it already is "image")
 //   swap_key   request_public_key and GET /api/bundle/:username return the keys
 //              of EVIL_SWAP_WITH instead of the requested user
 //
@@ -64,6 +67,7 @@ export const ATTACKS = [
   "duplicate",
   "tamper",
   "flip_type",
+  "flip_content_type",
   "swap_key",
   "kt_rogue_leaf",
   "kt_fork",
@@ -117,6 +121,18 @@ export function parseEvilConfig(env: NodeJS.ProcessEnv): EvilConfig | null {
 
 export function flipType(msg: RelayMessage): RelayMessage {
   return { ...msg, type: "image" };
+}
+
+/**
+ * Flip the v1 envelope's own contentType (authenticated as part of the
+ * header). Messages without an envelope object are returned unchanged.
+ */
+export function flipContentType(msg: RelayMessage): RelayMessage {
+  const env = msg.envelope;
+  if (!env || typeof env !== "object" || Array.isArray(env)) return msg;
+  const ct = (env as Record<string, unknown>).contentType;
+  if (typeof ct !== "string") return msg;
+  return { ...msg, envelope: { ...env, contentType: ct === "image" ? "text" : "image" } };
 }
 
 export function duplicate(msg: RelayMessage): RelayMessage[] {
@@ -238,6 +254,7 @@ export function createEvilRelay(config: EvilConfig, rng: Rng = Math.random): Evi
       let m = msg;
       if (on("tamper")) m = tamper(m, rng);
       if (on("flip_type")) m = flipType(m);
+      if (on("flip_content_type")) m = flipContentType(m);
 
       let out: RelayMessage[] = on("duplicate") ? duplicate(m) : [m];
 
