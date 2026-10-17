@@ -18,6 +18,8 @@ against Neon.** `migrate dev` and `reset` can drop and recreate the database.
 | 3 | `20261017000100_social_fks_to_user_id` | `FriendRequest` and `BlockedUser` switch from usernames to `User.id`: adds `senderId`/`receiverId` and `blockerId`/`blockedId`, backfills them from usernames, then drops the username columns. One transaction. | **Yes: rewrites every FriendRequest and BlockedUser row** |
 | 4 | `20261017000200_mailbox_ttl_indexes` | Two new indexes on `OfflineMessage`. | No |
 | 5 | `20261017000300_prekeys` | New tables `SignedPrekey` and `OneTimePrekey`. | No |
+| 6 | `20261017000400_key_transparency` | New tables `KtLeaf`, `KtNode`, `KtSth` for the key transparency log. | No |
+| 7 | `20261017000500_mailbox_bytes` | Adds `OfflineMessage.bytes` (payload size, for the 50 MB per-recipient quota) and backfills it. | **Yes: one UPDATE over waiting offline messages** (sets only the new column) |
 
 ### How migration 3 keeps your data
 
@@ -76,7 +78,7 @@ npx prisma migrate resolve --applied 20260420135802_init
 
 This writes one row to `_prisma_migrations`. It runs no SQL against your tables.
 
-Run `npx prisma migrate status` again. It should list migrations 2 to 5 as
+Run `npx prisma migrate status` again. It should list migrations 2 to 7 as
 pending, and nothing else.
 
 ### 4. Apply
@@ -85,7 +87,7 @@ pending, and nothing else.
 npx prisma migrate deploy
 ```
 
-Expected output: migrations 2 to 5 listed as applied.
+Expected output: migrations 2 to 7 listed as applied.
 
 ### 5. Verify
 
@@ -119,13 +121,52 @@ server, set these on the host:
   `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
   If it is unset, tokens stop working on every restart.
 - `AUTH_TOKEN_TTL_SECONDS`: optional, default 43200 (12 h).
+- `KT_LOG_SK`: the key transparency log's ML-DSA-87 signing key. Generate it
+  once with `npm run kt:keygen` and keep it forever: it is the log's
+  identity. The command also prints the public key. Pin that key in the
+  frontend build and set it as the witness's `KRYPT_LOG_PUBKEY`. If
+  `KT_LOG_SK` is unset, the server uses a random key on every start. No
+  witness or client will accept a log signed that way. `KT_LOG_SK` accepts a
+  32-byte seed (what keygen prints) or a 4896-byte secret key, both standard
+  base64.
+- `KT_STH_INTERVAL_SECONDS`: optional, default 300. This is the minimum time
+  between signed tree heads. Leave it at the default in production. Each head
+  is about 4.7 KB in `KtSth`.
 - Do **not** set `EVIL_MODE` in production.
+
+### Key transparency endpoints
+
+These are public and need no token, because the witness calls them:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /kt/sth` | The latest signed tree head. |
+| `GET /kt/consistency?from=&to=` | A consistency proof between two tree sizes. |
+| `GET /kt/proof?user=&size=` | A user's latest leaf, with an inclusion proof. |
+| `GET /kt/leaves?from=&to=` | Leaves in a range, at most 1000 per page. |
+| `GET /kt/pubkey` | The log's public key. Use it to copy the key into config, never as a trust anchor. |
+
+Two endpoints need a token:
+
+- `POST /api/kt/register` takes `{ leaf, ownerSig, signerPk? }`.
+- `GET /api/kt/status` returns `{ hasLeaf, keyVersion }`.
+
+The server publishes a tree head lazily: on an append or a `/kt/sth` read,
+when the log has grown and the last head is at least 5 minutes old. A new
+leaf can therefore take up to 5 minutes to show in `/kt/*`.
+
+### Consuming `shared/`
+
+Render builds from `primary-backend/` only. For that reason the KT package
+in `../shared/src` is copied into `src/vendor/krypt-shared/`, and the copy is
+committed. After you change `shared/`, run `npm run vendor:shared`.
+`test/vendor.test.ts` fails if the copy is stale.
 
 ## Rollback
 
 **Easiest:** Neon's point-in-time restore. Before step 4, note the time or
 create a branch named `pre-migration`. To roll back, restore `main` to that
-point, or promote the branch. This also covers migrations 4 and 5.
+point, or promote the branch. This also covers migrations 4 to 7.
 
 **Manual, for migration 3 only.** This was tested locally: it restored every
 row, and the forward migration re-applied cleanly afterwards. Run it in the
@@ -166,6 +207,10 @@ DELETE FROM "_prisma_migrations" WHERE migration_name = '20261017000100_social_f
 COMMIT;
 ```
 
+To roll back migration 7, drop the column `OfflineMessage.bytes`. To roll
+back migration 6, drop the tables `KtSth`, `KtNode` and `KtLeaf`. Dropping
+them deletes the log. Clients and the witness that saw a tree head will then
+report the reset log as a fork. Only do this before anyone relies on it.
 To roll back migration 5, drop `OneTimePrekey` and `SignedPrekey`; they hold
 only public keys. To roll back migration 4, drop the two
 `OfflineMessage_*createdAt*` indexes. In both cases, delete the matching row

@@ -13,7 +13,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "vendor:shared": "node scripts/vendor-shared.mjs"
+    "vendor:shared": "node scripts/vendor-shared.mjs",
+    "kt:keygen": "node scripts/kt-keygen.mjs"
   },
   "keywords": [],
   "author": "",
