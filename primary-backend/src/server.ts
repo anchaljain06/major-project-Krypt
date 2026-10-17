@@ -3,6 +3,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { ALLOWED_ORIGINS, createApp } from "./app.js";
 import { prisma } from "./db.js";
+import { loadEvilRelay } from "./evil.js";
 import { MAX_SOCKET_MESSAGE_BYTES } from "./schemas.js";
 import { purgeExpiredMailbox, registerSocketHandlers } from "./sockets.js";
 
@@ -17,7 +18,8 @@ const io = new Server(httpServer, {
   maxHttpBufferSize: MAX_SOCKET_MESSAGE_BYTES,
 });
 
-registerSocketHandlers(io);
+// Evil relay test harness; null unless EVIL_MODE is set.
+registerSocketHandlers(io, loadEvilRelay());
 
 const MAILBOX_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 

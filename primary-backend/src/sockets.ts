@@ -2,7 +2,8 @@ import type { Server, Socket } from "socket.io";
 import { prisma } from "./db.js";
 import { socketAuth } from "./auth.js";
 import { enqueue, flush, MAILBOX_TTL_MS, prismaMailboxStore } from "./mailbox.js";
-import { PREKEYS_LOW_WATERMARK, prekeyStatus } from "./prekeys.js";
+import type { EvilRelay } from "./evil.js";
+import { PREKEYS_LOW_WATERMARK, prekeyStatus, setBundleKeySource } from "./prekeys.js";
 import { onlineUsers, setIo } from "./realtime.js";
 import {
   acceptOrRejectBody,
@@ -98,9 +99,10 @@ async function bringOnline(io: Server, socket: Socket, username: string) {
   }
 }
 
-export function registerSocketHandlers(io: Server) {
+export function registerSocketHandlers(io: Server, evil: EvilRelay | null = null) {
   setIo(io);
   io.use(socketAuth);
+  if (evil) setBundleKeySource(evil.keySource);
 
   io.on("connection", (socket) => {
     const username: string = socket.data.username;
@@ -161,7 +163,13 @@ export function registerSocketHandlers(io: Server) {
         return ack({ success: false, reason: "server_error" });
       }
 
-      const status = await routeMessage(io, socket, payload);
+      // Normal relay: deliver as is. Evil relay: the attack decides what is delivered.
+      const outgoing = evil ? evil.process(payload) : [payload];
+      let status: RouteStatus = onlineUsers.has(payload.to) ? "delivered_online" : "queued_offline";
+      for (const [i, msg] of outgoing.entries()) {
+        const s = await routeMessage(io, socket, msg as typeof payload);
+        if (i === 0) status = s;
+      }
       if (status === "delivered_online" || status === "queued_offline") {
         ack({ success: true, status });
       } else {
@@ -176,7 +184,7 @@ export function registerSocketHandlers(io: Server) {
       if (!parsed.success) return ack({ success: false, error: "Invalid username." });
       try {
         const targetUser = await prisma.user.findUnique({
-          where: { username: parsed.data },
+          where: { username: evil ? evil.keySource(parsed.data) : parsed.data },
           select: { identityKeyPub: true },
         });
         if (targetUser && targetUser.identityKeyPub) {
