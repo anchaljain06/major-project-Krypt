@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { db } from "../services/db";
 import { deleteSessionKeyDatabase } from "../services/sessionCache";
+import { deleteAllSessionDatabases } from "../services/protocol";
 
 interface LoginFormProps {
   onLogin: (
@@ -170,6 +171,9 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
               } catch {
                 // Database may already be gone.
               }
+              // Krypt v1 ratchet sessions go too; prekey private halves stay so
+              // prekeys already published on the server remain usable.
+              await deleteAllSessionDatabases();
               window.location.reload();
             }}
             disabled={isLoading}

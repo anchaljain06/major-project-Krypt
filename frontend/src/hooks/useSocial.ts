@@ -3,6 +3,12 @@ import { socket } from "../services/socket";
 import { apiFetch, apiPostJson } from "../services/api";
 import toast from "react-hot-toast";
 
+/** One row of GET /api/users/search. */
+export interface SearchResult {
+  username: string;
+  identityKeyPub?: string | null;
+}
+
 export function useSocial(
   user: string,
   activeChat: string | null,
@@ -11,7 +17,7 @@ export function useSocial(
   const [pendingRequests, setPendingRequests] = useState<string[]>([]);
   const [sentRequests, setSentRequests] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [friendsList, setFriendsList] = useState<string[]>([]);
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
   const [showBlockPanel, setShowBlockPanel] = useState(false);
@@ -30,7 +36,7 @@ export function useSocial(
         if (!res.ok) return setSearchResults([]);
         const data = await res.json();
         setSearchResults(Array.isArray(data) ? data : []);
-      } catch (err) {
+      } catch {
         setSearchResults([]);
       }
     }, 300);
@@ -80,7 +86,7 @@ export function useSocial(
         setSearchResults([]);
         setSearchQuery("");
         toast.success(`Request sent to ${targetUser}`);
-      } catch (err) {
+      } catch {
         toast.error("Failed to send request.");
       }
     },
@@ -105,8 +111,8 @@ export function useSocial(
         setPendingRequests((prev) => prev.filter((r) => r !== requester));
         setFriendsList((prev) => [...prev, requester]);
         toast.success(`You are now friends with ${requester}!`);
-      } catch (err: any) {
-        toast.error(err.message || "Failed to accept request.");
+      } catch (err) {
+        toast.error((err instanceof Error && err.message) || "Failed to accept request.");
       }
     },
     [user],
@@ -129,8 +135,8 @@ export function useSocial(
         });
         setPendingRequests((prev) => prev.filter((r) => r !== requester));
         toast.success(`Request from ${requester} rejected.`);
-      } catch (err: any) {
-        toast.error(err.message || "Failed to reject request.");
+      } catch (err) {
+        toast.error((err instanceof Error && err.message) || "Failed to reject request.");
       }
     },
     [user],
@@ -153,7 +159,7 @@ export function useSocial(
         });
         setSentRequests((prev) => prev.filter((u) => u !== targetUser));
         toast.success(`Request to ${targetUser} revoked.`);
-      } catch (err) {
+      } catch {
         toast.error("Failed to revoke request.");
       }
     },
@@ -176,7 +182,7 @@ export function useSocial(
         setSentRequests((prev) => prev.filter((u) => u !== targetUser));
         if (activeChat === targetUser) setActiveChat(null);
         toast.success(`${targetUser} blocked.`);
-      } catch (err) {
+      } catch {
         toast.error("Failed to block user.");
       }
     },
@@ -196,8 +202,8 @@ export function useSocial(
         }
         setBlockedUsers((prev) => prev.filter((u) => u !== targetUser));
         toast.success(`${targetUser} unblocked.`);
-      } catch (err: any) {
-        toast.error(err.message || "Failed to unblock user.");
+      } catch (err) {
+        toast.error((err instanceof Error && err.message) || "Failed to unblock user.");
       }
     },
     [user],

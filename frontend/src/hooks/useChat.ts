@@ -1,288 +1,153 @@
 import React, { useState, useCallback } from "react";
-import { socket } from "../services/socket";
-import { encryptAES } from "../crypto/aes_wasm";
 import { db } from "../services/db";
 import { useLiveQuery } from "dexie-react-hooks";
 import toast from "react-hot-toast";
-import { encryptLocal, decryptLocal } from "../crypto/localStore";
-import { ratchetKey } from "../crypto/ratchet";
-import type { RatchetResult } from "./useRatchet";
+import { decryptLocal } from "../crypto/localStore";
 import type { UserIdentityKeys } from "../crypto/mlkem";
+import { MAX_ATTACHMENT_BYTES, formatBytes } from "../crypto/media";
+import type { Protocol } from "../services/protocol";
+import { reportSendError, sendChatMessage, type StoredMessage } from "../services/messaging";
 
-export interface DecryptedMessage {
-  id?: number;
-  from: string;
-  to: string;
-  ciphertext: string;
-  decryptedText: string;
-  type: "text" | "image" | "audio";
-  timestamp: number;
+export type DecryptedMessage = StoredMessage;
+
+/** Images above this are refused before decoding (they are re-encoded to JPEG ≤ 1200 px anyway). */
+const MAX_IMAGE_INPUT_BYTES = 50 * 1024 * 1024;
+const MAX_IMAGE_SIDE = 1200;
+
+/** Decodes, downsizes and re-encodes an image as JPEG (quality 0.7). */
+async function prepareImage(file: File): Promise<Uint8Array> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode().catch(() => {
+      throw new Error("Invalid image file.");
+    });
+    let { width, height } = img;
+    const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(width, height));
+    width = Math.round(width * scale);
+    height = Math.round(height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d")?.drawImage(img, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.7));
+    if (!blob) throw new Error("Could not encode the image.");
+    return new Uint8Array(await blob.arrayBuffer());
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
-export function useChat(
-  user: string,
-  myPrivateKey: UserIdentityKeys | null,
-  getOrCreateSessionKey: (target: string) => Promise<RatchetResult>,
-) {
+export function useChat(user: string, myPrivateKey: UserIdentityKeys | null, protocol: Protocol | null) {
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const rawMessages = useLiveQuery(() => db.messages.toArray()) || [];
+  const rawMessages = useLiveQuery(() => db.messages.toArray());
   const [messages, setMessages] = useState<DecryptedMessage[]>([]);
 
   React.useEffect(() => {
     let isMounted = true;
     const decryptAll = async () => {
-      if (!myPrivateKey || rawMessages.length === 0) {
+      const rows = rawMessages ?? [];
+      if (!myPrivateKey || rows.length === 0) {
         if (isMounted) setMessages([]);
         return;
       }
-
       const decrypted: DecryptedMessage[] = [];
-      for (const msg of rawMessages) {
-        if (!msg.payload) continue; // Skip legacy plaintext messages that don't match the new payload schema
+      for (const msg of rows) {
+        if (!msg.payload) continue;
         try {
-          const jsonStr = await decryptLocal(msg.payload, myPrivateKey);
-          const obj = JSON.parse(jsonStr);
+          const obj = JSON.parse(await decryptLocal(msg.payload, myPrivateKey));
           decrypted.push({ ...obj, id: msg.id });
-        } catch (e) {
-          // If decryption fails, it might be a corrupted or mismatched key msg.
+        } catch {
+          // Unreadable entry (other account's key or corrupted): skip it.
         }
       }
-
       decrypted.sort((a, b) => a.timestamp - b.timestamp);
-      const filtered = decrypted.filter(
-        (m) => m.from === user || m.to === user,
-      );
-      if (isMounted) setMessages(filtered);
+      if (isMounted) setMessages(decrypted.filter((m) => m.from === user || m.to === user));
     };
     decryptAll();
     return () => {
       isMounted = false;
     };
-  }, [rawMessages, myPrivateKey]);
+  }, [rawMessages, myPrivateKey, user]);
 
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || !activeChat || !myPrivateKey || isSending) return;
+    if (!input.trim() || !activeChat || isSending) return;
+    if (!protocol) {
+      toast.error("Secure messaging is still starting. Try again in a moment.");
+      return;
+    }
     const targetUser = activeChat;
-    const plaintext = input;
+    const text = input;
     setInput("");
     setIsSending(true);
-
     try {
-      // 1. Get current key (optionally initiates handshake)
-      const {
-        key: currentAesKey,
-        eph,
-        sig,
-      } = await getOrCreateSessionKey(targetUser);
-
-      // 2. Encrypt the text using the WASM engine
-      const ciphertext = await encryptAES(plaintext, currentAesKey);
-
-      // 3. THE RATCHET: Hash the key immediately and save it for the NEXT message!
-      const nextKey = await ratchetKey(currentAesKey);
-      localStorage.setItem(`session_${user}_${targetUser}`, nextKey);
-
-      // 4. Send over socket
-      const payload = {
-        to: targetUser,
-        from: user,
-        ciphertext: ciphertext,
-        type: "text",
-        eph, // Include ephemeral key if it's a new session
-        sig, // Include signature
-      };
-
-      socket.emit("private_message", payload);
-
-      // 5. Save locally
-      const msgObj = {
-        from: user,
-        to: targetUser,
-        decryptedText: plaintext,
-        ciphertext,
-        type: "text",
-        timestamp: Date.now(),
-      };
-
-      await db.messages.add({
-        payload: await encryptLocal(JSON.stringify(msgObj), myPrivateKey),
-      });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to send message.");
+      await sendChatMessage(protocol, targetUser, { type: "text", text });
+    } catch (err) {
+      setInput((cur) => (cur === "" ? text : cur));
+      reportSendError(err, targetUser);
     } finally {
       setIsSending(false);
     }
-  }, [input, activeChat, myPrivateKey, isSending, user, getOrCreateSessionKey]);
+  }, [input, activeChat, isSending, protocol]);
 
   const sendImage = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (!file || !activeChat || !myPrivateKey || isSending) return;
-      const MAX_FILE_SIZE = 10 * 1024 * 1024;
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error("Image is too large (max 10MB)!");
-        e.target.value = "";
+      e.target.value = "";
+      if (!file || !activeChat || isSending) return;
+      if (!protocol) {
+        toast.error("Secure messaging is still starting. Try again in a moment.");
+        return;
+      }
+      if (file.size > MAX_IMAGE_INPUT_BYTES) {
+        toast.error(`Image is too large (max ${formatBytes(MAX_IMAGE_INPUT_BYTES)}).`);
         return;
       }
       const targetUser = activeChat;
       setIsSending(true);
-
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      img.src = objectUrl;
-
-      img.onload = async () => {
-        URL.revokeObjectURL(objectUrl);
-        try {
-          const canvas = document.createElement("canvas");
-          let width = img.width;
-          let height = img.height;
-
-          // Scale down if image is too large (max 1200x1200px)
-          const MAX_WIDTH = 1200;
-          const MAX_HEIGHT = 1200;
-
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height = Math.round((height * MAX_WIDTH) / width);
-              width = MAX_WIDTH;
-            }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width = Math.round((width * MAX_HEIGHT) / height);
-              height = MAX_HEIGHT;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          ctx?.drawImage(img, 0, 0, width, height);
-
-          // Optimize image quality before encryption
-          const optimizedBase64 = canvas.toDataURL("image/jpeg", 0.7);
-
-          const {
-            key: currentAesKey,
-            eph,
-            sig,
-          } = await getOrCreateSessionKey(targetUser);
-          const ciphertext = await encryptAES(optimizedBase64, currentAesKey);
-
-          const nextKey = await ratchetKey(currentAesKey);
-          localStorage.setItem(`session_${user}_${targetUser}`, nextKey);
-
-          const payload = {
-            to: targetUser,
-            from: user,
-            ciphertext, // directly send the encrypted base64 string
-            type: "image",
-            eph,
-            sig,
-          };
-          socket.emit("private_message", payload);
-
-          const msgObj = {
-            from: user,
-            to: targetUser,
-            decryptedText: optimizedBase64,
-            ciphertext,
-            type: "image",
-            timestamp: Date.now(),
-          };
-
-          await db.messages.add({
-            payload: await encryptLocal(JSON.stringify(msgObj), myPrivateKey),
-          });
-        } catch (err: any) {
-          toast.error(err.message || "Failed to send image.");
-        } finally {
-          setIsSending(false);
-          e.target.value = "";
-        }
-      };
-
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        toast.error("Invalid image file.");
+      try {
+        const jpeg = await prepareImage(file);
+        await sendChatMessage(protocol, targetUser, { type: "image", data: jpeg, mime: "image/jpeg" });
+      } catch (err) {
+        reportSendError(err, targetUser);
+      } finally {
         setIsSending(false);
-        e.target.value = "";
-      };
+      }
     },
-    [activeChat, myPrivateKey, isSending, user, getOrCreateSessionKey],
+    [activeChat, isSending, protocol],
   );
 
   const sendAudio = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (!file || !activeChat || !myPrivateKey || isSending) return;
-      const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-      if (file.size > MAX_FILE_SIZE) {
-        toast.error("Audio is too large (max 10MB)!");
-        e.target.value = "";
+      e.target.value = "";
+      if (!file || !activeChat || isSending) return;
+      if (!protocol) {
+        toast.error("Secure messaging is still starting. Try again in a moment.");
         return;
       }
-
+      // Checked before reading the file: one relay frame holds at most this much.
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        toast.error(`Audio is too large: ${formatBytes(file.size)} (limit ${formatBytes(MAX_ATTACHMENT_BYTES)}).`);
+        return;
+      }
+      const mime = file.type && file.type.startsWith("audio/") ? file.type : "audio/mpeg";
       const targetUser = activeChat;
       setIsSending(true);
-
       try {
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          try {
-            const base64Audio = reader.result as string;
-
-            const {
-              key: currentAesKey,
-              eph,
-              sig,
-            } = await getOrCreateSessionKey(targetUser);
-            const ciphertext = await encryptAES(base64Audio, currentAesKey);
-
-            const nextKey = await ratchetKey(currentAesKey);
-            localStorage.setItem(`session_${user}_${targetUser}`, nextKey);
-
-            const payload = {
-              to: targetUser,
-              from: user,
-              ciphertext,
-              type: "audio",
-              eph,
-              sig,
-            };
-
-            socket.emit("private_message", payload);
-            const msgObj = {
-              from: user,
-              to: targetUser,
-              decryptedText: base64Audio,
-              ciphertext,
-              type: "audio",
-              timestamp: Date.now(),
-            };
-
-            await db.messages.add({
-              payload: await encryptLocal(JSON.stringify(msgObj), myPrivateKey),
-            });
-          } catch (err: any) {
-            toast.error(err.message || "Failed to send audio.");
-          } finally {
-            setIsSending(false);
-            e.target.value = "";
-          }
-        };
-
-        reader.readAsDataURL(file);
+        const data = new Uint8Array(await file.arrayBuffer());
+        await sendChatMessage(protocol, targetUser, { type: "audio", data, mime });
       } catch (err) {
-        toast.error("Failed to read audio file.");
+        reportSendError(err, targetUser);
+      } finally {
         setIsSending(false);
-        e.target.value = "";
       }
     },
-    [activeChat, myPrivateKey, isSending, user, getOrCreateSessionKey],
+    [activeChat, isSending, protocol],
   );
 
   return {

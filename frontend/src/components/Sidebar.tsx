@@ -1,5 +1,8 @@
 import React from "react";
 import { validateVaultPassword, MIN_VAULT_PASSWORD_LENGTH } from "../crypto/vault";
+import type { SearchResult } from "../hooks/useSocial";
+import KtBadge from "./KtBadge";
+import SuiteToggle from "./SuiteToggle";
 
 interface SidebarProps {
   user: string;
@@ -9,7 +12,7 @@ interface SidebarProps {
   sentRequests: string[];
   friendsList: string[];
   blockedUsers: string[];
-  searchResults: any[];
+  searchResults: SearchResult[];
   searchQuery: string;
   onSearch: (query: string) => void;
   onSendRequest: (target: string) => void;
@@ -87,6 +90,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
             {user}
           </p>
+          <div className="mt-1.5">
+            <KtBadge />
+          </div>
         </div>
         <div className="flex gap-2">
           <button
@@ -355,6 +361,13 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             ))
           )}
+
+          <div className="mt-4 pt-4 border-t border-slate-700 space-y-2">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+              Encryption
+            </h3>
+            <SuiteToggle user={user} />
+          </div>
 
           <div className="mt-4 pt-4 border-t border-slate-700 space-y-2">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">

@@ -17,6 +17,7 @@ import {
 import srp from "secure-remote-password/client";
 import toast from "react-hot-toast";
 import { db } from "../services/db";
+import { deleteLegacySessionKeys, deleteSessionDatabase, stopProtocol } from "../services/protocol";
 import {
   encryptVaultData,
   decryptVaultData,
@@ -407,17 +408,10 @@ export function useAuth() {
     try {
       await db.messages.clear();
       await db.contacts.clear();
-      // Wipe ratchet session state
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith(`session_${user}_`)) {
-          keysToRemove.push(key);
-        }
-      }
-      for (const key of keysToRemove) {
-        localStorage.removeItem(key);
-      }
+      // Wipe Krypt v1 ratchet sessions on this device. Prekey private halves
+      // are kept, so peers can still start new sessions with us.
+      deleteLegacySessionKeys();
+      if (user) await deleteSessionDatabase(user);
 
       toast.success("Local cache completely wiped.");
       setTimeout(() => window.location.reload(), 1500);
@@ -446,6 +440,7 @@ export function useAuth() {
 
     // Secure sign out
     disconnectSocket();
+    await stopProtocol().catch(() => {});
     clearToken();
     await clearSessionCache(user).catch(() => {});
     localStorage.removeItem("currentUser");

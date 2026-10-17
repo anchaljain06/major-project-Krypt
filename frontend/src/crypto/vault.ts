@@ -196,7 +196,11 @@ export async function importChatBackup(
   const decrypted = await decryptVaultData(backupContent, password);
   const data = JSON.parse(decrypted);
   if (data.messages && Array.isArray(data.messages)) {
-    const validMessages = data.messages.filter((m: any) => m.payload);
+    // Only encrypted message rows. Ratchet state is never in a backup (spec 7 rule 3).
+    const validMessages = data.messages.filter(
+      (m: unknown): m is { payload: string } =>
+        !!m && typeof m === "object" && typeof (m as { payload?: unknown }).payload === "string",
+    );
     if (validMessages.length > 0) {
       await db.messages.bulkAdd(validMessages);
     } else {
