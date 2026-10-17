@@ -13,6 +13,7 @@ export function useSocial(
   user: string,
   activeChat: string | null,
   setActiveChat: (name: string | null) => void,
+  signedIn: boolean,
 ) {
   const [pendingRequests, setPendingRequests] = useState<string[]>([]);
   const [sentRequests, setSentRequests] = useState<string[]>([]);
@@ -43,8 +44,11 @@ export function useSocial(
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, user]);
 
+  // Loaded once the session is live. Keyed on `signedIn` too: a returning
+  // login in a new tab starts with `user` already set (from localStorage) but
+  // no token, and `user` does not change when the login completes.
   useEffect(() => {
-    if (!user) return;
+    if (!user || !signedIn) return;
     const endpoints = [
       {
         url: `request/pending/${user}`,
@@ -65,7 +69,7 @@ export function useSocial(
           // 401 is handled globally by apiFetch (logout); other failures leave lists empty.
         });
     });
-  }, [user]);
+  }, [user, signedIn]);
 
   const sendRequest = useCallback(
     async (targetUser: string) => {

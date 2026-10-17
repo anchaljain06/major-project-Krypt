@@ -80,7 +80,7 @@ export default function App() {
     onlineUsers,
     setOnlineUsers,
     revokeRequest,
-  } = useSocial(user, activeChat, setActiveChat);
+  } = useSocial(user, activeChat, setActiveChat, !!myPrivateKey);
 
   useSocketListeners({
     user,
