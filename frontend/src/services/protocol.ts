@@ -5,7 +5,9 @@
  * - Ratchet state: IndexedDB "krypt-sessions-v1:<user>" (IndexedDbSessionStore).
  * - Prekey private halves and the session-id memory: IndexedDB
  *   "krypt-prekeys-v1:<user>" (IndexedDbPrekeyStore).
- * Both are sealed with AES-256-GCM under ONE store key:
+ * - Resend outbox and seen message ids: IndexedDB "krypt-msgstate-v1:<user>"
+ *   (IndexedDbMessageState, services/messageState.ts).
+ * All are sealed with AES-256-GCM under ONE store key:
  *
  *   storeKey = HKDF-SHA-256(salt = "krypt-store-salt-v1",
  *                           ikm  = ML-DSA-87 identity secret key (4896 B),
@@ -31,6 +33,7 @@ import { SessionManager, createMutexLock, type LockFn } from "../crypto/session"
 import { IndexedDbPrekeyStore, IndexedDbSessionStore } from "../crypto/session-store";
 import { apiFetch } from "./api";
 import { KtClient } from "./kt";
+import { IndexedDbMessageState } from "./messageState";
 import { getSuite } from "./settings";
 import { socket } from "./socket";
 import { createTrustIdentity } from "./trust";
@@ -68,6 +71,7 @@ export const appLock: LockFn = (() => {
 
 export const sessionDbName = (user: string) => `krypt-sessions-v1:${user}`;
 export const prekeyDbName = (user: string) => `krypt-prekeys-v1:${user}`;
+export const messageStateDbName = (user: string) => `krypt-msgstate-v1:${user}`;
 
 /** GET /api/bundle/:username. Claims one of the peer's one-time prekeys. */
 async function fetchBundle(username: string): Promise<PrekeyBundleWire> {
@@ -100,6 +104,7 @@ export class Protocol {
   readonly keys: UserIdentityKeys;
   readonly sessions: IndexedDbSessionStore;
   readonly prekeys: IndexedDbPrekeyStore;
+  readonly messageState: IndexedDbMessageState;
   readonly kt: KtClient;
   private readonly trust: TrustFn;
   private suite: KemSuite;
@@ -112,6 +117,7 @@ export class Protocol {
     this.trust = createTrustIdentity(keys, this.kt);
     this.sessions = new IndexedDbSessionStore({ key: storeKey, dbName: sessionDbName(username) });
     this.prekeys = new IndexedDbPrekeyStore({ key: storeKey, dbName: prekeyDbName(username) });
+    this.messageState = new IndexedDbMessageState({ key: storeKey, dbName: messageStateDbName(username), lock: appLock });
     this.suite = getSuite(username);
     this.manager = this.build();
   }
@@ -149,7 +155,7 @@ export class Protocol {
   }
 
   async close() {
-    await Promise.allSettled([this.sessions.close(), this.prekeys.close()]);
+    await Promise.allSettled([this.sessions.close(), this.prekeys.close(), this.messageState.close()]);
   }
 }
 
@@ -215,18 +221,27 @@ function deleteDb(name: string): Promise<void> {
   });
 }
 
-/** Deletes this user's ratchet sessions on this device (Wipe Local Device Cache). Prekeys are kept. */
+/**
+ * Deletes this user's ratchet sessions on this device (Wipe Local Device
+ * Cache), and with them the resend outbox and seen ids, which refer to those
+ * sessions. Prekeys are kept.
+ */
 export async function deleteSessionDatabase(user: string) {
-  if (current?.username === user) await current.sessions.close();
+  if (current?.username === user) await Promise.allSettled([current.sessions.close(), current.messageState.close()]);
   await deleteDb(sessionDbName(user));
+  await deleteDb(messageStateDbName(user));
 }
 
-/** Deletes every user's ratchet-session database on this device (login screen "Clear" button). */
+/** Deletes every user's ratchet-session and message-state databases on this device (login screen "Clear" button). */
 export async function deleteAllSessionDatabases() {
   try {
     const dbs = (await indexedDB.databases?.()) ?? [];
+    const prefixes = ["krypt-sessions-v1:", "krypt-msgstate-v1:"];
     await Promise.all(
-      dbs.map((d) => d.name).filter((n): n is string => !!n && n.startsWith("krypt-sessions-v1:")).map(deleteDb),
+      dbs
+        .map((d) => d.name)
+        .filter((n): n is string => !!n && prefixes.some((p) => n.startsWith(p)))
+        .map(deleteDb),
     );
   } catch {
     // indexedDB.databases() unsupported: nothing we can enumerate.

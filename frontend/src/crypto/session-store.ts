@@ -112,15 +112,18 @@ export class MemorySessionStore implements SessionStore {
 
 // ---------------------------------------------------------------------------
 // Encrypted IndexedDB stores
+//
+// The helpers below are exported for other at-rest stores that use the same
+// scheme (services/messageState.ts); they are not part of the protocol API.
 
-function req<T>(r: IDBRequest<T>): Promise<T> {
+export function req<T>(r: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   });
 }
 
-function done(tx: IDBTransaction): Promise<void> {
+export function done(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
@@ -128,7 +131,7 @@ function done(tx: IDBTransaction): Promise<void> {
   });
 }
 
-function openDb(factory: IDBFactory, name: string, stores: string[]): Promise<IDBDatabase> {
+export function openDb(factory: IDBFactory, name: string, stores: string[]): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const r = factory.open(name, 1);
     r.onupgradeneeded = () => {
@@ -139,13 +142,13 @@ function openDb(factory: IDBFactory, name: string, stores: string[]): Promise<ID
   });
 }
 
-interface Sealed {
+export interface Sealed {
   iv: Uint8Array;
   ct: Uint8Array;
 }
 
 /** AES-256-GCM with a random 96-bit IV; the AAD binds the record to its slot. */
-async function seal(key: CryptoKey, aad: Uint8Array, plaintext: Uint8Array): Promise<Sealed> {
+export async function seal(key: CryptoKey, aad: Uint8Array, plaintext: Uint8Array): Promise<Sealed> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: bs(aad) }, key, bs(plaintext)),
@@ -153,7 +156,7 @@ async function seal(key: CryptoKey, aad: Uint8Array, plaintext: Uint8Array): Pro
   return { iv, ct };
 }
 
-async function open(key: CryptoKey, aad: Uint8Array, sealed: Sealed): Promise<Uint8Array> {
+export async function open(key: CryptoKey, aad: Uint8Array, sealed: Sealed): Promise<Uint8Array> {
   return new Uint8Array(
     await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: bs(sealed.iv), additionalData: bs(aad) },

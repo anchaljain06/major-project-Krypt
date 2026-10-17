@@ -624,6 +624,8 @@ encrypts it with a caller-provided AES-GCM `CryptoKey` (derived from the vault
 key at integration): random 12-byte IV, `AAD = lp("krypt-session-v1", peer)`,
 so a record cannot be moved to another peer's slot. The same scheme protects
 prekey private keys in `IndexedDbPrekeyStore` (AAD label `krypt-prekeys-v1`).
+The app layer's re-send outbox and seen message ids (section 4.5) use the same
+key and scheme with AAD labels `krypt-outbox-v1` and `krypt-seen-v1`.
 
 ## 13. Changes relative to the strategy document
 

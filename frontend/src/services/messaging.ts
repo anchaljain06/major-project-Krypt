@@ -10,10 +10,12 @@
  * Nothing is written to the local message DB unless every step succeeded.
  *
  * Session races (spec 4.5, open issue 1): messages sent on a session that the
- * peer has not confirmed yet are kept in memory. If the next authenticated
+ * peer has not confirmed yet are kept in an outbox. If the next authenticated
  * message from that peer arrives on a different session, ours lost the
  * simultaneous-initiation tie-break (the peer saw SESSION_SUPERSEDED), so
  * they are re-sent on the surviving session. Receivers drop duplicates by id.
+ * The outbox and the seen ids are persisted, encrypted under the store key
+ * (services/messageState.ts), so a refresh loses neither.
  */
 import toast from "react-hot-toast";
 import {
@@ -32,6 +34,7 @@ import { AttachmentError, assertAttachmentFits, decryptAttachment, encryptAttach
 import type { UserIdentityKeys } from "../crypto/mlkem";
 import { bytesToBase64 } from "../crypto/utils";
 import { db } from "./db";
+import type { OutgoingItem } from "./messageState";
 import { resetOneTimePrekeysAfterUnknown } from "./prekeyMaintenance";
 import { protocolReady, type Protocol } from "./protocol";
 import { socket } from "./socket";
@@ -139,13 +142,7 @@ export function reportSendError(err: unknown, peer: string) {
 // ---------------------------------------------------------------------------
 // Sending
 
-interface Outgoing {
-  contentType: ChatContentType;
-  msg: AppMessage;
-  attachment?: Uint8Array;
-}
-
-const outbox = new Map<string, { sessionId: string; items: Outgoing[] }>();
+type Outgoing = OutgoingItem;
 
 function emitPrivateMessage(payload: unknown, timeoutMs: number): Promise<{ success?: boolean; reason?: string }> {
   return new Promise((resolve, reject) => {
@@ -170,15 +167,14 @@ async function transmit(p: Protocol, peer: string, item: Outgoing): Promise<stri
   return env.sessionId;
 }
 
-async function track(p: Protocol, peer: string, sessionId: string, item: Outgoing) {
+/** Keeps `item` for re-sending while its session is unconfirmed (persisted, survives a refresh). */
+export async function track(p: Protocol, peer: string, sessionId: string, item: Outgoing) {
   const status = await p.session.getStatus(peer);
   if (!status || status.established || status.sessionId !== sessionId) {
-    outbox.delete(peer);
+    await p.messageState.clearOutbox(peer);
     return;
   }
-  const box = outbox.get(peer);
-  if (box && box.sessionId === sessionId) box.items.push(item);
-  else outbox.set(peer, { sessionId, items: [item] });
+  await p.messageState.appendOutbox(peer, sessionId, item);
 }
 
 export type OutgoingContent =
@@ -213,10 +209,10 @@ export async function sendChatMessage(p: Protocol, peer: string, content: Outgoi
   await storeMessage(p.keys, { from: p.username, to: peer, decryptedText: display, type: content.type, timestamp: msg.sentAt, msgId: msg.id });
 }
 
-async function resendAfterSessionSwitch(p: Protocol, peer: string, sessionId: string) {
-  const box = outbox.get(peer);
+/** After an authenticated message from `peer` on `sessionId`: re-send what we sent on a session that lost. */
+export async function resendAfterSessionSwitch(p: Protocol, peer: string, sessionId: string) {
+  const box = await p.messageState.takeOutbox(peer);
   if (!box) return;
-  outbox.delete(peer);
   if (box.sessionId === sessionId) return;
   toast(`Your session with ${peer} was replaced. Re-sending ${box.items.length} message(s).`, { icon: "🔁" });
   for (const item of box.items) {
@@ -232,7 +228,6 @@ async function resendAfterSessionSwitch(p: Protocol, peer: string, sessionId: st
 // ---------------------------------------------------------------------------
 // Receiving
 
-const seen = new Set<string>();
 let queue: Promise<void> = Promise.resolve();
 
 /** Adds a relayed frame to the FIFO receive queue. */
@@ -274,8 +269,8 @@ async function processIncoming(raw: unknown) {
     toast.error(`Dropped a message from ${peer}: ${(err as Error).message}.`);
     return;
   }
-  const key = `${peer}:${msg.id}`;
-  if (seen.has(key)) return;
+  // A re-sent copy (spec 4.5) of a message we already stored: drop it.
+  if (await p.messageState.hasSeen(peer, msg.id)) return;
 
   void p.kt.checkGossip(peer, msg.kt).catch((err) => console.warn("[KT] gossip check failed:", err));
 
@@ -293,7 +288,6 @@ async function processIncoming(raw: unknown) {
     display = msg.text ?? "";
   }
 
-  seen.add(key);
   await storeMessage(p.keys, {
     from: peer,
     to: p.username,
@@ -302,4 +296,6 @@ async function processIncoming(raw: unknown) {
     timestamp: Date.now(),
     msgId: msg.id,
   });
+  // After storing: a crash in between can at worst show a re-sent copy twice, never lose one.
+  await p.messageState.markSeen(peer, msg.id);
 }

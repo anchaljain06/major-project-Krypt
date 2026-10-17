@@ -27,14 +27,15 @@ npm run test:e2e   # Playwright, two users over a running relay: see e2e/README.
 |---|---|
 | `src/crypto/` | Protocol core (`session.ts`, `handshake.ts`, `prekeys.ts`, ...), attachments (`media.ts`), message codec (`appMessage.ts`), safety numbers |
 | `src/services/protocol.ts` | One `SessionManager` per logged-in user, its encrypted IndexedDB stores and the store key |
-| `src/services/prekeyMaintenance.ts` | Prekey upload, refill, weekly signed-prekey rotation with a 2-week grace period |
+| `src/services/prekeyMaintenance.ts` | Prekey upload, refill, weekly signed-prekey rotation with a 2-week grace period, withdrawal of stale one-time prekeys |
 | `src/services/messaging.ts` | Send and receive pipeline, error toasts, re-send after a session race |
+| `src/services/messageState.ts` | Persisted re-send outbox and seen message ids (encrypted, survives a refresh) |
 | `src/services/trust.ts` | `trustIdentity`: KT lookup, then the TOFU pin and the key-change dialog |
 | `src/services/kt.ts` | KT client: lookup proofs, STH consistency, witness, self-monitoring, gossip |
 
 ### Store key
 
-Ratchet sessions and prekey private keys are sealed in IndexedDB with AES-256-GCM under
+Ratchet sessions, prekey private keys, the re-send outbox and the seen message ids are sealed in IndexedDB with AES-256-GCM under
 
 ```
 HKDF-SHA-256(salt = "krypt-store-salt-v1", ikm = ML-DSA-87 identity secret key,
