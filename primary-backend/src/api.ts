@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import { prisma } from "./db.js";
 import srp from "secure-remote-password/server.js";
 import { issueToken, requireAuth, requireSelf, sameUsername } from "./auth.js";
+import { ktApiRouter } from "./ktRoutes.js";
 import prekeys from "./prekeys.js";
 import {
   acceptOrRejectBody,
@@ -174,6 +175,9 @@ router.use(requireAuth);
 
 // POST /prekeys, GET /prekeys/count, GET /bundle/:username
 router.use(prekeys);
+
+// POST /kt/register, GET /kt/status (key transparency, plan 2.21)
+router.use("/kt", ktApiRouter());
 
 async function searchUsers(req: Request, query: string, take: number) {
   const current = myId(req);

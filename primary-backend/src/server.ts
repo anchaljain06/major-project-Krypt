@@ -4,6 +4,7 @@ import { Server } from "socket.io";
 import { ALLOWED_ORIGINS, createApp } from "./app.js";
 import { prisma } from "./db.js";
 import { loadEvilRelay } from "./evil.js";
+import { ktLog } from "./ktRoutes.js";
 import { MAX_SOCKET_MESSAGE_BYTES } from "./schemas.js";
 import { purgeExpiredMailbox, registerSocketHandlers } from "./sockets.js";
 
@@ -31,6 +32,11 @@ async function startServer() {
     console.log(
       `[DB] Database connected successfully. Current users: ${userCount}`,
     );
+
+    // Load the KT signing key now (fails fast on a bad KT_LOG_SK) and make
+    // sure a signed tree head exists.
+    const sth = await ktLog().latestSth();
+    console.log(`[KT] Log has a signed tree head of size ${sth.treeSize}.`);
 
     await purgeExpiredMailbox();
     setInterval(() => {

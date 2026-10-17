@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import cors from "cors";
 import helmet from "helmet";
 import api from "./api.js";
+import { ktPublicRouter } from "./ktRoutes.js";
 import { MAX_JSON_BODY, MAX_PREKEY_JSON_BODY } from "./schemas.js";
 
 export const ALLOWED_ORIGINS = process.env.FRONTEND_URL
@@ -21,6 +22,8 @@ export function createApp() {
   app.use("/api/prekeys", express.json({ limit: MAX_PREKEY_JSON_BODY }));
   app.use(express.json({ limit: MAX_JSON_BODY }));
   app.use("/api", api);
+  // Key transparency: public, unauthenticated (the witness must reach it).
+  app.use("/kt", ktPublicRouter());
 
   // Last-resort error handler: log server-side, never leak internals to clients.
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

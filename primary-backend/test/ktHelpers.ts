@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
 import { ml_kem1024 } from "@noble/post-quantum/ml-kem.js";
 import {
@@ -52,7 +53,7 @@ export async function signedLeaf(opts: {
   return { leaf, bytes: encodeLeaf(leaf), ownerSig };
 }
 
-/** A well-formed leaf with random contents (no valid signature). */
+/** A well-formed leaf with random contents; ownerSig matches its hash but is not a real signature. */
 export function randomLeafBytes(): { bytes: Uint8Array; ownerSig: Uint8Array } {
   const r = (n: number) => globalThis.crypto.getRandomValues(new Uint8Array(n));
   const tag = new TextEncoder().encode("KRYPT-KT-v1\0");
@@ -63,6 +64,7 @@ export function randomLeafBytes(): { bytes: Uint8Array; ownerSig: Uint8Array } {
   leaf.set(Uint8Array.of(0, 0, 0, 1), 45);
   leaf.set(r(64), 49);
   leaf.set(Uint8Array.of(0, 0, 1, 0x90, 0, 0, 0, 0), 113);
-  leaf.set(r(32), 121);
-  return { bytes: leaf, ownerSig: r(64) };
+  const ownerSig = r(64);
+  leaf.set(createHash("sha256").update(ownerSig).digest(), 121);
+  return { bytes: leaf, ownerSig };
 }
