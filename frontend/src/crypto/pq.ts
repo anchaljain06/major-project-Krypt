@@ -37,6 +37,10 @@ export interface Kem {
   keygen(): KemKeyPair;
   encapsulate(publicKey: Uint8Array): { cipherText: Uint8Array; sharedSecret: Uint8Array };
   decapsulate(cipherText: Uint8Array, secretKey: Uint8Array): Uint8Array;
+  /** FIPS 203 section 7.2 encapsulation-key input check (length + modulus). */
+  checkEncapsulationKey(publicKey: Uint8Array): boolean;
+  /** FIPS 203 section 7.3 decapsulation-key input check (length + H(ek) hash). */
+  checkDecapsulationKey(secretKey: Uint8Array): boolean;
 }
 
 /** The subset of noble's KEM interface we rely on. */
@@ -52,10 +56,6 @@ function wrapKem(name: string, impl: NobleKem): Kem & {
   encapsulateDerand(publicKey: Uint8Array, m: Uint8Array): { cipherText: Uint8Array; sharedSecret: Uint8Array };
   /** Deterministic key generation from a seed. For known-answer tests only. */
   keygenDerand(seed: Uint8Array): KemKeyPair;
-  /** FIPS 203 section 7.2 encapsulation-key input check (length + modulus). */
-  checkEncapsulationKey(publicKey: Uint8Array): boolean;
-  /** FIPS 203 section 7.3 decapsulation-key input check (length + H(ek) hash). */
-  checkDecapsulationKey(secretKey: Uint8Array): boolean;
 } {
   const lengths = {
     publicKey: impl.lengths.publicKey!,
