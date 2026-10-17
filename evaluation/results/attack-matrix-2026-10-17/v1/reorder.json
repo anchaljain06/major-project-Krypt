@@ -1,0 +1,16 @@
+{
+  "attack": "reorder",
+  "ktEnabled": false,
+  "at": "2026-10-17T10:54:24.800Z",
+  "sentTexts": 6,
+  "bobTextsReceived": 6,
+  "bobImagesReceived": 0,
+  "bobTotalFromAlice": 6,
+  "bobCodes": [],
+  "bobToasts": [
+    "Incoming Requestsalice_reorder_a4hl6AcceptReject"
+  ],
+  "bobProblems": [],
+  "imagesFromText": 0,
+  "observed": "delivered 6/6"
+}

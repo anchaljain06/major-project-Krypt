@@ -1,0 +1,24 @@
+{
+  "attack": "kt_rewrite",
+  "ktEnabled": true,
+  "at": "2026-10-17T10:59:47.123Z",
+  "ktBadgeBob": "KT VERIFIED",
+  "ktBadgeAlice": "KT ALERT",
+  "bobToasts": [
+    "KryptSRP-6a Password Login (Augmented PAKE)UsernamePasswordIdentity Vault FileOptional. Only required if logging in from a new device.Vault Password (required with a vault file)Secure LoginNew here? Establish identity.Clear Browser Cache & Storage"
+  ],
+  "aliceToasts": [
+    "KryptSRP-6a Password Login (Augmented PAKE)UsernamePasswordIdentity Vault FileOptional. Only required if logging in from a new device.Vault Password (required with a vault file)Secure LoginNew here? Establish identity.Clear Browser Cache & Storage",
+    "Back up your identity vaultWelcome, alice_kt_rewrite_abeai. Your private identity key exists only in this browser. Download an encrypted vault file now: you need it to log in on another device or after clearing this browser. Nobody, including the server, can recover it for you.Download Encrypted Vault",
+    "bob_kt_rewrite_abeai's identity key is not trusted. Message not sent.",
+    "Key transparency ALERT for bob_kt_rewrite_abeai: log inconsistent: consistency proof 10 -> 11 does not verify"
+  ],
+  "bobProblems": [],
+  "aliceProblems": [
+    "error: [KT] ALERT: log inconsistent: consistency proof 10 -> 11 does not verify",
+    "error: [KT] ALERT: log inconsistent: consistency proof 10 -> 11 does not verify",
+    "error: [KT] ALERT: log inconsistent: consistency proof 10 -> 11 does not verify"
+  ],
+  "ktAlert": true,
+  "observed": "KT ALERT raised"
+}

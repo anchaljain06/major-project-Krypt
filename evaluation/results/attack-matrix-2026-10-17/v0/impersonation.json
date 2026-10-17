@@ -1,0 +1,7 @@
+{
+  "attack": "impersonation",
+  "flavor": "v0",
+  "observed": "impostor socket registered as bob_imp_akdsm with no credentials and received the victim's queued message (mailbox drained)",
+  "hijacked": true,
+  "refused": false
+}

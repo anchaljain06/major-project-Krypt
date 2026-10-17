@@ -1,0 +1,37 @@
+{
+  "attack": "duplicate",
+  "ktEnabled": false,
+  "at": "2026-10-17T10:54:47.659Z",
+  "sentTexts": 6,
+  "bobTextsReceived": 6,
+  "bobImagesReceived": 1,
+  "bobTotalFromAlice": 7,
+  "bobCodes": [
+    "DUPLICATE",
+    "DUPLICATE",
+    "DUPLICATE",
+    "DUPLICATE",
+    "DUPLICATE",
+    "DUPLICATE",
+    "DUPLICATE"
+  ],
+  "bobToasts": [
+    "New friend request from alice_duplicate_a4z8b!",
+    "Incoming Requestsalice_duplicate_a4z8bAcceptReject",
+    "You are now friends with alice_duplicate_a4z8b!",
+    "Secure ChannelsAalice_duplicate_a4z8bEncrypted Link Active",
+    "Aalice_duplicate_a4z8bOnline • Krypt v1 PQ ratchet",
+    "ℹ️Ignored a duplicate message from alice_duplicate_a4z8b."
+  ],
+  "bobProblems": [
+    "warning: [Krypt] decrypt from alice_duplicate_a4z8b failed: DUPLICATE",
+    "warning: [Krypt] decrypt from alice_duplicate_a4z8b failed: DUPLICATE",
+    "warning: [Krypt] decrypt from alice_duplicate_a4z8b failed: DUPLICATE",
+    "warning: [Krypt] decrypt from alice_duplicate_a4z8b failed: DUPLICATE",
+    "warning: [Krypt] decrypt from alice_duplicate_a4z8b failed: DUPLICATE",
+    "warning: [Krypt] decrypt from alice_duplicate_a4z8b failed: DUPLICATE",
+    "warning: [Krypt] decrypt from alice_duplicate_a4z8b failed: DUPLICATE"
+  ],
+  "imagesFromText": 0,
+  "observed": "de-duplicated (6/6 shown once)"
+}
