@@ -119,6 +119,9 @@ sig_OPK = Sign(IK_B, lp("Krypt-OPK", u32(keyId), ek_OPK))
   "identityKey": "{\"version\":...,\"kem\":\"...\",\"dsa\":\"...\"}",
   "signedPrekey":  { "keyId": 123, "publicKey": "...", "signature": "..." } | null,
   "oneTimePrekey": { "keyId": 456, "publicKey": "...", "signature": "..." } | null }
+
+// DELETE /prekeys/one-time (owner only): withdraw the listed OPKs, or all if keyIds is omitted
+{ "keyIds": [456, 789] }            // -> { "success": true, "oneTimeRemaining": 0 }
 ```
 
 `verifyBundle` (initiator) rejects the bundle unless: `signedPrekey` is present,
@@ -140,6 +143,14 @@ Identity-key trust (key transparency, step 3.1 of the plan) is a separate hook:
   other.
 - OPK private keys are deleted after the first successful handshake that used
   them (after AES-GCM verified the first message, section 4.2).
+- **Stale OPKs.** Every OPK still on the server must have its private half on
+  the device (the device may hold more: OPKs claimed by a peer whose init has
+  not arrived yet). If the server lists more OPKs than the device holds, or an
+  init names an OPK the device does not hold (`UNKNOWN_PREKEY`), the private
+  halves were lost: the client withdraws all of its server OPKs and uploads a
+  fresh batch, at most once an hour (such an init is unauthenticated, so the
+  limit stops forged ones from forcing churn). OPK private halves generated
+  for an upload that failed are deleted again.
 - SPK private keys stay until rotation plus a grace period (recommended: delete
   the previous SPK two weeks after its replacement is uploaded) so that inits
   already in flight still work.
