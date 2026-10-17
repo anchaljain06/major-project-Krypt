@@ -26,7 +26,8 @@ export interface Bundle {
 }
 
 /**
- * Atomically remove and return the caller's oldest one-time prekey.
+ * Atomically remove and return the oldest one-time prekey (lowest keyId within
+ * an upload batch, whose rows share one createdAt).
  * SKIP LOCKED lets concurrent claims each take a different row; no row is
  * ever handed out twice.
  */
@@ -36,7 +37,7 @@ export async function claimOneTimePrekey(userId: string): Promise<PublicPrekey |
     WHERE id = (
       SELECT id FROM "OneTimePrekey"
       WHERE "userId" = ${userId}
-      ORDER BY "createdAt", id
+      ORDER BY "createdAt", "keyId"
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
