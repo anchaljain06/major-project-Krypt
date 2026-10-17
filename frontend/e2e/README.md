@@ -45,3 +45,18 @@ npx playwright test               # E2E_BASE_URL overrides http://localhost:5199
 ```
 
 Each run uses fresh usernames, so the database does not need to be reset between runs.
+
+## With key transparency
+
+This needs a backend that serves `/kt/*` (`major/v1-protocol` after the KT merge).
+
+1. Run `node scripts/kt-keygen.mjs` in `primary-backend`.
+2. Start the backend with `KT_LOG_SK=<seed>` and `KT_STH_INTERVAL_SECONDS=0`, so new leaves appear at once.
+3. Start Vite with `VITE_KT_LOG_PUBKEY=<public key>`.
+4. Run the test:
+
+   ```bash
+   E2E_EXPECT_KT=1 npx playwright test
+   ```
+
+The test then requires the "KT verified" badge and a "Verified" KT status for both contacts.

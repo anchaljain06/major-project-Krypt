@@ -17,6 +17,8 @@ const ALICE = `alice_${run}`;
 const BOB = `bob_${run}`;
 const PASSWORD = "correct horse battery staple";
 const VAULT_PASSWORD = "vault-password-123";
+/** Set E2E_EXPECT_KT=1 when the frontend was built with VITE_KT_LOG_PUBKEY and the backend serves /kt/*. */
+const EXPECT_KT = process.env.E2E_EXPECT_KT === "1";
 
 // 1x1 PNG (decodable by the browser; the app re-encodes it as JPEG).
 const PNG = Buffer.from(
@@ -83,7 +85,7 @@ async function register(u: User) {
   await page.getByRole("button", { name: "Download Encrypted Vault" }).click();
   await download;
   await page.getByRole("button", { name: "I saved it, continue" }).click();
-  await expect(page.getByTestId("kt-badge")).toBeVisible();
+  await expect(page.getByTestId("kt-badge")).toHaveText(EXPECT_KT ? "KT verified" : "KT disabled");
 }
 
 /** Login on a device that already holds the password-encrypted identity (no vault file). */
@@ -125,6 +127,7 @@ async function safetyDigits(u: User): Promise<string> {
   await expect(sn).toBeVisible();
   const digits = (await sn.innerText()).replace(/\s+/g, " ").trim();
   await expect(u.page.getByTestId("session-status")).toContainText("ML-KEM-768");
+  if (EXPECT_KT) await expect(u.page.getByTestId("kt-peer-status")).toHaveText("Verified");
   await u.page.getByRole("button", { name: "Close" }).click();
   return digits;
 }
