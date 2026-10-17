@@ -1,21 +1,24 @@
 # Krypt evaluation harness (C3)
 
-This package measures the cost of Krypt's cryptography in real browsers and in Node. It covers experiments E1–E5 and E10 from strategy section 6.1, and has a hook for E7. It is a standalone package: it does not import from `frontend/` or `primary-backend/`.
+This package measures the cost of Krypt's cryptography in real browsers and in Node. It covers experiments E1–E5, E7 and E10 from strategy section 6.1. The browser and E1–E5/E10 code is standalone and does not import from `frontend/` or `primary-backend/`. E7 is the one exception: it drives the shipped `SessionManager` from `frontend/src/crypto/` in Node (see [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing)).
 
 ```
 evaluation/
 ├─ bench/index.html, bench.ts   page controller: worker or main thread, results on window.__results
 ├─ bench/worker.ts              dedicated Web Worker that runs the suite
-├─ bench/e7-ratchet.ts          E7 stub: what to measure once session.ts lands
+├─ bench/e7-ratchet.ts          E7 driver: Alice/Bob over the real SessionManager, KEM op counters, attacker Eve
 ├─ src/harness.ts               batch timer (method rules below)
 ├─ src/stats.ts                 median, p5/p95, IQR, bootstrap CI
 ├─ src/experiments.ts           E1–E4 op definitions and self-checks
 ├─ scripts/run-bench.ts         Playwright: Chromium, Firefox, WebKit × N fresh launches
 ├─ scripts/run-node.ts          E10: node:crypto vs WebCrypto-in-Node vs noble vs liboqs
 ├─ scripts/e5-bytes.ts          E5 byte accounting (no timing)
+├─ scripts/e7.ts                E7 runner: suite × K × traffic grid → results/e7-<date>/
 ├─ scripts/aggregate.ts         JSON → long.csv, summary.csv, env.csv, headline.md
 ├─ plots/plot.py                figures (PNG + SVG)
-└─ results/sample-2026-10-17/   committed sample. QUICK mode, one Mac, NOT final data
+├─ plots/e7_plot.py             E7 figures (same style and palette)
+├─ results/sample-2026-10-17/   committed sample. QUICK mode, one Mac, NOT final data
+└─ results/e7-2026-10-17/       E7 full grid: summary, per-snapshot results, figures
 ```
 
 ## Quick start (laptop)
@@ -33,6 +36,10 @@ npm run aggregate -- results/<date>         # → summary.csv, long.csv, env.csv
 
 python3 -m venv .venv && .venv/bin/pip install -r plots/requirements.txt
 npm run plot -- results/<date>              # → results/<date>/figures/*.png|svg
+
+npm --prefix ../frontend install            # E7 imports frontend/src/crypto and its @noble deps
+npm run e7                                  # E7 full grid (about 2 min) → results/e7-<date>/
+npm run plot:e7 -- results/e7-<date>        # → results/e7-<date>/figures/e7_*.png|svg
 ```
 
 Runner options:
@@ -72,7 +79,7 @@ Every op checks itself before it is timed. Decaps must equal the encaps secret a
 | E4 | AES-256-GCM encrypt/decrypt at 64 B, 1 KB, 16 KB, 256 KB, 1 MB (MB/s); ratchet `chain-step` (HMAC×2 + HKDF 44 B, strategy 4.4); `root-step` (HKDF 64 B); `seal` = chain step + AES-GCM of 1 KB | native WebCrypto |
 | E5 | Bytes per handshake (bundle fetch + first message) and per steady-state message for v0, v1 (ML-KEM-768 ratchet) and v1-xwing, each as raw vs length-prefixed binary vs Socket.io JSON/base64 | none (pure accounting from FIPS 203/204 sizes, checked against noble) |
 | E10 | The same suite in Node, plus a `node-crypto` backend (`generateKeyPairSync('ml-kem-768')`, `crypto.encapsulate/decapsulate`, `crypto.sign/verify`) | noble, liboqs, Node WebCrypto, node:crypto |
-| E7 | Not implemented. See `bench/e7-ratchet.ts` for the exact protocol. It needs `frontend/src/crypto/session.ts` on main. | |
+| E7 | Sparse KEM ratchet interval K: bytes per message, KEM ops and CPU per message, messages-to-heal after a state compromise. See [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing) | the v1 `SessionManager` (noble ML-KEM-768 / X-Wing), Node |
 
 **Native WebCrypto detection.** The detection follows the WICG Modern Algorithms draft. The harness records what `SubtleCrypto.supports(op, alg)` reports, and whether `crypto.subtle.encapsulateBits` exists. It then makes a real `generateKey` call, because early implementations can disagree with `supports()`. The probes are stored under `env.nativeWebCrypto`.
 
@@ -99,7 +106,119 @@ The colours are fixed per entity and identical in every figure:
 - Browsers: Chromium blue, Firefox orange, WebKit aqua, Node pink.
 - Backends: noble green, liboqs yellow, WebCrypto red, node:crypto violet.
 
-Both sets passed a CVD and contrast palette validator (adjacent-pair ΔE ≥ 8). The other figures from 6.1 (latency CDF, bandwidth and heal vs K, attack matrix, KAT table) need E6, E7, the evil relay and the KAT suite. Those experiments live elsewhere.
+Both sets passed a CVD and contrast palette validator (adjacent-pair ΔE ≥ 8). The bandwidth and heal vs K figures are E7's (`plots/e7_plot.py`, below). The other figures from 6.1 (latency CDF, attack matrix, KAT table) need E6, the evil relay and the KAT suite. Those experiments live elsewhere.
+
+## E7: sparse KEM ratchet, bandwidth vs healing
+
+E7 measures the research knob of contribution C1: the sparse interval `ratchetEveryK` (spec §5.6). Larger K means fewer KEM ratchet steps and smaller headers. It also means a stolen device state stays useful for longer.
+
+### Method
+
+`scripts/e7.ts` runs the grid and `bench/e7-ratchet.ts` holds the driver. The run uses Node and `tsx`, not the browser page.
+
+- **Code under test.** The driver imports `SessionManager` straight from `../frontend/src/crypto/session.ts`. Nothing is copied and nothing in `frontend/` is changed. Alice and Bob each have a `MemorySessionStore` and a `MemoryPrekeyStore`. They share an in-memory bundle directory, modelled on `frontend/test/helpers.ts`.
+- **Grid.**
+  - Suites: `mlkem768`, `xwing`.
+  - K ∈ {1, 2, 5, 10, 50, 100}.
+  - Four traffic patterns, 1,000 messages each, with 100-byte plaintexts.
+  - Message 0 is always Alice's handshake.
+
+  | Traffic | Script | Seeds |
+  |---|---|---|
+  | `alternate` | A B A B … | 1 |
+  | `burst5` | 5 from A, then 5 from B | 1 |
+  | `oneSided90` | each message is Alice's with p = 0.9 | 3 |
+  | `poisson` | two Poisson processes, 1 msg/s per side. Relay latency is 0.15 s + Exp(0.35 s), capped at 3 s, FIFO per direction, so messages **cross in flight** | 3 |
+
+  The first three deliver each message before the next one is sent.
+- **Per message** (`messages.csv`, kept local because it is about 12 MB):
+  - exact canonical header bytes, body bytes, binary frame `lp(header, body)` and JSON wire bytes;
+  - whether `kem` or `init` rode on the header;
+  - ratchet-KEM keygen, encaps and decaps on the sender and on the receiver. These are counted by wrapping the `mlkem768`, `xwing` and `mlkem1024` objects' methods at runtime;
+  - encrypt and decrypt wall time, with the session-store time measured separately and subtracted. `cpu_*` is crypto plus state machine only.
+- **CPU timing is single-call wall time** inside a stateful transcript. The batch rule of the browser harness cannot apply to stateful ops. A 60-message warm-up per suite runs first. Look at the mean and the root-step vs chain-step split (`cpu_root_ms_median`, `cpu_chain_ms_median`). The median alone hides a bimodal distribution.
+- **Bytes** are reported excluding messages that carry the epoch-0 `init` header (`*_steady`). The all-message means are also in `summary.csv`. The binary frame here includes the `lp` length prefixes and the usernames, so K = 1 gives 2,516 B. E5's 2,345 B "raw" counts components only.
+
+### Threat model and attacker
+
+The attacker is **passive** (spec §9, strategy §4.7).
+
+- At compromise point k, Eve copies Alice's entire session store: `MemorySessionStore.clone()`, taken just before message k is sent.
+- She sees every envelope on the wire from then on.
+- She never injects, drops or modifies anything, and she never gets fresh randomness from Alice.
+
+There are 20 compromise points per run, k = 100 + 23j. They cover both turn parities and every phase of a 5-message burst, and leave at least 463 messages after each one.
+
+- **Bob → Alice.** Eve is a `SessionManager` over the cloned store. She `decrypt`s a copy of each of Bob's envelopes, in Alice's delivery order.
+- **Alice → Bob.** Eve walks the stolen sending chain `cks` forward.
+- **Exposure rule checked per message** (spec §9):
+  - Alice→Bob is exposed iff `epoch = sendEpoch` at the snapshot.
+  - Bob→Alice is exposed iff `epoch ≤ recvEpoch`, or `epoch = sendEpoch + 1` while Alice's `ourDk` was pending.
+
+  `predicate_mismatches` counts every message where what Eve actually read differs from this rule.
+- **Messages to heal** = messages from k up to and including Eve's last readable one (0 if she reads nothing).
+  - A run is *healed* when the last post-k message in **each** direction is unreadable. Epochs only grow, so this means Eve is out for good.
+  - Otherwise the value is a lower bound (`heal_censored`, hollow markers in the plots).
+- **Forward secrecy.** For every message Alice had already sent or decrypted before k, Eve tries:
+  - the snapshot's skipped keys;
+  - both chain keys walked forward;
+  - a `decrypt` on a separate clone.
+
+  `fs_opened` must be 0. Bob's messages still in flight at k belong to Alice's future, not her past. They are counted as `exposed_in_flight`.
+
+### Results (`results/e7-2026-10-17/`, Node 25.8.2, Apple-silicon MacBook)
+
+Strict alternation:
+
+| K | bytes/msg, binary (mlkem768 / xwing) | JSON (mlkem768) | headers with `(ct, ek)` | KEM ops/msg | CPU ms/msg, mean (mlkem768 / xwing) | messages to heal, median (min–max) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 2,516 / 2,577 | 3,375 | 100% | 3.00 | 1.19 / 3.22 | 0.5 (0–1) |
+| 2 | 1,945 / 1,990 | 2,611 | 75% | 1.50 | 0.65 / 1.66 | 1.5 (0–3) |
+| 5 | 1,603 / 1,638 | 2,152 | 60% | 0.60 | 0.36 / 0.77 | 4.5 (0–9) |
+| 10 | 1,489 / 1,521 | 1,999 | 55% | 0.30 | 0.25 / 0.46 | 9.5 (0–19) |
+| 50 | 1,398 / 1,427 | 1,877 | 51% | 0.06 | 0.17 / 0.21 | 50.5 (0–93) |
+| 100 | 1,386 / 1,416 | 1,862 | 50.5% | 0.03 | 0.15 / 0.17 | 89.5 (1–185) |
+
+A header without ratchet data costs 236 B (binary), so the floor for any K is 236 B.
+
+**Checks.**
+- What Eve could read matched the §9 exposure rule on every message, for all 48 cells and 1,920 snapshots (`predicate_mismatches = 0`).
+- No snapshot opened any earlier message (`fs_opened = 0`).
+- Heal counts are identical for the two suites, because the KEM choice does not change the state machine.
+
+**Findings.**
+- **Alternating traffic keeps about half of the headers carrying `(ct, ek)` at large K**, as spec §5.6 predicts (50.5% at K = 100). The saving is mostly KEM work: 3 ops/msg at K = 1 against 0.03 at K = 100. Bytes drop only 45%.
+- **Under strict alternation, K = 1 heals in at most one message.** With bursts or one-sided traffic it takes up to 9 or 57 messages. This is because the send step is lazy (spec §13.5). A snapshot taken while Alice holds Bob's new key but has not yet sent contains no fresh `dk`. Her next message heals both directions at once (heal = 0). Only a snapshot taken while her `dk` is pending exposes Bob's one reply (heal = 1).
+- **Bursts of 5 get no byte saving until K > 5.** Every burst starts a new epoch.
+- **One-sided traffic heals slowly.** A send step needs both K sends on one's own chain *and* a fresh key from the peer. So healing is paced by the *quieter* party's K sends. At 90/10 and K ≥ 50, 40 of 60 (K = 50) and 59 of 60 (K = 100) compromise points were still exposed at message 1,000.
+- **Where §9's short form ("secrecy returns at P's next ratchet step") fails, and why that is expected:**
+  - With crossing messages (`poisson`, even at K = 1), Bob can send on an exposed epoch after Alice's healing message has left but before it arrives. Across the 60 K = 1 Poisson snapshots, 41 messages were readable after Alice's ratchet.
+  - With K > 1, Bob keeps sending up to K messages on his exposed chain after Alice ratchets.
+
+  All of these messages are covered by §9's full statement ("messages in P's current epoch and in the peer's next epoch stay exposed"), and the per-message rule above predicts them exactly. The short form holds only for turn-taking traffic at K = 1.
+- **X-Wing costs about 2.7× ML-KEM-768 per ratchet step in noble** (root-step median 3.2 ms vs 1.2 ms, encrypt plus decrypt). The X25519 part is pure JS. It adds 64 B of ratchet data to every header that carries `(ct, ek)`: 61 B net per message, because the suite name is 3 B shorter.
+
+**Not covered.** Message loss and reordering are not covered: delivery is FIFO, so `skipped_peak` is 0 everywhere. CPU numbers are Node on one laptop, not browsers.
+
+### Rerun
+
+```bash
+npm --prefix ../frontend install && npm install
+npm run e7                                    # full grid, about 2 minutes on an M-series Mac
+npm run e7 -- --quick                         # 200 messages, K ∈ {1, 10}, 4 snapshots: smoke test
+npm run e7 -- --ks 1,10 --suites xwing --traffic alternate,poisson --seeds 1,2,3,4,5 --out results/my-e7
+npm run plot:e7 -- results/e7-<date>
+```
+
+Outputs in `results/e7-<date>/`:
+
+| File | Contents |
+|---|---|
+| `summary.csv` / `summary.json` | one row per (suite, K, traffic), seeds pooled |
+| `snapshots.csv` | one row per compromise point: Alice's epochs at k, what Eve read, heal, FS check |
+| `messages.csv` | one row per message (gitignored) |
+| `env.json` | the configuration |
+| `figures/` | `e7_bandwidth_vs_healing` (the key C1 figure: two stacked panels sharing K), `e7_bytes_vs_K`, `e7_heal_vs_K`, `e7_cpu_vs_K` |
 
 ## Running on real Safari (macOS / iOS)
 
