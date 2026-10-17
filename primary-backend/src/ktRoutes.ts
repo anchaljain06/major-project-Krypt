@@ -71,16 +71,18 @@ export function setKtLog(log: KtLog | null) {
   instance = log;
 }
 
-// Hook for the evil relay's kt_fork / kt_rewrite attacks; honest otherwise.
-let viewSelector: (req: Request, log: KtLog) => KtView = (_req, log) => log.honestView();
-export function setKtViewSelector(fn: ((req: Request, log: KtLog) => KtView) | null) {
-  viewSelector = fn ?? ((_req, log) => log.honestView());
+// Hooks for the evil relay's KT attacks (evil.ts); null in normal operation.
+export interface KtEvilHooks {
+  /** kt_fork / kt_rewrite: the view to serve this request. */
+  viewFor(req: Request, log: KtLog): KtView;
+  /** kt_rogue_leaf: /api/kt/register appends any well-formed leaf unchecked. */
+  skipRegisterChecks: boolean;
+  /** kt_rogue_leaf: POST /kt/evil/rogue-leaf?victim=<name>; returns the leaf index. */
+  injectRogueLeaf?: (victim: string) => Promise<number>;
 }
-
-// Hook for kt_rogue_leaf: when true, /api/kt/register appends without checks.
-let skipRegisterChecks = false;
-export function setKtSkipRegisterChecks(skip: boolean) {
-  skipRegisterChecks = skip;
+let evil: KtEvilHooks | null = null;
+export function setKtEvil(hooks: KtEvilHooks | null) {
+  evil = hooks;
 }
 
 // ---------- validation ----------
@@ -125,7 +127,7 @@ function bad(res: import("express").Response, error: string, status = 400) {
 
 export function ktPublicRouter(getLog: () => KtLog = ktLog): Router {
   const router = Router();
-  const view = (req: Request) => viewSelector(req, getLog());
+  const view = (req: Request) => (evil ? evil.viewFor(req, getLog()) : getLog().honestView());
 
   router.use((_req, res, next) => {
     res.set("Cache-Control", "no-store");
@@ -201,6 +203,19 @@ export function ktPublicRouter(getLog: () => KtLog = ktLog): Router {
     });
   });
 
+  // Evil relay only (kt_rogue_leaf); 404 in normal operation.
+  router.post("/evil/rogue-leaf", async (req, res) => {
+    if (!evil?.injectRogueLeaf) return bad(res, "Not found.", 404);
+    const victim = usernameSchema.safeParse(req.query.victim);
+    if (!victim.success) return bad(res, "victim: invalid username.");
+    try {
+      res.json({ leafIndex: await evil.injectRogueLeaf(victim.data) });
+    } catch (err) {
+      if (err instanceof KtError) return bad(res, err.message, err.status);
+      throw err;
+    }
+  });
+
   return router;
 }
 
@@ -236,7 +251,7 @@ export function ktApiRouter(
 
     const log = getLog();
     try {
-      if (skipRegisterChecks) {
+      if (evil?.skipRegisterChecks) {
         // Evil relay kt_rogue_leaf: accept anything well-formed.
         const row = await log.append(body.leaf, body.ownerSig);
         return res.status(200).json({ leafIndex: row.index });

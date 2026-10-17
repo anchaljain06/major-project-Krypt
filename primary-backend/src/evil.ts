@@ -13,6 +13,22 @@
 //   swap_key   request_public_key and GET /api/bundle/:username return the keys
 //              of EVIL_SWAP_WITH instead of the requested user
 //
+// Key transparency attacks (plan 2.25). Each must be caught by clients or
+// the witness; none of them is possible through the honest code paths.
+//
+//   kt_rogue_leaf  POST /kt/evil/rogue-leaf?victim=<name> appends a leaf that
+//                  binds the victim's name to EVIL_SWAP_WITH's identity key,
+//                  with a forged owner signature. /api/kt/register also stops
+//                  checking leaves. The victim's self-monitoring must alert.
+//   kt_fork        requests whose User-Agent contains EVIL_FORK_UA, or that
+//                  carry ?fork=1 or "X-Krypt-Fork: 1", see a forked log: the
+//                  latest head plus one rogue leaf for EVIL_KT_VICTIM that
+//                  nobody else sees. The witness or gossip must expose it.
+//   kt_rewrite     every /kt/* request sees history rewritten: the leaf at
+//                  EVIL_KT_REWRITE_INDEX (default 0) is swapped for one with
+//                  EVIL_SWAP_WITH's key (or a flipped bit) and every head is
+//                  re-signed. Consistency with any earlier head must fail.
+//
 // Example: EVIL_MODE=replay,tamper EVIL_SWAP_WITH=mallory npm run dev
 //
 // The transforms are pure functions (randomness is injected) so they can be
@@ -26,6 +42,9 @@ export const ATTACKS = [
   "tamper",
   "flip_type",
   "swap_key",
+  "kt_rogue_leaf",
+  "kt_fork",
+  "kt_rewrite",
 ] as const;
 export type Attack = (typeof ATTACKS)[number];
 
@@ -33,6 +52,12 @@ export interface EvilConfig {
   attacks: Set<Attack>;
   dropEvery: number;
   swapWith: string | null;
+  /** kt_fork: whose name the forked view's extra leaf claims. */
+  ktVictim: string | null;
+  /** kt_fork: User-Agent substring (case-insensitive) of the client to fork. */
+  forkUserAgent: string | null;
+  /** kt_rewrite: index of the leaf to rewrite. */
+  rewriteIndex: number;
 }
 
 export type RelayMessage = Record<string, unknown> & { to: string; from: string };
@@ -54,10 +79,14 @@ export function parseEvilConfig(env: NodeJS.ProcessEnv): EvilConfig | null {
     );
   }
   const n = Number(env.EVIL_DROP_EVERY ?? 3);
+  const r = Number(env.EVIL_KT_REWRITE_INDEX ?? 0);
   return {
     attacks,
     dropEvery: Number.isInteger(n) && n >= 1 ? n : 3,
     swapWith: env.EVIL_SWAP_WITH?.trim() || null,
+    ktVictim: env.EVIL_KT_VICTIM?.trim() || null,
+    forkUserAgent: env.EVIL_FORK_UA?.trim() || null,
+    rewriteIndex: Number.isSafeInteger(r) && r >= 0 ? r : 0,
   };
 }
 
@@ -231,6 +260,11 @@ export function loadEvilRelay(env: NodeJS.ProcessEnv = process.env): EvilRelay |
       config.attacks.has("swap_key")
         ? `!! Serving keys of: ${config.swapWith ?? "(EVIL_SWAP_WITH not set: swap disabled)"}`
         : "",
+      config.attacks.has("kt_fork")
+        ? `!! Forking the KT log for User-Agent ~ ${config.forkUserAgent ?? "(EVIL_FORK_UA not set)"} and ?fork=1`
+        : "",
+      config.attacks.has("kt_rewrite") ? `!! Rewriting KT leaf ${config.rewriteIndex} for every client` : "",
+      config.attacks.has("kt_rogue_leaf") ? "!! POST /kt/evil/rogue-leaf?victim=<name> is open; KT register checks are off" : "",
       "!! For testing only. Never run this in production.",
       line,
     ]
