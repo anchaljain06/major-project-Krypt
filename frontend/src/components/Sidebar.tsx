@@ -2,7 +2,6 @@ import React from "react";
 import { validateVaultPassword, MIN_VAULT_PASSWORD_LENGTH } from "../crypto/vault";
 import type { SearchResult } from "../hooks/useSocial";
 import KtBadge from "./KtBadge";
-import SuiteToggle from "./SuiteToggle";
 
 interface SidebarProps {
   user: string;
@@ -361,13 +360,6 @@ const Sidebar: React.FC<SidebarProps> = ({
               </div>
             ))
           )}
-
-          <div className="mt-4 pt-4 border-t border-slate-700 space-y-2">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-              Encryption
-            </h3>
-            <SuiteToggle user={user} />
-          </div>
 
           <div className="mt-4 pt-4 border-t border-slate-700 space-y-2">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">

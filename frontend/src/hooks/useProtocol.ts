@@ -3,7 +3,6 @@ import toast from "react-hot-toast";
 import type { UserIdentityKeys } from "../crypto/mlkem";
 import { maintainPrekeys } from "../services/prekeyMaintenance";
 import { startProtocol, type Protocol } from "../services/protocol";
-import { onSuiteChange } from "../services/settings";
 import { socket } from "../services/socket";
 
 /** How often a running tab checks whether the signed prekey is due for rotation. */
@@ -35,11 +34,6 @@ export function useProtocol(user: string, keys: UserIdentityKeys | null): Protoc
   }, [user, keys]);
 
   const active = protocol && protocol.username === user && protocol.keys === keys ? protocol : null;
-
-  useEffect(() => {
-    if (!active) return;
-    return onSuiteChange((s) => active.setSuite(s));
-  }, [active]);
 
   useEffect(() => {
     if (!active) return;

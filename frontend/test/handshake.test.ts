@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DecryptError } from "../src/crypto/errors";
 import { initiate, respond, transcript, type InitHeader, type TranscriptFields } from "../src/crypto/handshake";
-import { mldsaKeygen, KEM_SUITES } from "../src/crypto/pq";
+import { mldsaKeygen, KEM_SUITES, type KemSuite } from "../src/crypto/pq";
 import { MemoryPrekeyStore, createPrekeyUpload, verifyBundle } from "../src/crypto/prekeys";
 import { exportPublicIdentity } from "../src/crypto/mlkem";
 
@@ -55,23 +55,23 @@ describe("Krypt-X3K", () => {
 
   it("rejects a forged or transplanted initiator signature", async () => {
     const { store, bundle } = await setup(true);
-    const a = await initiate({ self: { username: "alice", dsaPub: alice.publicKey, dsaSec: alice.secretKey }, bundle, suite: "mlkem768" });
+    const a = await initiate({ self: { username: "alice", dsaPub: alice.publicKey, dsaSec: alice.secretKey }, bundle, suite: "mlkem1024" });
     // Wrong identity key for Alice (e.g. Mallory claims to be Alice).
-    await expect(bobResponds(store, a.init, "mlkem768", mallory.publicKey)).rejects.toThrow(DecryptError);
+    await expect(bobResponds(store, a.init, "mlkem1024", mallory.publicKey)).rejects.toThrow(DecryptError);
     // Any change to a transcript field invalidates σ_A.
     const ct1 = a.init.ct1.slice();
     ct1[0] ^= 1;
-    await expect(bobResponds(store, { ...a.init, ct1 }, "mlkem768")).rejects.toMatchObject({ code: "BAD_SIGNATURE" });
+    await expect(bobResponds(store, { ...a.init, ct1 }, "mlkem1024")).rejects.toMatchObject({ code: "BAD_SIGNATURE" });
     const ek = a.init.ek.slice();
     ek[5] ^= 1;
-    await expect(bobResponds(store, { ...a.init, ek }, "mlkem768")).rejects.toMatchObject({ code: "BAD_SIGNATURE" });
+    await expect(bobResponds(store, { ...a.init, ek }, "mlkem1024")).rejects.toMatchObject({ code: "BAD_SIGNATURE" });
     // A suite downgrade/confusion changes T as well.
-    await expect(bobResponds(store, a.init, "xwing")).rejects.toMatchObject({ code: "BAD_SIGNATURE" });
+    await expect(bobResponds(store, a.init, "mlkem768" as KemSuite)).rejects.toMatchObject({ code: "BAD_SIGNATURE" });
   });
 
   it("transcript changes when any field changes (including absent vs present OPK)", () => {
     const base: TranscriptFields = {
-      suite: "mlkem768",
+      suite: "mlkem1024",
       initiator: "alice",
       responder: "bob",
       ikA: new Uint8Array([1]),
@@ -86,7 +86,7 @@ describe("Krypt-X3K", () => {
     };
     const t0 = Buffer.from(transcript(base)).toString("hex");
     const variants: Partial<TranscriptFields>[] = [
-      { suite: "xwing" },
+      { suite: "mlkem768" as KemSuite },
       { initiator: "alicf" },
       { responder: "boc" },
       { spkId: 8 },

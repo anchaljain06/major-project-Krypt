@@ -3,7 +3,7 @@
 //
 //   node scripts/filter-vectors.mjs [rawDir] [outDir]
 //
-// Kept: ML-KEM-768/1024 (not 512), ML-DSA-87 "external/pure" only (Krypt never
+// Kept: ML-KEM-1024 only (the one KEM Krypt uses), ML-DSA-87 "external/pure" only (Krypt never
 // uses HashML-DSA or the internal interface), AES-GCM with 256-bit keys,
 // 96-bit IVs and 128-bit tags (the only shape aes_gcm in kdf.ts accepts).
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -27,7 +27,7 @@ const write = (name, data) => {
   const expected = read("acvp/ML-KEM-encapDecap-FIPS203-expectedResults.json");
   const results = new Map(expected.testGroups.map((g) => [g.tgId, new Map(g.tests.map((t) => [t.tcId, t]))]));
   const groups = prompt.testGroups
-    .filter((g) => g.parameterSet !== "ML-KEM-512")
+    .filter((g) => g.parameterSet === "ML-KEM-1024")
     .map((g) => ({
       tgId: g.tgId,
       parameterSet: g.parameterSet,
@@ -69,7 +69,8 @@ write(
   "wycheproof-aes-gcm-256.json",
   flatten("aes_gcm_test.json", (g) => g.keySize === 256 && g.ivSize === 96 && g.tagSize === 128),
 );
-for (const p of ["768", "1024"]) {
+{
+  const p = "1024";
   write(`wycheproof-mlkem-${p}.json`, flatten(`mlkem_${p}_test.json`, () => true, (g) => ({ parameterSet: g.parameterSet })));
   write(
     `wycheproof-mlkem-${p}-encaps.json`,

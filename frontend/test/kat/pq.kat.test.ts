@@ -4,11 +4,10 @@
  * noble directly, so a wrapper bug shows up here.
  */
 import { describe, expect, it } from "vitest";
-import { mldsaVerify, mlkem768, mlkem1024 } from "../../src/crypto/pq";
+import { mldsaVerify, mlkem1024 } from "../../src/crypto/pq";
 import { hex, loadVectors, unhex, vectorPath } from "./vectors";
 
 const kemFor = (parameterSet: string) => {
-  if (parameterSet === "ML-KEM-768") return mlkem768;
   if (parameterSet === "ML-KEM-1024") return mlkem1024;
   throw new Error(`unexpected parameter set ${parameterSet}`);
 };
@@ -31,7 +30,7 @@ interface AcvpKemGroup {
   tests: AcvpKemTest[];
 }
 
-describe("NIST ACVP ML-KEM-encapDecap-FIPS203 (768 + 1024)", () => {
+describe("NIST ACVP ML-KEM-encapDecap-FIPS203 (ML-KEM-1024)", () => {
   const { groups } = loadVectors<{ groups: AcvpKemGroup[] }>("acvp-mlkem-encapdecap.json");
   for (const g of groups) {
     const kem = kemFor(g.parameterSet);
@@ -97,7 +96,8 @@ interface WyKemTest {
   flags: string[];
 }
 
-for (const p of ["768", "1024"]) {
+{
+  const p = "1024";
   const file = `wycheproof-mlkem-${p}.json`;
   describe.skipIf(!vectorPath(file))(`Wycheproof mlkem_${p}_test (keygen from seed + decaps)`, () => {
     it("all cases", () => {

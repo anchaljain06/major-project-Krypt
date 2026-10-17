@@ -19,7 +19,7 @@ interface Loaded {
   status: SessionStatus | null;
 }
 
-const suiteLabel = (s: string) => (s === "xwing" ? "X-Wing (ML-KEM-768 + X25519)" : "ML-KEM-768");
+const suiteLabel = (s: string) => (s === "mlkem1024" ? "ML-KEM-1024" : s);
 
 /**
  * Per-contact security screen (plan 3.4): safety number, key transparency

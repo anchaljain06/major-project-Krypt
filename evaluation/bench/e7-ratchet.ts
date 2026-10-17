@@ -15,7 +15,7 @@
 // message by message, what Eve can read against the exposure rule of spec section 9.
 
 import { exportPublicIdentity } from "../../frontend/src/crypto/mlkem.ts";
-import { mldsaKeygen, mlkem1024, mlkem768, xwing, type KemSuite } from "../../frontend/src/crypto/pq.ts";
+import { mldsaKeygen, mlkem1024, type KemSuite } from "../../frontend/src/crypto/pq.ts";
 import {
   MemoryPrekeyStore,
   createPrekeyUpload,
@@ -44,46 +44,45 @@ import { aesGcmDecrypt, kdfChain, messageKeyAndIv } from "../../frontend/src/cry
 export type KemOp = "keygen" | "encaps" | "decaps";
 type Counts = Record<KemOp, number>;
 const zero = (): Counts => ({ keygen: 0, encaps: 0, decaps: 0 });
-export const kemCounters: Record<"mlkem768" | "xwing" | "mlkem1024", Counts> = {
-  mlkem768: zero(),
-  xwing: zero(),
-  mlkem1024: zero(),
+export const kemCounters: Record<"ratchet" | "prekey", Counts> = {
+  ratchet: zero(),
+  prekey: zero(),
 };
+
+// The ratchet and the prekeys both use the one ML-KEM-1024 object, so an
+// operation counts as a prekey operation when it uses a registered prekey
+// (Alice encapsulating to SPK/OPK, Bob decapsulating with them). Every other
+// operation, including all key generation after setup, is a ratchet operation.
+const prekeyMaterial = new Set<string>();
+const fingerprint = (b: unknown) =>
+  b instanceof Uint8Array ? `${b.length}:${Buffer.from(b.subarray(0, 32)).toString("hex")}` : "";
+
+function registerPrekey(r: { publicKey: Uint8Array; secretKey: Uint8Array }): void {
+  prekeyMaterial.add(fingerprint(r.publicKey));
+  prekeyMaterial.add(fingerprint(r.secretKey));
+}
 
 let instrumented = false;
 export function instrumentKems(): void {
   if (instrumented) return;
   instrumented = true;
-  const targets = [
-    ["mlkem768", mlkem768],
-    ["xwing", xwing],
-    ["mlkem1024", mlkem1024],
-  ] as const;
-  for (const [name, kem] of targets) {
-    const k = kem as unknown as Record<string, (...a: unknown[]) => unknown>;
-    for (const [method, op] of [
-      ["keygen", "keygen"],
-      ["encapsulate", "encaps"],
-      ["decapsulate", "decaps"],
-    ] as const) {
-      const orig = k[method];
-      k[method] = (...args: unknown[]) => {
-        kemCounters[name][op]++;
-        return orig(...args);
-      };
-    }
+  const k = mlkem1024 as unknown as Record<string, (...a: unknown[]) => unknown>;
+  for (const [method, op, keyArg] of [
+    ["keygen", "keygen", -1],
+    ["encapsulate", "encaps", 0],
+    ["decapsulate", "decaps", 1],
+  ] as const) {
+    const orig = k[method];
+    k[method] = (...args: unknown[]) => {
+      const prekey = keyArg >= 0 && prekeyMaterial.has(fingerprint(args[keyArg]));
+      kemCounters[prekey ? "prekey" : "ratchet"][op]++;
+      return orig(...args);
+    };
   }
 }
 
 function readCounters(): { ratchet: Counts; prekey: Counts } {
-  return {
-    ratchet: {
-      keygen: kemCounters.mlkem768.keygen + kemCounters.xwing.keygen,
-      encaps: kemCounters.mlkem768.encaps + kemCounters.xwing.encaps,
-      decaps: kemCounters.mlkem768.decaps + kemCounters.xwing.decaps,
-    },
-    prekey: { ...kemCounters.mlkem1024 },
-  };
+  return { ratchet: { ...kemCounters.ratchet }, prekey: { ...kemCounters.prekey } };
 }
 const diff = (a: Counts, b: Counts): Counts => ({
   keygen: a.keygen - b.keygen,
@@ -169,6 +168,8 @@ async function makeParty(dir: Directory, name: "alice" | "bob", o: ManagerOpts):
   const identity = { dsaPub: kp.publicKey, dsaSec: kp.secretKey };
   const prekeys = new MemoryPrekeyStore();
   const upload = await createPrekeyUpload(identity.dsaSec, prekeys, 3);
+  registerPrekey((await prekeys.getSignedPrekey(upload.signedPrekey.keyId))!);
+  for (const o of upload.oneTimePrekeys) registerPrekey((await prekeys.getOneTimePrekey(o.keyId))!);
   dir.entries.set(name, {
     identityKey: exportPublicIdentity({ kemPublicKey: new Uint8Array(1568), dsaPublicKey: identity.dsaPub }),
     signedPrekey: upload.signedPrekey,

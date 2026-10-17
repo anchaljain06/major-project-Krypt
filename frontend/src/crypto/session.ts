@@ -56,7 +56,7 @@ export interface SessionManagerOptions {
   fetchIdentity: (username: string) => Promise<string>;
   /** Key-transparency / pinning hook. Default: accept. */
   trustIdentity?: (username: string, dsaPub: Uint8Array) => Promise<boolean>;
-  /** Ratchet suite for sessions this side initiates. Default "mlkem768". */
+  /** Ratchet suite for sessions this side initiates. Default "mlkem1024". */
   suite?: KemSuite;
   /** Sparse mode K (spec 5.6). Default 1. */
   ratchetEveryK?: number;
@@ -151,7 +151,7 @@ export class SessionManager {
     this.fetchBundle = opts.fetchBundle;
     this.fetchIdentity = opts.fetchIdentity;
     this.trustIdentity = opts.trustIdentity ?? (async () => true);
-    this.suite = opts.suite ?? "mlkem768";
+    this.suite = opts.suite ?? "mlkem1024";
     this.K = K;
     this.lock = opts.lock ?? defaultLock();
     this.now = opts.now ?? Date.now;

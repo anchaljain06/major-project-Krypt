@@ -17,8 +17,7 @@ done
 
 WY=https://raw.githubusercontent.com/C2SP/wycheproof/main/testvectors_v1
 for f in hkdf_sha256_test.json hmac_sha256_test.json aes_gcm_test.json \
-         mlkem_768_test.json mlkem_1024_test.json \
-         mlkem_768_encaps_test.json mlkem_1024_encaps_test.json \
+         mlkem_1024_test.json mlkem_1024_encaps_test.json \
          mldsa_87_verify_test.json; do
   curl -sSfL -o "$OUT/wycheproof/$f" "$WY/$f"
 done

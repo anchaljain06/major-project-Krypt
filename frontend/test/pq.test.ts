@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ml_kem768_x25519 } from "@noble/post-quantum/hybrid.js";
 import {
   CryptoInputError,
   KEM_SUITES,
+  isKemSuite,
   MLDSA87,
   mldsaKeygen,
   mldsaSign,
@@ -10,18 +10,18 @@ import {
   mlkem1024,
   prekeyKem,
   ratchetKem,
-  xwing,
 } from "../src/crypto/pq";
 
 describe("KEM wrappers", () => {
-  it("X-Wing is exported by noble's hybrid module with the draft's sizes", () => {
-    expect(typeof ml_kem768_x25519.encapsulate).toBe("function");
-    expect(xwing.lengths).toEqual({ publicKey: 1216, secretKey: 32, cipherText: 1120, sharedSecret: 32 });
+  it("prekeys and the ratchet are both ML-KEM-1024", () => {
+    expect(prekeyKem).toBe(mlkem1024);
+    expect(KEM_SUITES).toEqual(["mlkem1024"]);
+    expect(ratchetKem("mlkem1024")).toBe(mlkem1024);
+    expect(mlkem1024.lengths).toEqual({ publicKey: 1568, secretKey: 3168, cipherText: 1568, sharedSecret: 32 });
   });
 
-  it("prekeys are ML-KEM-1024", () => {
-    expect(prekeyKem).toBe(mlkem1024);
-    expect(mlkem1024.lengths).toEqual({ publicKey: 1568, secretKey: 3168, cipherText: 1568, sharedSecret: 32 });
+  it("the removed suites are not recognised", () => {
+    for (const s of ["mlkem768", "xwing", "mlkem512", "", "MLKEM1024", null, undefined]) expect(isKemSuite(s)).toBe(false);
   });
 
   for (const suite of KEM_SUITES) {

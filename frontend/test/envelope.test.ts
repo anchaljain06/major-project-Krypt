@@ -17,7 +17,7 @@ function sample(withKem = true): Envelope {
   return {
     header: {
       v: 1,
-      suite: "mlkem768",
+      suite: "mlkem1024",
       sessionId: bytes(32, 7),
       from: "alice",
       to: "bob",
@@ -25,10 +25,10 @@ function sample(withKem = true): Envelope {
       epoch: withKem ? 2 : 0,
       n: 5,
       pn: 3,
-      kem: withKem ? { ct: bytes(1088, 2), ek: bytes(1184, 3) } : null,
+      kem: withKem ? { ct: bytes(1568, 2), ek: bytes(1568, 3) } : null,
       init: withKem
         ? null
-        : { spkId: 9, opkId: null, ct1: bytes(1568, 4), ct2: null, ek: bytes(1184, 5), sig: bytes(4627, 6) },
+        : { spkId: 9, opkId: null, ct1: bytes(1568, 4), ct2: null, ek: bytes(1568, 5), sig: bytes(4627, 6) },
     },
     body: bytes(40, 8),
   };
@@ -50,7 +50,7 @@ describe("canonical header bytes", () => {
     const h = env.header;
     const expected = lp(
       u32(1),
-      "mlkem768",
+      "mlkem1024",
       h.sessionId,
       "alice",
       "bob",
@@ -70,7 +70,7 @@ describe("canonical header bytes", () => {
     const i = h.init!;
     const initField = lp(u32(9), new Uint8Array(0), i.ct1, new Uint8Array(0), i.ek, i.sig);
     expect(headerBytes(h)).toEqual(
-      lp(u32(1), "mlkem768", h.sessionId, "alice", "bob", "text", u32(0), u32(5), u32(3), new Uint8Array(0), initField),
+      lp(u32(1), "mlkem1024", h.sessionId, "alice", "bob", "text", u32(0), u32(5), u32(3), new Uint8Array(0), initField),
     );
   });
 });
@@ -100,6 +100,9 @@ describe("JSON and binary codecs", () => {
     expect(code(() => parseEnvelope({ ...w, kem: null }))).toBe("MALFORMED");
     expect(code(() => parseEnvelope({ ...w, v: 2 }))).toBe("UNSUPPORTED_VERSION");
     expect(code(() => parseEnvelope({ ...w, suite: "kyber" }))).toBe("MALFORMED");
+    // ML-KEM-768 and X-Wing were removed before v1 shipped; they are unknown suites now.
+    expect(code(() => parseEnvelope({ ...w, suite: "mlkem768" }))).toBe("MALFORMED");
+    expect(code(() => parseEnvelope({ ...w, suite: "xwing" }))).toBe("MALFORMED");
     expect(code(() => parseEnvelope("{not json"))).toBe("MALFORMED");
     expect(code(() => parseEnvelope([]))).toBe("MALFORMED");
   });
@@ -108,7 +111,10 @@ describe("JSON and binary codecs", () => {
     const w = toWire(sample());
     expect(code(() => parseEnvelope({ ...w, sessionId: w.sessionId.slice(0, -2) }))).toBe("MALFORMED");
     expect(code(() => parseEnvelope({ ...w, body: w.body + "=" }))).toBe("MALFORMED");
-    expect(code(() => parseEnvelope({ ...w, kem: { ...w.kem!, ek: w.kem!.ct } }))).toBe("MALFORMED");
+    // ML-KEM-768-sized ratchet fields under the ML-KEM-1024 suite.
+    const small = toWire({ ...sample(), header: { ...sample().header, kem: { ct: bytes(1088, 2), ek: bytes(1184, 3) } } });
+    expect(code(() => parseEnvelope({ ...w, kem: { ...w.kem!, ek: small.kem!.ek } }))).toBe("MALFORMED");
+    expect(code(() => parseEnvelope({ ...w, kem: { ...w.kem!, ct: small.kem!.ct } }))).toBe("MALFORMED");
     expect(code(() => parseEnvelope({ ...w, epoch: 0 }))).toBe("MALFORMED"); // kem in epoch 0
     expect(code(() => parseEnvelope({ ...w, from: "" }))).toBe("MALFORMED");
     expect(code(() => parseEnvelope({ ...w, from: "x".repeat(65) }))).toBe("MALFORMED");
@@ -126,7 +132,7 @@ describe("JSON and binary codecs", () => {
     expect(code(() => decodeBinaryEnvelope(new Uint8Array([...b, 0])))).toBe("MALFORMED");
     const h = sample().header;
     const badName = lp(
-      lp(u32(1), "mlkem768", h.sessionId, new Uint8Array([0xff]), "bob", "text", u32(2), u32(5), u32(3), lp(h.kem!.ct, h.kem!.ek), new Uint8Array(0)),
+      lp(u32(1), "mlkem1024", h.sessionId, new Uint8Array([0xff]), "bob", "text", u32(2), u32(5), u32(3), lp(h.kem!.ct, h.kem!.ek), new Uint8Array(0)),
       bytes(20),
     );
     expect(code(() => decodeBinaryEnvelope(badName))).toBe("MALFORMED");

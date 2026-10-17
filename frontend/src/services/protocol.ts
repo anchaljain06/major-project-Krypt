@@ -27,14 +27,12 @@
 import { lp, utf8 } from "../crypto/encoding";
 import { bs } from "../crypto/kdf";
 import type { UserIdentityKeys } from "../crypto/mlkem";
-import type { KemSuite } from "../crypto/pq";
 import type { PrekeyBundleWire } from "../crypto/prekeys";
 import { SessionManager, createMutexLock, type LockFn } from "../crypto/session";
 import { IndexedDbPrekeyStore, IndexedDbSessionStore } from "../crypto/session-store";
 import { apiFetch } from "./api";
 import { KtClient } from "./kt";
 import { IndexedDbMessageState } from "./messageState";
-import { getSuite } from "./settings";
 import { socket } from "./socket";
 import { createTrustIdentity } from "./trust";
 
@@ -107,8 +105,7 @@ export class Protocol {
   readonly messageState: IndexedDbMessageState;
   readonly kt: KtClient;
   private readonly trust: TrustFn;
-  private suite: KemSuite;
-  private manager: SessionManager;
+  private readonly manager: SessionManager;
 
   constructor(username: string, keys: UserIdentityKeys, storeKey: CryptoKey) {
     this.username = username;
@@ -118,12 +115,7 @@ export class Protocol {
     this.sessions = new IndexedDbSessionStore({ key: storeKey, dbName: sessionDbName(username) });
     this.prekeys = new IndexedDbPrekeyStore({ key: storeKey, dbName: prekeyDbName(username) });
     this.messageState = new IndexedDbMessageState({ key: storeKey, dbName: messageStateDbName(username), lock: appLock });
-    this.suite = getSuite(username);
-    this.manager = this.build();
-  }
-
-  private build(): SessionManager {
-    return new SessionManager({
+    this.manager = new SessionManager({
       self: {
         username: this.username,
         identity: { dsaPub: this.keys.dsaPublicKey, dsaSec: this.keys.dsaSecretKey },
@@ -133,7 +125,6 @@ export class Protocol {
       fetchBundle,
       fetchIdentity: (u) => fetchIdentity(u),
       trustIdentity: this.trust,
-      suite: this.suite,
       lock: appLock,
     });
   }
@@ -141,17 +132,6 @@ export class Protocol {
   /** The SessionManager. Every encrypt/decrypt goes through it. */
   get session(): SessionManager {
     return this.manager;
-  }
-
-  get initiatorSuite(): KemSuite {
-    return this.suite;
-  }
-
-  /** Applies to sessions started from now on. The manager holds no state of its own, so rebuilding it is free. */
-  setSuite(suite: KemSuite) {
-    if (suite === this.suite) return;
-    this.suite = suite;
-    this.manager = this.build();
   }
 
   async close() {

@@ -2,7 +2,7 @@
 //
 //   npm run e7                       # full grid -> results/e7-<date>/
 //   npm run e7 -- --quick            # 200 messages, K in {1, 10}, one seed (smoke test)
-//   npm run e7 -- --out results/x --messages 1000 --ks 1,2,5 --suites xwing --traffic alternate
+//   npm run e7 -- --out results/x --messages 1000 --ks 1,2,5 --traffic alternate
 //
 // Writes:
 //   messages.csv   one row per message (bytes, ratchet data, KEM ops, timings)   [not committed]
@@ -35,7 +35,7 @@ const date = new Date().toISOString().slice(0, 10);
 const outDir = path.resolve(opt("out", path.join(here, "..", "results", `e7-${date}${quick ? "-quick" : ""}`)));
 const messages = Number(opt("messages", quick ? "200" : "1000"));
 const Ks = opt("ks", quick ? "1,10" : "1,2,5,10,50,100").split(",").map(Number);
-const suites = opt("suites", "mlkem768,xwing").split(",") as KemSuite[];
+const suites = opt("suites", "mlkem1024").split(",") as KemSuite[];
 const traffics = opt("traffic", TRAFFIC.join(",")).split(",") as Traffic[];
 // Deterministic scripts need one seed; random ones get three.
 const randomSeeds = opt("seeds", quick ? "1" : "1,2,3").split(",").map(Number);

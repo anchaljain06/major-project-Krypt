@@ -87,8 +87,8 @@ describe("Krypt KDFs follow the spec formulas exactly", () => {
   it("kdfRoot = HKDF(rk, ss, lp('Krypt-RK', ctx), 64) and ctx binds epoch, H(ek), H(ct)", async () => {
     const rk = new Uint8Array(32).fill(1);
     const ss = new Uint8Array(32).fill(2);
-    const ek = new Uint8Array(1184).fill(3);
-    const ct = new Uint8Array(1088).fill(4);
+    const ek = new Uint8Array(1568).fill(3);
+    const ct = new Uint8Array(1568).fill(4);
     const ctx = await rootContext(5, ek, ct);
     expect(hex(ctx)).toBe(hex(lp(u32(5), await sha256(ek), await sha256(ct))));
     const out = await kdfRoot(rk, ss, ctx);

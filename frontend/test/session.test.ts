@@ -176,7 +176,7 @@ for (const suite of KEM_SUITES) {
       delete noKem.kem;
       await expectRejected(bob, noKem, "BAD_EPOCH");
       await expectRejected(bob, { ...copy(env), to: "carol" }, "NOT_FOR_ME");
-      await expectRejected(bob, { ...copy(env), suite: suite === "xwing" ? "mlkem768" : "xwing" }, ["MALFORMED", "BAD_EPOCH"]);
+      await expectRejected(bob, { ...copy(env), suite: "mlkem768" }, "MALFORMED");
       expect(await recv(bob, env)).toBe("secret");
     });
 
