@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   enqueue,
   flush,
+  MAILBOX_BYTE_QUOTA,
   MAILBOX_QUOTA,
   MAILBOX_TTL_MS,
   type MailboxStore,
@@ -12,6 +13,7 @@ interface Row {
   to: string;
   from: string;
   payload: unknown;
+  bytes: number;
   createdAt: number;
 }
 
@@ -32,11 +34,12 @@ function fakeStore() {
     tick(ms) {
       clock += ms;
     },
-    async count(to, notBefore) {
-      return rows.filter((r) => r.to === to && r.createdAt >= notBefore.getTime()).length;
+    async usage(to, notBefore) {
+      const live = rows.filter((r) => r.to === to && r.createdAt >= notBefore.getTime());
+      return { count: live.length, bytes: live.reduce((n, r) => n + r.bytes, 0) };
     },
-    async insert({ to, from, payload }) {
-      rows.push({ id: `m${++seq}`, to, from, payload, createdAt: clock++ });
+    async insert({ to, from, payload, bytes }) {
+      rows.push({ id: `m${++seq}`, to, from, payload, bytes, createdAt: clock++ });
     },
     async fetch(to, notBefore, limit) {
       store.onFetch?.();
@@ -87,7 +90,7 @@ describe("mailbox flush", () => {
     store.onFetch = () => {
       if (!injected) {
         injected = true;
-        queueMicrotask(() => void store.insert({ to: "bob", from: "alice", payload: "late" }));
+        queueMicrotask(() => void store.insert({ to: "bob", from: "alice", payload: "late", bytes: 6 }));
       }
     };
     const got: unknown[] = [];
@@ -152,5 +155,22 @@ describe("mailbox quota", () => {
     expect(await enqueue(store, { to: "bob", from: "alice", payload: "x" }, now())).toBe(
       "queued",
     );
+  });
+
+  it(`rejects a message that would push the recipient past ${MAILBOX_BYTE_QUOTA} bytes`, async () => {
+    const { store, now } = fakeStore();
+    // 16 MB-ish payloads: three fit under 50 MB, the fourth does not.
+    const big = "x".repeat(16 * 1024 * 1024);
+    for (let i = 0; i < 3; i++) {
+      expect(await enqueue(store, { to: "bob", from: "alice", payload: big }, now())).toBe("queued");
+    }
+    expect(store.rows[0]!.bytes).toBe(big.length + 2); // JSON string quotes
+    expect(await enqueue(store, { to: "bob", from: "alice", payload: big }, now())).toBe("mailbox_full");
+    // A small message still fits in the remaining ~2 MB.
+    expect(await enqueue(store, { to: "bob", from: "alice", payload: { c: "hi" } }, now())).toBe("queued");
+    // Other recipients are unaffected, and expired rows stop counting.
+    expect(await enqueue(store, { to: "carol", from: "alice", payload: big }, now())).toBe("queued");
+    store.tick(MAILBOX_TTL_MS + 10);
+    expect(await enqueue(store, { to: "bob", from: "alice", payload: big }, now())).toBe("queued");
   });
 });
