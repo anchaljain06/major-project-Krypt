@@ -35,7 +35,7 @@ async function newUser(browser: Browser, name: string): Promise<User> {
     (window as unknown as { __toasts: string[] }).__toasts = [];
     const push = (el: Element) => {
       const t = (el.textContent ?? "").trim();
-      if (t && t.length <= 160) (window as unknown as { __toasts: string[] }).__toasts.push(t);
+      if (t && t.length <= 400) (window as unknown as { __toasts: string[] }).__toasts.push(t);
     };
     const start = () => {
       const obs = new MutationObserver((muts) => {

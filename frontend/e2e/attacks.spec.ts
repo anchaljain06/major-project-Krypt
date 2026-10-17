@@ -63,7 +63,7 @@ async function newUser(browser: Browser, name: string, userAgent?: string): Prom
     const push = (el: Element) => {
       const t = (el.textContent ?? "").trim();
       // Toasts are short; skip large app-container blobs.
-      if (t && t.length <= 160) (window as unknown as { __toasts: string[] }).__toasts.push(t);
+      if (t && t.length <= 400) (window as unknown as { __toasts: string[] }).__toasts.push(t);
     };
     const start = () => {
       const obs = new MutationObserver((muts) => {
@@ -186,7 +186,16 @@ test(`v1 attack: ${ATTACK}`, async ({ browser }) => {
     result.bobReceivedPlaintext = bobGotPlaintext > 0;
     result.identityDialog = await alice.page.getByRole("alertdialog").count();
     result.ktBadgeAlice = await alice.page.getByTestId("kt-badge").innerText().catch(() => null);
-    result.observed = bobGotPlaintext > 0 ? "plaintext delivered to Bob (LEAK)" : "no plaintext delivered to the wrong key";
+    const aliceAll = (result.aliceToasts as string[]).concat(alice.problems);
+    result.ktAlert = aliceAll.some((t) => /ALERT|transparency|not trusted|refused/i.test(t));
+    result.observed =
+      bobGotPlaintext > 0
+        ? "plaintext delivered to Bob (LEAK)"
+        : EXPECT_KT
+          ? result.ktAlert
+            ? "KT ALERT, wrong key refused; no plaintext delivered"
+            : "no plaintext delivered to the wrong key (no visible KT alert captured)"
+          : "silently pinned (TOFU first-contact limit) - this is the gap KT closes; no plaintext reached Bob";
     await finish(result, alice.page);
     expect(bobGotPlaintext, "the wrong-key message must not reach Bob as plaintext").toBe(0);
     await alice.context.close();
