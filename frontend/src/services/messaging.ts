@@ -32,6 +32,7 @@ import { AttachmentError, assertAttachmentFits, decryptAttachment, encryptAttach
 import type { UserIdentityKeys } from "../crypto/mlkem";
 import { bytesToBase64 } from "../crypto/utils";
 import { db } from "./db";
+import { resetOneTimePrekeysAfterUnknown } from "./prekeyMaintenance";
 import { protocolReady, type Protocol } from "./protocol";
 import { socket } from "./socket";
 
@@ -256,6 +257,11 @@ async function processIncoming(raw: unknown) {
     result = await p.session.decrypt(frame.envelope);
   } catch (err) {
     reportDecryptError(err, frame.from);
+    if (err instanceof DecryptError && err.code === "UNKNOWN_PREKEY") {
+      // The server handed out a prekey this device cannot answer (lost
+      // prekey store): replace our one-time prekeys. Rate-limited inside.
+      void resetOneTimePrekeysAfterUnknown(p).catch((e) => console.warn("[Krypt] one-time prekey reset failed:", e));
+    }
     return;
   }
   const peer = result.peer;
