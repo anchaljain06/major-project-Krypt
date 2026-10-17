@@ -17,15 +17,38 @@
    every SPK secret is leaked. OPK secrets are not, because they were deleted.
    This is the "later compromise" of the forward-secrecy claim.
 
-   Replay cache (section 4.3, last paragraph): Bob stores H(T) for each
-   SPK-only handshake and rejects duplicates. Modelled as the restriction
-   on CacheInsert below (a duplicate H(T) under the same SPK never gets
-   past the cache). handshake_nocache.pv is this file without it.
+   This file models the FIXED spec (decisions taken after this model's
+   first findings, see README):
+     (1) OPKs are signed with their own label "Krypt-OPK"; SPKs keep
+         "Krypt-SPK". The literal old spec ("each signed the same way") is
+         handshake_samelabel.pv.
+     (2) Bob remembers sessionId = H(T) for EVERY accepted session (SPK-only
+         and OPK) and accepts each H(T) at most once.
+
+   Replay cache and injectivity. ProVerif cannot express an atomic
+   "test-and-insert" cache: restrictions may not mention time variables
+   (so "CacheInsert(h)@i && CacheInsert(h)@j ==> i = j" is rejected), and
+   table get/insert is neither atomic nor precise in ProVerif's abstraction.
+   So the cache is NOT in the processes below. Instead this file proves
+   the two facts the cache needs (Q5b, Q5c):
+     - every H(T) Bob accepts was produced by an Alice session with the
+       same (a, b, H(T), RK0)            (non-injective agreement), and
+     - each H(T) belongs to exactly one Alice session (uniqueness).
+   A cache that accepts each H(T) at most once then makes the agreement
+   injective. Q5a proves injectivity directly for the OPK path (OPK is
+   single-use). handshake_nocache.pv shows the replay attack that the
+   cache has to stop on the SPK-only path.
 
    Run:  proverif handshake.pv      (or `make check` in this folder)
    ====================================================================== *)
 
 free c: channel.
+
+(* The OPK input below either reveals the OPK or consumes it, never both.
+   Without preciseActions ProVerif's abstraction forgets that one input
+   receives one message, finds a spurious "revealed AND consumed" OPK and
+   cannot prove Q4. *)
+set preciseActions = true.
 
 (* ----------------------------------------------------------------------
    Primitives (section 4.2)
@@ -124,13 +147,6 @@ event BobAccepts(client, client, bool, bitstring, key).
 (* (initiator, responder, OPK used?, SPK, OPK, epoch-0 payload) *)
 event AliceSent0(client, client, bool, kempub, kempub, bitstring).
 event BobRecv0(client, client, bool, kempub, kempub, bitstring).
-(* Replay cache entry (responder, SPK, H(T)) for SPK-only handshakes *)
-event CacheInsert(client, kempub, bitstring).
-
-(* The replay cache: Bob never accepts the same H(T) twice under one SPK
-   (section 4.3: "stores H(T) ... and rejects duplicates"). *)
-restriction b: client, s: kempub, h: bitstring, i, j: time;
-  event(CacheInsert(b, s, h))@i && event(CacheInsert(b, s, h))@j ==> i = j.
 
 (* ----------------------------------------------------------------------
    Queries -- mapping to strategy section 4.7
@@ -181,15 +197,29 @@ query a, b: client, u: bool, s, o: kempub, m: bitstring, i, j: time;
      (event(CompromiseIK(a))@j && j < i)
   || (event(CompromiseSPK(b, s)) && u = false).
 
-(* Q5 Authentication (4.7 row 4): injective agreement on
-   (IK_A, IK_B, T, RK0), with the replay cache. Unless IK_A was compromised
-   before Bob accepted. Not listed, therefore proven harmless: IK_B and SPK_B
-   compromise (KCI; the KEM alone authenticates nobody, sig_A does).
-   Expected: true. *)
-query a, b: client, u: bool, h: bitstring, k: key, i, j: time;
-  inj-event(BobAccepts(a, b, u, h, k))@i ==>
-     inj-event(AliceInit(a, b, u, h, k))
+(* Q5 Authentication (4.7 row 4): agreement on (IK_A, IK_B, T, RK0)
+   (H(T) covers both identity keys and the whole transcript).
+   Exception: IK_A compromised before Bob accepted. Not listed, therefore
+   proven harmless: IK_B and SPK_B compromise at any time (KCI; the KEM
+   authenticates nobody, sig_A does).
+
+   Q5a injective, OPK path (the OPK is consumed once). Expected: true. *)
+query a, b: client, h: bitstring, k: key, i, j: time;
+  inj-event(BobAccepts(a, b, true, h, k))@i ==>
+     inj-event(AliceInit(a, b, true, h, k))
   || (event(CompromiseIK(a))@j && j < i).
+
+(* Q5b non-injective, both paths. Expected: true. *)
+query a, b: client, u: bool, h: bitstring, k: key, i, j: time;
+  event(BobAccepts(a, b, u, h, k))@i ==>
+     event(AliceInit(a, b, u, h, k))
+  || (event(CompromiseIK(a))@j && j < i).
+
+(* Q5c H(T) identifies one Alice session: two AliceInit events with the
+   same H(T) are the same event. With Q5b this is what makes a cache keyed
+   on sessionId = H(T) sufficient for injectivity. Expected: true. *)
+query a, b, a', b': client, u, u': bool, h: bitstring, k, k': key, i, j: time;
+  event(AliceInit(a, b, u, h, k))@i && event(AliceInit(a', b', u', h, k'))@j ==> i = j.
 
 (* ----------------------------------------------------------------------
    Processes
@@ -269,15 +299,12 @@ let Responder(b: client, ikB: sigsk) =
       (in(c, =reveal); event CompromiseSPK(b, spk_ek); out(c, spk_dk))
     | (* SPK leaked after the run (forward-secrecy scenario) *)
       (phase 1; event CompromiseSPK(b, spk_ek); out(c, spk_dk))
-    | (* Last-resort path: SPK only, replay cache on H(T) *)
+    | (* Last-resort path: SPK only. Unboundedly many handshakes per SPK;
+         the sessionId cache is argued via Q5b + Q5c, see header. *)
       ! (
         in(c, (a: client, =b, =spk_ek, =no_opk, ct1: bitstring, =no_ct,
                ekA1: kempub, sigA: bitstring, c0: bitstring));
-        get identity(=a, ikA_pub) in
-        let hT = H(transcript(lbl_v1, ikA_pub, sigpk(ikB), spk_ek, no_opk, ct1, no_ct, ekA1)) in
-        if verify(ikA_pub, init_tbs(lbl_init, hT), sigA) then
         let ss1 = kem_dec(spk_dk, ct1) in
-        event CacheInsert(b, spk_ek, hT);
         RespFinish(b, ikB, a, false, spk_ek, no_opk, ct1, no_ct, ss1, no_ss, ekA1, sigA, c0)
       )
     | (* One-time prekeys under this SPK *)
