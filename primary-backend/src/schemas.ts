@@ -112,6 +112,20 @@ export const uploadPrekeysBody = z
     { message: "Duplicate one-time prekey keyId in request." },
   );
 
+/** Same bound as MAX_STORED_OPKS in prekeys.ts: a user never has more to delete. */
+export const MAX_OPK_DELETE_IDS = 1000;
+
+// DELETE /api/prekeys/one-time. No keyIds: delete all of the caller's OPKs.
+// An empty list is refused so that "delete nothing" is never mistaken for "delete all".
+export const deleteOneTimePrekeysBody = z.strictObject({
+  keyIds: z
+    .array(prekeySchema.shape.keyId)
+    .min(1)
+    .max(MAX_OPK_DELETE_IDS)
+    .refine((ids) => new Set(ids).size === ids.length, { message: "Duplicate keyId in request." })
+    .optional(),
+});
+
 // ---------- Socket payloads ----------
 
 // The relay never looks inside the ciphertext; it only needs `to`. Other fields

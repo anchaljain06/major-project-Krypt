@@ -2,11 +2,12 @@ import { Router } from "express";
 import { prisma } from "./db.js";
 import { SlidingWindowLimiter } from "./rateLimit.js";
 import { emitToUser } from "./realtime.js";
-import { parseOr400, uploadPrekeysBody, usernameSchema } from "./schemas.js";
+import { deleteOneTimePrekeysBody, parseOr400, uploadPrekeysBody, usernameSchema } from "./schemas.js";
 
 // Prekey API (plan 1.20). Mounted behind requireAuth.
-//   POST /prekeys            upload a signed prekey and/or one-time prekeys
-//   GET  /prekeys/count      how many one-time prekeys the caller has left
+//   POST   /prekeys            upload a signed prekey and/or one-time prekeys
+//   DELETE /prekeys/one-time   delete the caller's OPKs ({ keyIds? }; all if omitted)
+//   GET    /prekeys/count      how many one-time prekeys the caller has left
 //   GET  /bundle/:username   identity key + signed prekey + one claimed OPK
 
 export const PREKEYS_LOW_WATERMARK = 20;
@@ -148,6 +149,24 @@ router.post("/prekeys", async (req, res) => {
     res.status(200).json({ success: true, ...(await prekeyStatus(userId)) });
   } catch (err) {
     console.error("[Prekeys] Upload error:", err);
+    res.status(500).json({ error: "Database error." });
+  }
+});
+
+// Lets a client that lost its private halves (cleared storage) withdraw OPKs
+// it can no longer use, so peers stop claiming them. Only the caller's rows.
+router.delete("/prekeys/one-time", async (req, res) => {
+  const body = parseOr400(deleteOneTimePrekeysBody, req.body, res);
+  if (!body) return;
+  const userId = req.auth!.userId;
+  try {
+    await prisma.oneTimePrekey.deleteMany({
+      where: body.keyIds ? { userId, keyId: { in: body.keyIds } } : { userId },
+    });
+    const oneTimeRemaining = await prisma.oneTimePrekey.count({ where: { userId } });
+    res.status(200).json({ success: true, oneTimeRemaining });
+  } catch (err) {
+    console.error("[Prekeys] Delete error:", err);
     res.status(500).json({ error: "Database error." });
   }
 });

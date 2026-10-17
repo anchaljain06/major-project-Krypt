@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 const db = vi.hoisted(() => ({
   user: { findUnique: vi.fn() },
-  oneTimePrekey: { count: vi.fn(), createMany: vi.fn() },
+  oneTimePrekey: { count: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
   signedPrekey: { findUnique: vi.fn(), upsert: vi.fn() },
   $queryRaw: vi.fn(),
   $transaction: vi.fn(),
@@ -96,6 +96,71 @@ describe("POST /prekeys", () => {
     });
     expect(res.status).toBe(413);
     expect(await res.json()).toEqual({ error: "Request body too large." });
+  });
+});
+
+describe("DELETE /prekeys/one-time", () => {
+  const del = (body?: unknown, headers: Record<string, string> = auth) =>
+    fetch(`${base}/prekeys/one-time`, {
+      method: "DELETE",
+      headers: body === undefined ? headers : { "content-type": "application/json", ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+  it("requires auth", async () => {
+    expect((await del(undefined, {})).status).toBe(401);
+    expect(db.oneTimePrekey.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("deletes all of the caller's OPKs when keyIds is omitted", async () => {
+    db.oneTimePrekey.deleteMany.mockResolvedValue({ count: 7 });
+    db.oneTimePrekey.count.mockResolvedValue(0);
+    for (const body of [undefined, {}]) {
+      const res = await del(body);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true, oneTimeRemaining: 0 });
+    }
+    expect(db.oneTimePrekey.deleteMany.mock.calls.map((c) => c[0])).toEqual([
+      { where: { userId: "u-alice" } },
+      { where: { userId: "u-alice" } },
+    ]);
+  });
+
+  it("deletes only the listed keyIds, scoped to the token user", async () => {
+    db.oneTimePrekey.deleteMany.mockResolvedValue({ count: 2 });
+    db.oneTimePrekey.count.mockResolvedValue(40);
+    const res = await del({ keyIds: [3, 9] });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, oneTimeRemaining: 40 });
+    expect(db.oneTimePrekey.deleteMany.mock.calls[0]![0]).toEqual({
+      where: { userId: "u-alice", keyId: { in: [3, 9] } },
+    });
+    expect(db.oneTimePrekey.count.mock.calls[0]![0]).toEqual({ where: { userId: "u-alice" } });
+  });
+
+  it("rejects invalid bodies without touching the database", async () => {
+    for (const bad of [
+      { keyIds: [] },
+      { keyIds: [1, 1] },
+      { keyIds: [-1] },
+      { keyIds: [1.5] },
+      { keyIds: ["1"] },
+      { keyIds: Array.from({ length: 1001 }, (_, i) => i) },
+      { keyIds: [1], userId: "u-bob" },
+      [1, 2],
+    ]) {
+      expect((await del(bad)).status, JSON.stringify(bad).slice(0, 40)).toBe(400);
+    }
+    expect(db.oneTimePrekey.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("reports a database failure as 500", async () => {
+    db.oneTimePrekey.deleteMany.mockRejectedValue(new Error("down"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await del({ keyIds: [1] });
+    spy.mockRestore();
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "Database error." });
   });
 });
 

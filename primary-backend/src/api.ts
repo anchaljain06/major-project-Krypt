@@ -173,7 +173,7 @@ router.post("/login/verify", async (req, res) => {
 
 router.use(requireAuth);
 
-// POST /prekeys, GET /prekeys/count, GET /bundle/:username
+// POST /prekeys, DELETE /prekeys/one-time, GET /prekeys/count, GET /bundle/:username
 router.use(prekeys);
 
 // POST /kt/register, GET /kt/status (key transparency, plan 2.21)
