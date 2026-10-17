@@ -28,6 +28,7 @@ import {
   KtOp,
   attachOwnerSig,
   buildLeafBody,
+  bytesEqual,
   checkSthChain,
   cosignatureFromJson,
   encodeLeaf,
@@ -90,7 +91,8 @@ if (LOG_PUBKEY && !KT_ENABLED) console.error("[KT] VITE_KT_LOG_PUBKEY is not a 2
 export type KtGlobalState =
   | { mode: "disabled" }
   | { mode: "pending" }
-  | { mode: "ok"; treeSize: number; witness: "verified" | "stale" | "none" }
+  | { mode: "ok"; treeSize: number; witness: "verified" | "stale" | "none"; self: "logged" | "pending" }
+  | { mode: "unavailable"; reason: string }
   | { mode: "error"; reason: string }
   | { mode: "alert"; reason: string };
 
@@ -159,6 +161,8 @@ interface Persisted {
   monitored: { size: number; root: string } | null;
   peers: Record<string, { keyVersion: number }>;
   alert: string | null;
+  /** My own leaf has been seen under a signed head. */
+  selfLogged?: boolean;
 }
 
 const stateKey = (user: string) => `krypt_kt_${user}`;
@@ -167,7 +171,13 @@ function loadPersisted(user: string): Persisted {
   try {
     const p = JSON.parse(localStorage.getItem(stateKey(user)) ?? "null");
     if (p && typeof p === "object") {
-      return { lastSth: p.lastSth ?? null, monitored: p.monitored ?? null, peers: p.peers ?? {}, alert: p.alert ?? null };
+      return {
+        lastSth: p.lastSth ?? null,
+        monitored: p.monitored ?? null,
+        peers: p.peers ?? {},
+        alert: p.alert ?? null,
+        selfLogged: p.selfLogged === true,
+      };
     }
   } catch {
     // fall through
@@ -189,6 +199,12 @@ export class KtClient {
   private witnessCheckedAt = 0;
   private witnessResult: "verified" | "stale" | "none" = "none";
   private gossipChecked = new Set<string>();
+  /**
+   * "pending" until my own leaf is visible under a signed head. The log
+   * publishes heads lazily (up to 5 minutes), so a fresh leaf is not an alert.
+   */
+  private selfState: "logged" | "pending" = "pending";
+  private readonly legacy: boolean;
 
   constructor(username: string, keys: UserIdentityKeys) {
     this.username = username;
@@ -200,14 +216,20 @@ export class KtClient {
     } catch {
       this.lastSth = null;
     }
+    // Accounts from the oldest builds have no ML-DSA identity key; the log
+    // cannot hold them (a leaf commits to both keys).
+    this.legacy = keys.dsaPublicKey.length === 0;
+    if (this.st.selfLogged) this.selfState = "logged";
     if (this.st.alert) {
       globalState = { mode: "alert", reason: this.st.alert };
       emit();
+    } else if (KT_ENABLED && this.legacy) {
+      setGlobal({ mode: "unavailable", reason: "Key transparency is unavailable for legacy accounts" });
     }
   }
 
   get enabled() {
-    return KT_ENABLED;
+    return KT_ENABLED && !this.legacy;
   }
 
   private save() {
@@ -225,9 +247,16 @@ export class KtClient {
     setGlobal({ mode: "alert", reason });
   }
 
+  /** Records a failure that is not evidence of an attack (log unreachable, register refused). */
+  noteError(reason: string) {
+    if (!this.enabled) return;
+    console.warn(`[KT] ${reason}`);
+    setGlobal({ mode: "error", reason });
+  }
+
   /** The head carried as gossip inside encrypted messages. */
   gossip(): { treeSize: number; rootHash: string } | undefined {
-    if (!KT_ENABLED || !this.lastSth) return undefined;
+    if (!this.enabled || !this.lastSth) return undefined;
     return { treeSize: this.lastSth.treeSize, rootHash: toBase64(this.lastSth.rootHash) };
   }
 
@@ -263,7 +292,7 @@ export class KtClient {
       this.st.lastSth = sthToJson(sth);
       this.save();
     }
-    setGlobal({ mode: "ok", treeSize: this.lastSth!.treeSize, witness: this.witnessResult });
+    setGlobal({ mode: "ok", treeSize: this.lastSth!.treeSize, witness: this.witnessResult, self: this.selfState });
     return true;
   }
 
@@ -308,7 +337,7 @@ export class KtClient {
 
   /** GET /kt/sth, verified and linked to the stored head. */
   async refreshHead(): Promise<SignedTreeHead | null> {
-    if (!KT_ENABLED) return null;
+    if (!this.enabled) return null;
     const sth = sthFromJson(await getJson("/kt/sth"));
     if (!(await verifyTreeHead(sth, verifySth))) {
       this.raiseAlert("tree head signature does not verify under the pinned log key");
@@ -319,7 +348,7 @@ export class KtClient {
 
   /** Registers my identity key in the log if it is not there yet (owner-signed register leaf). */
   async registerSelf(): Promise<void> {
-    if (!KT_ENABLED) return;
+    if (!this.enabled) return;
     const res = await apiFetch("/api/kt/status");
     if (!res.ok) throw new Error(`KT status failed (HTTP ${res.status})`);
     const status = (await res.json()) as { hasLeaf?: boolean; keyVersion?: number };
@@ -351,7 +380,7 @@ export class KtClient {
    * name that are not mine.
    */
   async monitorSelf(): Promise<void> {
-    if (!KT_ENABLED) return;
+    if (!this.enabled) return;
     const sth = await this.refreshHead();
     if (!sth) return;
     let mon = this.st.monitored;
@@ -394,8 +423,14 @@ export class KtClient {
       this.raiseAlert(`self-monitoring: ${alerts.map((a) => a.message).join("; ")}`);
       return;
     }
+    const myHash = await hashUsername(this.username);
+    if (range.leaves.some(({ leaf }) => bytesEqual(leaf.userHash, myHash) && bytesEqual(leaf.mldsaPkHash, mldsaPkHash))) {
+      this.st.selfLogged = true;
+      this.selfState = "logged";
+    }
     this.st.monitored = { size: sth.treeSize, root: toBase64(sth.rootHash) };
     this.save();
+    setGlobal({ mode: "ok", treeSize: sth.treeSize, witness: this.witnessResult, self: this.selfState });
   }
 
   /**
@@ -403,7 +438,7 @@ export class KtClient {
    * peer's KT state; "alert" and "error" mean the key must not be trusted.
    */
   async verifyPeer(peer: string, dsaPub: Uint8Array): Promise<KtPeerState> {
-    if (!KT_ENABLED) return { state: "disabled" };
+    if (!this.enabled) return { state: "disabled" };
     const at = Date.now();
     const done = (s: KtPeerState) => {
       peerStates.set(peer, s);
@@ -460,7 +495,7 @@ export class KtClient {
 
   /** Compares a peer's gossiped head with mine (plan 3.3). */
   async checkGossip(peer: string, g: unknown): Promise<void> {
-    if (!KT_ENABLED || !this.lastSth || !g || typeof g !== "object") return;
+    if (!this.enabled || !this.lastSth || !g || typeof g !== "object") return;
     const { treeSize, rootHash } = g as { treeSize?: unknown; rootHash?: unknown };
     if (typeof treeSize !== "number" || !Number.isSafeInteger(treeSize) || treeSize < 0 || typeof rootHash !== "string") return;
     const key = `${treeSize}:${rootHash}`;

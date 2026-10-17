@@ -30,8 +30,10 @@ import type { PrekeyBundleWire } from "../crypto/prekeys";
 import { SessionManager, createMutexLock, type LockFn } from "../crypto/session";
 import { IndexedDbPrekeyStore, IndexedDbSessionStore } from "../crypto/session-store";
 import { apiFetch } from "./api";
+import { KtClient } from "./kt";
 import { getSuite } from "./settings";
 import { socket } from "./socket";
+import { createTrustIdentity } from "./trust";
 
 export type TrustFn = (username: string, dsaPub: Uint8Array) => Promise<boolean>;
 
@@ -98,14 +100,16 @@ export class Protocol {
   readonly keys: UserIdentityKeys;
   readonly sessions: IndexedDbSessionStore;
   readonly prekeys: IndexedDbPrekeyStore;
+  readonly kt: KtClient;
   private readonly trust: TrustFn;
   private suite: KemSuite;
   private manager: SessionManager;
 
-  constructor(username: string, keys: UserIdentityKeys, storeKey: CryptoKey, trust: TrustFn) {
+  constructor(username: string, keys: UserIdentityKeys, storeKey: CryptoKey) {
     this.username = username;
     this.keys = keys;
-    this.trust = trust;
+    this.kt = new KtClient(username, keys);
+    this.trust = createTrustIdentity(keys, this.kt);
     this.sessions = new IndexedDbSessionStore({ key: storeKey, dbName: sessionDbName(username) });
     this.prekeys = new IndexedDbPrekeyStore({ key: storeKey, dbName: prekeyDbName(username) });
     this.suite = getSuite(username);
@@ -171,13 +175,13 @@ let starting: Promise<Protocol> | null = null;
 let waiters: ((p: Protocol) => void)[] = [];
 
 /** Creates (or returns) the Protocol for this user and identity. */
-export function startProtocol(username: string, keys: UserIdentityKeys, trust: TrustFn): Promise<Protocol> {
+export function startProtocol(username: string, keys: UserIdentityKeys): Promise<Protocol> {
   if (current && current.username === username && current.keys === keys) return Promise.resolve(current);
   if (starting) return starting;
   starting = (async () => {
     if (current) await stopProtocol();
     deleteLegacySessionKeys();
-    const p = new Protocol(username, keys, await deriveStoreKey(keys, username), trust);
+    const p = new Protocol(username, keys, await deriveStoreKey(keys, username));
     current = p;
     waiters.forEach((w) => w(p));
     waiters = [];
@@ -204,11 +208,27 @@ export async function stopProtocol() {
   if (p) await p.close();
 }
 
+function deleteDb(name: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const r = indexedDB.deleteDatabase(name);
+    r.onsuccess = r.onerror = r.onblocked = () => resolve();
+  });
+}
+
 /** Deletes this user's ratchet sessions on this device (Wipe Local Device Cache). Prekeys are kept. */
 export async function deleteSessionDatabase(user: string) {
   if (current?.username === user) await current.sessions.close();
-  await new Promise<void>((resolve) => {
-    const r = indexedDB.deleteDatabase(sessionDbName(user));
-    r.onsuccess = r.onerror = r.onblocked = () => resolve();
-  });
+  await deleteDb(sessionDbName(user));
+}
+
+/** Deletes every user's ratchet-session database on this device (login screen "Clear" button). */
+export async function deleteAllSessionDatabases() {
+  try {
+    const dbs = (await indexedDB.databases?.()) ?? [];
+    await Promise.all(
+      dbs.map((d) => d.name).filter((n): n is string => !!n && n.startsWith("krypt-sessions-v1:")).map(deleteDb),
+    );
+  } catch {
+    // indexedDB.databases() unsupported: nothing we can enumerate.
+  }
 }
