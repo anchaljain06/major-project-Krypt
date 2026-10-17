@@ -248,17 +248,40 @@ with session id `X` arrives from peer `P` and the live session is `S`:
 | `X` is tombstoned | Reject `SESSION_CLOSED` (covers replays of closed sessions) |
 | `X` is in the session-id memory | Reject `INIT_REPLAY` (an old session whose tombstone has rolled over, or whose record was lost) |
 | No `S` | Respond (section 4.2) |
-| `S` was initiated by us and **unconfirmed** (nothing received from `P` on it yet) | Simultaneous initiation. Keep the session whose id is **bytewise smaller**. If `X < S.sessionId`: respond to `X`, tombstone `S`. Otherwise reject `SESSION_SUPERSEDED` and keep `S` |
+| `S` was initiated by us and **unconfirmed** (nothing received from `P` on it yet) | Simultaneous initiation. Keep the session whose id is **bytewise smaller**. If `X < S.sessionId`: respond to `X`, tombstone `S`. Otherwise reject `SESSION_SUPERSEDED`, keep `S`, and **tombstone `X`** if the init authenticates (see below) |
 | Otherwise (`S` confirmed, or we are `S`'s responder) | The peer started over (lost state, new device). Respond to `X`, tombstone `S` |
 
 Both sides know both ids, so they apply the same comparison and converge on
-the same session without any extra round trip. The rule uses the transcript
-hash, not usernames, so the relay cannot choose the winner. Messages already
-sent on the losing session cannot be decrypted by the peer
+the same session without any extra round trip. The comparison is on the raw
+32-byte ids, not on their base64url strings: the base64url alphabet is not in
+ASCII order, so string comparison can pick the other session. The rule uses
+the transcript hash, not usernames, so the relay cannot choose the winner.
+Messages already sent on the losing session cannot be decrypted by the peer
 (`SESSION_SUPERSEDED`); the application should re-send them.
 
 All of these actions happen only after the incoming init passes every check in
 section 4.2, including AES-GCM verification of its message.
+
+**Tombstoning the losing init.** When Bob rejects `X` with
+`SESSION_SUPERSEDED`, he still runs steps 5-12 of section 4.2 on it. If the
+init authenticates (signature, `H(T) = sessionId`, AES-GCM of its message),
+then, under the same per-peer lock and before throwing, he:
+
+1. tombstones `X` (the live session `S` is saved unchanged),
+2. deletes the OPK it used, and
+3. records `X` in the SPK's session-id memory,
+
+in that order, as for an accepted init. The decrypted message is discarded.
+Without this, nothing would be left of `X`: once `S` is confirmed, a late or
+relay-replayed copy of `X` would match the "peer started over" row, replace
+the agreed session, and leave both sides with `SESSION_CLOSED` (the peer has
+already tombstoned `X` itself). With it, every later copy is refused with
+`SESSION_CLOSED` (or `INIT_REPLAY` once the tombstone rolls over). If the
+losing init does **not** authenticate, Bob still answers `SESSION_SUPERSEDED`
+and records nothing, so forged inits cannot fill the tombstone list. A genuine
+new handshake from the peer has a new transcript and therefore a new
+`sessionId`, so it is not affected. This is the single exception to the
+"no state change on error" rule of section 10.
 
 ## 5. The KEM ratchet
 
@@ -491,6 +514,9 @@ Further limits that an examiner should hear from us first:
 
 `decrypt` throws `DecryptError` with a `code`; nothing is returned and **no
 state changes** (stored session, prekeys, replay cache) happen on any error.
+The one exception is an authenticated init that loses the
+simultaneous-initiation tie-break: its id is tombstoned before
+`SESSION_SUPERSEDED` is thrown (section 4.5).
 A failed message does not close the session: otherwise any unauthenticated
 garbage could kill a conversation. The app drops the message and may show a
 neutral warning.
@@ -502,7 +528,7 @@ neutral warning.
 | `NOT_FOR_ME` | `to` is not our username |
 | `UNKNOWN_SESSION` | No such session and no init header |
 | `SESSION_CLOSED` | Session id is tombstoned (closed or replaced) |
-| `SESSION_SUPERSEDED` | Init lost the simultaneous-initiation tie-break |
+| `SESSION_SUPERSEDED` | Init lost the simultaneous-initiation tie-break (tombstoned if it authenticated) |
 | `UNKNOWN_PREKEY` | SPK or OPK private key not found (OPK already used) |
 | `INIT_REPLAY` | Init whose `sessionId` is in the session-id memory of its SPK |
 | `BAD_SIGNATURE` | `σ_A` does not verify, or `H(T) ≠ sessionId` |
@@ -624,3 +650,9 @@ spec had to choose or tighten something:
     addition to the separate signature labels (formal-model requirement).
 12. **SPK rotation interval** is stated as a security parameter: it bounds the
     epoch-0 exposure of SPK-only sessions.
+13. **Losing inits are tombstoned** (section 4.5, found during integration).
+    An init that authenticates but loses the simultaneous-initiation tie-break
+    is tombstoned, its OPK deleted and its id recorded in the session-id
+    memory, so a late or replayed copy cannot later take the "peer started
+    over" path and replace the agreed session. This is a liveness rule: it
+    changes no secrecy or authentication property.
