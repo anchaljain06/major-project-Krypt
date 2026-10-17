@@ -39,3 +39,8 @@ TEAM_DISCUSSION.md
 
 # Contains exploitable-bug details for the deployed v0; keep local until Phase 0 ships
 Krypt_Major_Project_Strategy.md
+
+#extra personal docs
+Krypt_Cryptographic_Handoff.md
+Krypt_Implementation_Plan.md
+IMPLEMENTATION_STATUS.md
