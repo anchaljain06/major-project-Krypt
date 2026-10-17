@@ -337,12 +337,16 @@ for (const suite of KEM_SUITES) {
       const fromA = await send(alice, bob, "hi from alice");
       const fromB = await send(bob, alice, "hi from bob");
       const winner = Buffer.from(fromA.sessionId, "base64url").compare(Buffer.from(fromB.sessionId, "base64url")) < 0 ? "A" : "B";
+      // The losing init authenticates, so its id is tombstoned (spec 4.5) and
+      // a second copy is refused without touching anything.
       if (winner === "A") {
         expect(await recv(bob, fromA)).toBe("hi from alice");
-        await expectRejected(alice, fromB, "SESSION_SUPERSEDED", "bob");
+        await expect(alice.sm.decrypt(fromB)).rejects.toMatchObject({ code: "SESSION_SUPERSEDED" });
+        await expectRejected(alice, fromB, "SESSION_CLOSED", "bob");
       } else {
         expect(await recv(alice, fromB)).toBe("hi from bob");
-        await expectRejected(bob, fromA, "SESSION_SUPERSEDED");
+        await expect(bob.sm.decrypt(fromA)).rejects.toMatchObject({ code: "SESSION_SUPERSEDED" });
+        await expectRejected(bob, fromA, "SESSION_CLOSED");
       }
       // Delivery in the other order gives the same outcome; then both talk on one session.
       const sid = winner === "A" ? fromA.sessionId : fromB.sessionId;

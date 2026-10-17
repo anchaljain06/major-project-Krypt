@@ -8,7 +8,9 @@
  *    message key can never be used twice even after a crash.
  *  - decrypt works on a copy and commits only after AES-GCM verifies; on any
  *    error it throws DecryptError and nothing (session, prekeys, replay
- *    memory) has changed.
+ *    memory) has changed. One exception: an init that authenticates but
+ *    loses the simultaneous-initiation tie-break is tombstoned before
+ *    SESSION_SUPERSEDED is thrown (spec 4.5); the live session is untouched.
  *  - A root step happens only when a new peer key arrives (receive step) or
  *    when we next send after that (send step), never because of timing.
  */
@@ -367,12 +369,61 @@ export class SessionManager {
     const init = h.init!;
     if (h.pn !== 0 || h.kem) fail("MALFORMED", "init header with ratchet fields");
 
-    // Simultaneous initiation: our own unconfirmed session wins if its id is smaller.
+    // Simultaneous initiation: our own unconfirmed session wins if its id is
+    // smaller (raw bytes, not base64url strings).
     const live = rec.session;
     if (live && live.role === "initiator" && !live.established && compareBytes(h.sessionId, live.sessionId) >= 0) {
-      fail("SESSION_SUPERSEDED");
+      return this.rejectSuperseded(peer, rec, env, now);
     }
 
+    const a = await this.authenticateInit(peer, env, now);
+
+    // Commit, in an order that is safe if we crash part-way: the session
+    // first (a replay then hits the live-session path), then the OPK deletion
+    // and the session-id memory.
+    addSkipped(a.session, a.fresh);
+    const closed = live ? tombstone(rec.closed, toBase64url(live.sessionId)) : rec.closed;
+    await this.store.save(peer, { session: a.session, closed });
+    await this.consumeInit(a);
+    return result(peer, h, a.plaintext);
+  }
+
+  /**
+   * Spec 4.5, losing side of the tie-break. If the init authenticates, its id
+   * is tombstoned (and its OPK and session-id memory handled exactly like an
+   * accepted init) before SESSION_SUPERSEDED is thrown, so a later or
+   * relay-replayed copy cannot take the "peer started over" path once our
+   * session is confirmed. The live session itself is never touched. An init
+   * that does not authenticate changes nothing.
+   */
+  private async rejectSuperseded(peer: string, rec: PeerRecord, env: Envelope, now: number): Promise<never> {
+    let a: AuthenticatedInit;
+    try {
+      a = await this.authenticateInit(peer, env, now);
+    } catch (err) {
+      if (err instanceof DecryptError) fail("SESSION_SUPERSEDED", "init did not authenticate; nothing recorded");
+      throw err;
+    }
+    wipe(a.session.rk, a.session.ckr, a.plaintext, ...a.fresh.map((k) => k.mk));
+    await this.store.save(peer, { session: rec.session, closed: tombstone(rec.closed, a.sid) });
+    await this.consumeInit(a);
+    return fail("SESSION_SUPERSEDED");
+  }
+
+  /** Deletes the init's OPK and records its id in the SPK's session-id memory. */
+  private async consumeInit(a: AuthenticatedInit): Promise<void> {
+    if (a.opkId !== null) await this.prekeys.deleteOneTimePrekey(a.opkId);
+    await this.prekeys.recordAcceptedSession(a.spkId, a.sid);
+  }
+
+  /**
+   * Spec 4.2 steps 5-12 up to (not including) the commit: identity, prekeys,
+   * replay memory, transcript and AES-GCM of the first message. Pure: nothing
+   * is written.
+   */
+  private async authenticateInit(peer: string, env: Envelope, now: number): Promise<AuthenticatedInit> {
+    const h = env.header;
+    const init = h.init!;
     let ikA: Uint8Array;
     try {
       ikA = parseIdentityKey(await this.fetchIdentity(peer));
@@ -427,16 +478,7 @@ export class SessionManager {
     const fresh: SkippedKey[] = [];
     const mk = await advanceReceivingChain(s, h.n, fresh, now);
     const plaintext = await openBody(mk, env);
-
-    // Commit, in an order that is safe if we crash part-way: the session
-    // first (a replay then hits the live-session path), then the OPK deletion
-    // and the session-id memory.
-    addSkipped(s, fresh);
-    const closed = live ? [...rec.closed, toBase64url(live.sessionId)].slice(-MAX_TOMBSTONES) : rec.closed;
-    await this.store.save(peer, { session: s, closed });
-    if (init.opkId !== null) await this.prekeys.deleteOneTimePrekey(init.opkId);
-    await this.prekeys.recordAcceptedSession(init.spkId, sid);
-    return result(peer, h, plaintext);
+    return { session: s, fresh, plaintext, sid, spkId: init.spkId, opkId: init.opkId };
   }
 
   // -------------------------------------------------------------------------
@@ -463,10 +505,23 @@ export class SessionManager {
     await this.lock(this.lockName(peer), async () => {
       const rec = await this.loadRecord(peer);
       if (!rec.session) return;
-      const closed = [...rec.closed, toBase64url(rec.session.sessionId)].slice(-MAX_TOMBSTONES);
-      await this.store.save(peer, { session: null, closed });
+      await this.store.save(peer, { session: null, closed: tombstone(rec.closed, toBase64url(rec.session.sessionId)) });
     });
   }
+}
+
+interface AuthenticatedInit {
+  session: SessionState;
+  fresh: SkippedKey[];
+  plaintext: Uint8Array;
+  sid: string;
+  spkId: number;
+  opkId: number | null;
+}
+
+/** Appends `sid` to the tombstone list (once), keeping the newest MAX_TOMBSTONES. */
+function tombstone(closed: string[], sid: string): string[] {
+  return [...closed.filter((c) => c !== sid), sid].slice(-MAX_TOMBSTONES);
 }
 
 // ---------------------------------------------------------------------------

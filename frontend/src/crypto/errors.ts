@@ -21,7 +21,11 @@ export type DecryptErrorCode =
   | "TOO_MANY_SKIPPED"
   | "AUTH_FAILED";
 
-/** Thrown by `SessionManager.decrypt`. No state has changed when this is thrown. */
+/**
+ * Thrown by `SessionManager.decrypt`. No state has changed when this is
+ * thrown, except for SESSION_SUPERSEDED after the init authenticated: its id
+ * is then tombstoned (spec 4.5) so later copies are refused.
+ */
 export class DecryptError extends Error {
   readonly code: DecryptErrorCode;
   constructor(code: DecryptErrorCode, detail?: string) {

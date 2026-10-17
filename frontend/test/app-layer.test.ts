@@ -19,7 +19,8 @@ import {
 import { mldsaKeygen } from "../src/crypto/pq";
 import { safetyNumber } from "../src/crypto/safetyNumber";
 import { DecryptError } from "../src/crypto/errors";
-import { recv, send, te, world } from "./helpers";
+import { MemorySessionStore } from "../src/crypto/session-store";
+import { copy, expectRejected, flipB64, managerFor, recv, send, te, world } from "./helpers";
 
 describe("attachments", () => {
   it("round-trips and binds key, hash and mime", async () => {
@@ -115,24 +116,103 @@ describe("session race recovery (what services/messaging.ts relies on)", () => {
     expect(await recv(winner, again)).toBe("resent");
   });
 
-  // KNOWN PROTOCOL ISSUE (found during integration). An init rejected with
-  // SESSION_SUPERSEDED leaves no trace (no state change on error), so once the
-  // winning session is confirmed, a late or replayed copy of that same init
-  // matches the "peer started over" row of spec 4.5 and replaces the agreed
-  // session. The loser has tombstoned that id, so both sides end up with
-  // SESSION_CLOSED. `it.fails` flips to a failure once this is fixed.
-  it.fails("a superseded init delivered again after confirmation is rejected", async () => {
-    const { alice, bob } = await world();
+  /** Simultaneous initiation; returns the parties ordered by the bytewise tie-break. */
+  async function race() {
+    const w = await world();
+    const { alice, bob } = w;
     const fromAlice = await send(alice, bob, "a0");
     const fromBob = await send(bob, alice, "b0");
+    // Raw bytes, not base64url strings: the alphabet's value order (A-Z, a-z,
+    // 0-9, -, _) is not ASCII order, so string comparison can pick the other id.
     const aliceWins = compareBytes(fromBase64url(fromAlice.sessionId), fromBase64url(fromBob.sessionId)) < 0;
     const [winner, loser, winnerEnv, loserEnv] = aliceWins
       ? [alice, bob, fromAlice, fromBob]
       : [bob, alice, fromBob, fromAlice];
-    await expect(winner.sm.decrypt(loserEnv)).rejects.toMatchObject({ code: "SESSION_SUPERSEDED" });
-    await loser.sm.decrypt(winnerEnv);
-    await recv(winner, await loser.sm.encrypt(winner.name, te.encode("resent"), "text"));
-    // Replay of the superseded init: should be refused, is accepted today.
-    await expect(winner.sm.decrypt(loserEnv)).rejects.toBeInstanceOf(DecryptError);
+    return { ...w, winner, loser, winnerEnv, loserEnv };
+  }
+  type Race = Awaited<ReturnType<typeof race>>;
+
+  /** Loser accepts the winner's init and re-sends; the winner's session is then confirmed. */
+  async function settle(r: Race) {
+    await r.loser.sm.decrypt(r.winnerEnv);
+    expect(await recv(r.winner, await r.loser.sm.encrypt(r.winner.name, te.encode("resent"), "text"))).toBe("resent");
+    expect((await r.winner.sm.getStatus(r.loser.name))!.established).toBe(true);
+  }
+
+  async function bothTalk(r: Race) {
+    for (let i = 0; i < 2; i++) {
+      expect(await recv(r.loser, await send(r.winner, r.loser, `w${i}`))).toBe(`w${i}`);
+      expect(await recv(r.winner, await send(r.loser, r.winner, `l${i}`))).toBe(`l${i}`);
+    }
+    expect((await r.winner.sm.getStatus(r.loser.name))!.sessionId).toBe(r.winnerEnv.sessionId);
+    expect((await r.loser.sm.getStatus(r.winner.name))!.sessionId).toBe(r.winnerEnv.sessionId);
+  }
+
+  // Found during integration: an init rejected with SESSION_SUPERSEDED used to
+  // leave no trace, so a later copy matched the "peer started over" row of
+  // spec 4.5 once the winning session was confirmed, replaced it, and both
+  // sides then got SESSION_CLOSED. An authenticated loser is now tombstoned.
+  it("a superseded init delivered again after confirmation is rejected", async () => {
+    const r = await race();
+    await expect(r.winner.sm.decrypt(r.loserEnv)).rejects.toMatchObject({ code: "SESSION_SUPERSEDED" });
+    await settle(r);
+    await expectRejected(r.winner, r.loserEnv, "SESSION_CLOSED", r.loser.name);
+  });
+
+  it("a relay replay of the losing init after confirmation leaves the agreed session intact", async () => {
+    const r = await race();
+    await expect(r.winner.sm.decrypt(r.loserEnv)).rejects.toMatchObject({ code: "SESSION_SUPERSEDED" });
+    await settle(r);
+    for (let i = 0; i < 3; i++) {
+      await expect(r.winner.sm.decrypt(copy(r.loserEnv))).rejects.toBeInstanceOf(DecryptError);
+    }
+    await bothTalk(r);
+  });
+
+  it("duplicate delivery of the losing init: both copies are refused, the first is recorded", async () => {
+    const r = await race();
+    await expect(r.winner.sm.decrypt(r.loserEnv)).rejects.toMatchObject({ code: "SESSION_SUPERSEDED" });
+    // The live session is untouched; only the tombstone list grew.
+    const rec = (await r.winner.store.load(r.loser.name))!;
+    expect(toBase64url(rec.session!.sessionId)).toBe(r.winnerEnv.sessionId);
+    expect(rec.session!.established).toBe(false);
+    expect(rec.closed).toEqual([r.loserEnv.sessionId]);
+    // The losing init's OPK is used up and its id is in the session-id memory.
+    expect(await r.winner.prekeys.getOneTimePrekey(r.loserEnv.init!.opkId!)).toBeUndefined();
+    expect(await r.winner.prekeys.hasAcceptedSession(r.loserEnv.init!.spkId, r.loserEnv.sessionId)).toBe(true);
+    // Further copies, before or after confirmation, change nothing.
+    await expectRejected(r.winner, copy(r.loserEnv), "SESSION_CLOSED", r.loser.name);
+    await settle(r);
+    await expectRejected(r.winner, copy(r.loserEnv), "SESSION_CLOSED", r.loser.name);
+    await bothTalk(r);
+  });
+
+  it("a forged losing init that does not authenticate records nothing", async () => {
+    const r = await race();
+    const forged = { ...r.loserEnv, body: flipB64(r.loserEnv.body, 20) };
+    await expectRejected(r.winner, forged, "SESSION_SUPERSEDED", r.loser.name);
+    // The genuine copy is still recognised and tombstoned afterwards.
+    await expect(r.winner.sm.decrypt(r.loserEnv)).rejects.toMatchObject({ code: "SESSION_SUPERSEDED" });
+    await settle(r);
+    await expectRejected(r.winner, r.loserEnv, "SESSION_CLOSED", r.loser.name);
+  });
+
+  it("a genuine restart after a wipe (new transcript, new sessionId) is still accepted", async () => {
+    const r = await race();
+    await expect(r.winner.sm.decrypt(r.loserEnv)).rejects.toMatchObject({ code: "SESSION_SUPERSEDED" });
+    await settle(r);
+    const stale = await send(r.loser, r.winner, "sent on the agreed session, delivered late");
+    // The loser loses its session store (cleared site data) and starts over.
+    r.loser.store = new MemorySessionStore();
+    r.loser.sm = managerFor(r.loser, r.dir);
+    const restart = await send(r.loser, r.winner, "new device");
+    expect(restart.sessionId).not.toBe(r.loserEnv.sessionId);
+    expect(restart.sessionId).not.toBe(r.winnerEnv.sessionId);
+    expect(await recv(r.winner, restart)).toBe("new device");
+    expect((await r.winner.sm.getStatus(r.loser.name))!.sessionId).toBe(restart.sessionId);
+    expect(await recv(r.loser, await send(r.winner, r.loser, "welcome back"))).toBe("welcome back");
+    // The old losing init and the replaced session stay dead.
+    await expectRejected(r.winner, r.loserEnv, "SESSION_CLOSED", r.loser.name);
+    await expectRejected(r.winner, stale, "SESSION_CLOSED", r.loser.name);
   });
 });
