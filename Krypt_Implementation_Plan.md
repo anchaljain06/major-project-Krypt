@@ -4,6 +4,7 @@ Prepared 2026-10-16. This is the working hand-off: what to build, in what order,
 
 - **Why** each piece exists, and the cryptography behind it: `Krypt_Major_Project_Strategy.md`
 - **Engineering rules** (key hierarchy, nonce rules, storage rules): `Krypt_Cryptographic_Handoff.md`
+- **What is already built:** `IMPLEMENTATION_STATUS.md`
 
 ## Start here (first 2 hours)
 
