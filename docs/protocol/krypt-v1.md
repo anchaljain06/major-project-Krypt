@@ -122,23 +122,39 @@ sig_OPK = Sign(IK_B, lp("Krypt-OPK", u32(keyId), ek_OPK))
 ```
 
 `verifyBundle` (initiator) rejects the bundle unless: `signedPrekey` is present,
-every base64url field decodes strictly to the exact length, both signatures
-verify under the `dsa` key parsed from `identityKey`, and the two key ids differ.
+every base64url field decodes strictly to the exact length, each public key
+passes the FIPS 203 modulus check, and each signature verifies under the `dsa`
+key parsed from `identityKey` **with its own label** (`Krypt-SPK` for the signed
+prekey, `Krypt-OPK` for the one-time prekey).
 A missing `oneTimePrekey` is allowed (empty pool: SPK-only fallback, section 4.3).
 Identity-key trust (key transparency, step 3.1 of the plan) is a separate hook:
 `SessionManager` calls `trustIdentity(username, dsaPub)` before using any key.
 
 ### 3.2 Private halves and lifecycle (`PrekeyStore`)
 
+- **Separate keyId namespaces.** SPK ids and OPK ids are independent: the
+  store keeps them in separate tables, and the init header names them in
+  separate fields (`spkId`, `opkId`). An `opkId` is only ever looked up among
+  OPKs, so an id collision between the two kinds is harmless. Together with the
+  distinct signature labels, the relay cannot make one kind stand in for the
+  other.
 - OPK private keys are deleted after the first successful handshake that used
-  them (after AES-GCM verified the first message, section 6).
+  them (after AES-GCM verified the first message, section 4.2).
 - SPK private keys stay until rotation plus a grace period (recommended: delete
   the previous SPK two weeks after its replacement is uploaded) so that inits
-  already in flight still work. Deleting an SPK also deletes its replay cache.
-- Replay cache: for every handshake accepted **without** an OPK, Bob stores
-  `H(T)` under that SPK's id and rejects a second init with the same `H(T)`.
-  Handshakes that used an OPK need no cache entry: the OPK private key is gone,
-  so a replay cannot be decapsulated.
+  already in flight still work.
+- **Session-id memory.** For **every** accepted handshake (with or without an
+  OPK) Bob records `sessionId = H(T)` under the id of the SPK it used, and
+  rejects any later init whose `sessionId` is already recorded
+  (`INIT_REPLAY`). The memory for an SPK is deleted together with the SPK;
+  after that, any init naming that SPK fails with `UNKNOWN_PREKEY`, so the
+  memory never needs to outlive the key. This is what makes a repeated init
+  header recognisable after the OPK private key is gone.
+- **The SPK rotation interval is a security parameter.** A session started
+  without an OPK has no forward secrecy for its epoch-0 messages until the SPK
+  private key is deleted: anyone who later steals `dk_SPK` can decrypt them.
+  Weekly rotation (plus the grace period) bounds that window to about three
+  weeks. Later epochs are protected by the ratchet regardless.
 
 ## 4. Handshake: Krypt-X3K
 
@@ -168,20 +184,37 @@ section 4.4).
 
 ### 4.2 Responder (Bob)
 
-On an envelope whose `sessionId` he does not have and which carries `init`:
+Everything below runs inside the per-peer lock for `from` (section 7). Bob
+first looks the `sessionId` up, and only then does any public-key work:
 
-1. Check `epoch = 0`, `pn = 0`, no `kem` field; reject tombstoned session ids.
-2. `IK_A = fetchIdentity(from)`; `trustIdentity(from, IK_A)`. (Bob does **not**
+1. `sessionId` equals the live session's id → this is a **repeated init
+   header**: ordinary chain processing (section 5.5), no handshake.
+2. `sessionId` is tombstoned → `SESSION_CLOSED`. No `init` field → `UNKNOWN_SESSION`.
+3. Check `pn = 0` and no `kem` field (epoch 0 is enforced by the parser).
+4. Simultaneous-initiation tie-break (section 4.5).
+5. `IK_A = fetchIdentity(from)`; `trustIdentity(from, IK_A)`. (Bob does **not**
    fetch Alice's bundle: that would consume one of her OPKs.)
-3. Load `SPK_B[spkId]` and, if `opkId` is set, `OPK_B[opkId]`; missing → reject.
-4. Rebuild `T` from his own copies of `SPK_B`, `OPK_B`, `IK_B` and the header's
-   `ct1, ct2, ek`; require `H(T) = sessionId`.
-5. SPK-only (`opkId = null`): reject if `H(T)` is in the SPK's replay cache.
-6. Verify `σ_A` under `IK_A`.
-7. `ss1 = Decaps(dk_SPK, ct1)`, `ss2 = Decaps(dk_OPK, ct2)` or `ε`; derive `RK0 ‖ CK0`.
-8. Set `RK = RK0`, `CKr = CK0` (epoch 0), `CKs = ⊥`, peer ratchet key `ek_A¹`.
-9. Decrypt the message on `CK0`. **Only if AES-GCM verifies**: persist the
-   session, delete `dk_OPK`, and (SPK-only) record `H(T)` in the replay cache.
+6. Load `SPK_B[spkId]`; missing → `UNKNOWN_PREKEY`.
+7. `sessionId` already in the session-id memory of that SPK → `INIT_REPLAY`.
+8. If `opkId` is set, load `OPK_B[opkId]` (OPK namespace only); missing →
+   `UNKNOWN_PREKEY`.
+9. Rebuild `T` from his own copies of `SPK_B`, `OPK_B`, `IK_B` and the header's
+   `ct1, ct2, ek`; verify `σ_A` under `IK_A` (`BAD_SIGNATURE`), then require
+   `H(T) = sessionId`.
+10. `ss1 = Decaps(dk_SPK, ct1)`, `ss2 = Decaps(dk_OPK, ct2)` or `ε`; derive `RK0 ‖ CK0`.
+11. Set `RK = RK0`, `CKr = CK0` (epoch 0), `CKs = ⊥`, peer ratchet key `ek_A¹`.
+12. Decrypt the message on `CK0`. **Only if AES-GCM verifies**, commit in this
+    order: persist the session, delete `dk_OPK`, record `sessionId` in the SPK's
+    session-id memory.
+
+**Atomicity of the session-id test-and-insert.** Steps 1-12 run under one
+lock, so the check in steps 1/7 and the insert in step 12 cannot interleave
+with another delivery of the same init. The lock is per peer, which is enough:
+`T` contains the initiator's username, so two inits with the same `sessionId`
+always come from the same `from` and therefore take the same lock. (An init
+whose `from` was changed fails at step 9.) The formal model's injective
+agreement result relies on this. The commit order is crash-safe: if Bob
+crashes after persisting the session, a repeat of the init hits step 1.
 
 Why Alice signs: a KEM authenticates only the receiver. The cost is
 deniability: Bob can prove that Alice started the session.
@@ -189,8 +222,11 @@ deniability: Bob can prove that Alice started the session.
 ### 4.3 Empty one-time pool
 
 If the server has no OPK left, the bundle's `oneTimePrekey` is `null` and the
-handshake uses `ss1` only. Epoch-0 messages are then exposed if `dk_SPK` leaks
-before it is deleted at rotation; later epochs are protected by the ratchet.
+handshake uses `ss1` only. Such a session has **no forward secrecy for epoch 0
+until the SPK rotates**: epoch-0 messages are exposed if `dk_SPK` leaks before
+it is deleted, which is why the rotation interval is a security parameter
+(section 3.2). Later epochs are protected by the ratchet. Replays of an
+SPK-only init are rejected by the session-id memory.
 
 ### 4.4 Lost first message and repeated init headers
 
@@ -208,8 +244,9 @@ with session id `X` arrives from peer `P` and the live session is `S`:
 
 | Condition | Action |
 |---|---|
-| `X` is tombstoned | Reject `SESSION_CLOSED` (covers replays of closed sessions) |
 | `S.sessionId = X` | Same session; normal chain processing |
+| `X` is tombstoned | Reject `SESSION_CLOSED` (covers replays of closed sessions) |
+| `X` is in the session-id memory | Reject `INIT_REPLAY` (an old session whose tombstone has rolled over, or whose record was lost) |
 | No `S` | Respond (section 4.2) |
 | `S` was initiated by us and **unconfirmed** (nothing received from `P` on it yet) | Simultaneous initiation. Keep the session whose id is **bytewise smaller**. If `X < S.sessionId`: respond to `X`, tombstone `S`. Otherwise reject `SESSION_SUPERSEDED` and keep `S` |
 | Otherwise (`S` confirmed, or we are `S`'s responder) | The peer started over (lost state, new device). Respond to `X`, tombstone `S` |
@@ -300,8 +337,8 @@ All work happens on a copy of the state. **The copy is committed only after
 AES-GCM verifies**; on any error the stored state is unchanged.
 
 1. Validate the envelope strictly (section 8); `to` must be us.
-2. Tombstoned `sessionId` → `SESSION_CLOSED`. Unknown `sessionId`: with `init`,
-   go to section 4.2 / 4.5; without, `UNKNOWN_SESSION`.
+2. If `sessionId` is not the live session's id: tombstoned → `SESSION_CLOSED`;
+   otherwise with `init` go to section 4.2 / 4.5, without → `UNKNOWN_SESSION`.
 3. `suite` must equal the session's suite. `epoch` must have the peer's parity.
 4. If `(epoch, n)` is in the skipped cache: use that `mk` (removed on success).
 5. Else if `epoch = recvEpoch`: `n < nr` → `DUPLICATE`; `n - nr > MAX_SKIP` →
@@ -334,6 +371,12 @@ has acknowledged the chain's ratchet data (`peerAcked`), headers stop carrying
 it, which is where the bandwidth saving comes from. Larger `K` means fewer
 ratchet steps and therefore slower healing (section 9).
 
+What sparse mode saves is mainly KEM work and epochs, not always header bytes:
+a chain's ratchet data is acknowledged only when the peer ratchets, which with
+strictly alternating traffic happens after the peer's own `K` sends, so about
+half of the headers still carry `(ct, ek)`. One-sided bursts benefit more.
+Experiment E7 should report both numbers.
+
 ## 6. Skipped keys and limits
 
 | Limit | Value | Enforced |
@@ -357,11 +400,12 @@ A rolled-back chain would reuse `mk` (and so the AES-GCM key and IV) for a new
 plaintext, which breaks GCM completely. Three rules prevent it:
 
 1. **Persist before send.** `encrypt` saves the advanced chain before it encrypts.
-2. **One writer.** Every `encrypt`/`decrypt` runs inside
-   `lock("krypt-session-" + peer, ...)`. The default lock is `navigator.locks`
-   (shared across tabs of the origin) when present, else an in-process mutex.
-   The state is reloaded from the store inside the lock, so a second tab never
-   works from a stale copy.
+2. **One writer.** Every `encrypt`/`decrypt`/`closeSession` runs inside
+   `lock("krypt-session:" + self + ":" + peer, ...)`. The default lock is
+   `navigator.locks` (shared across tabs of the origin) when present, else an
+   in-process mutex. The state is reloaded from the store inside the lock, so a
+   second tab never works from a stale copy. The same lock makes the
+   session-id test-and-insert of section 4.2 atomic.
 3. **No ratchet state in backups.** Session state is never exported in vault or
    chat backups (enforced at integration, `vault.ts`).
 
@@ -425,7 +469,7 @@ JSON form and is provided for the bandwidth experiment (E5).
 | Confidentiality | IND-CCA KEM + HKDF + AES-GCM; PQ against harvest-now-decrypt-later | Security if the device is owned |
 | Forward secrecy | A compromise at time t does not reveal messages whose keys were already erased | Messages whose skipped keys are still cached (hence the cap and TTL) |
 | Post-compromise security | Against a **passive** attacker holding party P's full state: secrecy returns at P's next ratchet step, the first message P sends after receiving the peer's next new `ek`. Messages in P's current epoch and in the peer's next epoch stay exposed (the peer encapsulates to P's stolen `dk`) | Against an **active** attacker who uses the stolen state to inject keys (impossible for any ratchet) |
-| Authentication | Injective agreement on the handshake transcript, given Bob's `H(T)` replay cache for SPK-only handshakes | Deniability (the initiator signs) |
+| Authentication | Injective agreement on the handshake transcript, given Bob's session-id memory with an atomic test-and-insert (section 4.2) | Deniability (the initiator signs) |
 | Ordering | Any delivery order inside MAX_SKIP decrypts; replays are rejected | Unbounded gaps |
 
 DH ratchets also need a round trip to heal both directions. What KEMs cost is
@@ -460,7 +504,7 @@ neutral warning.
 | `SESSION_CLOSED` | Session id is tombstoned (closed or replaced) |
 | `SESSION_SUPERSEDED` | Init lost the simultaneous-initiation tie-break |
 | `UNKNOWN_PREKEY` | SPK or OPK private key not found (OPK already used) |
-| `INIT_REPLAY` | SPK-only init seen before (`H(T)` cache) |
+| `INIT_REPLAY` | Init whose `sessionId` is in the session-id memory of its SPK |
 | `BAD_SIGNATURE` | `σ_A` does not verify, or `H(T) ≠ sessionId` |
 | `UNTRUSTED_IDENTITY` | `trustIdentity` refused the peer's key |
 | `BAD_EPOCH` | Epoch has the wrong parity, skips ahead, lacks ratchet data, or suite mismatch |
@@ -499,6 +543,42 @@ closeSession(peer): Promise<void>
 The responder's suite is whatever the initiator chose (it is bound in `T`);
 both suites are always accepted.
 
+```ts
+type DecryptResult = { peer: string; plaintext: Uint8Array; contentType: string;
+                       sessionId: string /* b64url */; epoch: number; n: number };
+type SessionStatus = { sessionId: string; role: 'initiator' | 'responder'; suite: KemSuite;
+                       established: boolean; epoch: number; sendEpoch: number;
+                       recvEpoch: number; lastRatchetAt: number; createdAt: number };
+```
+
+### 11.1 Prekeys (`prekeys.ts`)
+
+```ts
+createPrekeyUpload(dsaSec, store: PrekeyStore, oneTimeCount = 100): Promise<PrekeyUploadWire>
+createSignedPrekey(dsaSec, store, now?): Promise<PrekeyWire>          // rotation
+createOneTimePrekeys(dsaSec, store, count, now?): Promise<PrekeyWire[]> // refill
+verifyBundle(bundle: unknown, expectedUsername: string): VerifiedBundle // throws HandshakeError
+parseIdentityKey(identityKey: string): Uint8Array                      // ML-DSA-87 public key
+
+interface PrekeyStore {
+  putSignedPrekey(rec); getSignedPrekey(keyId); deleteSignedPrekey(keyId); listSignedPrekeyIds();
+  putOneTimePrekeys(recs); getOneTimePrekey(keyId); deleteOneTimePrekey(keyId); countOneTimePrekeys();
+  hasAcceptedSession(spkId, sessionId); recordAcceptedSession(spkId, sessionId);
+}
+// implementations: MemoryPrekeyStore, IndexedDbPrekeyStore({ key, dbName?, indexedDB? })
+```
+
+### 11.2 Session store (`session-store.ts`)
+
+```ts
+interface SessionStore {
+  load(peer: string): Promise<PeerRecord | undefined>;  // fresh copy
+  save(peer: string, rec: PeerRecord): Promise<void>;    // atomic replace
+}
+type PeerRecord = { session: SessionState | null; closed: string[] };
+// implementations: MemorySessionStore, IndexedDbSessionStore({ key: CryptoKey, dbName?, indexedDB? })
+```
+
 ## 12. Session state at rest
 
 `SessionStore` stores one record per peer: `{ session, closed[] }`. The
@@ -517,7 +597,8 @@ spec had to choose or tighten something:
    prekey ids (handoff section 11: algorithm ids, role ordering, identities).
    Absent OPK fields are `ε`.
 2. **OPK signature label.** OPKs are signed under `Krypt-OPK`, not `Krypt-SPK`,
-   so the server cannot present a one-time key as a signed prekey or vice versa.
+   and the bundle verifier checks each prekey under its own label, so the server
+   cannot present a one-time key as a signed prekey or vice versa.
 3. **Composite KDF inputs are length-prefixed** too: `info` of the handshake,
    root and AAD, and the handshake IKM `lp(ss1, ss2)`.
 4. **AAD.** The strategy's `AD = H(T) ‖ header` is `lp("Krypt-AAD-v1", header)`
@@ -529,11 +610,17 @@ spec had to choose or tighten something:
 7. **`pn` and the previous chain** are specified (Double-Ratchet style): the
    header's `pn` lets the receiver cache keys left in its previous receiving
    chain when a new epoch arrives.
-8. **Replay cache scope**: only SPK-only handshakes are cached; OPK handshakes
-   are protected by deleting the OPK. Tombstones additionally reject inits of
-   closed sessions without any public-key work.
+8. **Session-id memory for all handshakes.** The strategy's SPK-only `H(T)`
+   replay cache is generalised: every accepted `sessionId` is remembered under
+   its SPK until that SPK is deleted, and it is looked up **before** any
+   decapsulation, under the per-peer lock (formal-model requirement). Tombstones
+   additionally reject inits of closed sessions without any public-key work.
 9. **Session replacement and simultaneous initiation** (section 4.5) were not
    specified; the handoff's chain labels (`KRYPT/CK/v1`, ...) and hash-derived
    nonce are superseded by the strategy's `0x01`/`0x02` chain step and the
    HKDF-derived IV.
 10. **ML-DSA context string** is empty; domain separation is in the message.
+11. **Separate SPK/OPK keyId namespaces** in storage and in the init header, in
+    addition to the separate signature labels (formal-model requirement).
+12. **SPK rotation interval** is stated as a security parameter: it bounds the
+    epoch-0 exposure of SPK-only sessions.
