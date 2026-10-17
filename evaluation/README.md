@@ -3,7 +3,7 @@
 This package measures the cost of Krypt's cryptography in real browsers and in Node. It covers experiments E1–E5 and E10 from strategy section 6.1, and has a hook for E7. It is a standalone package: it does not import from `frontend/` or `primary-backend/`.
 
 ```
-eval/
+evaluation/
 ├─ bench/index.html, bench.ts   page controller: worker or main thread, results on window.__results
 ├─ bench/worker.ts              dedicated Web Worker that runs the suite
 ├─ bench/e7-ratchet.ts          E7 stub: what to measure once session.ts lands

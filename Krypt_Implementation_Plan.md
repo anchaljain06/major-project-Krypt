@@ -71,7 +71,7 @@ gantt
 |---|---|---|---|---|
 | 0.1 | Tag `protocol-v0`. Add a protocol version field `v: 0` to the current payload so v1 can coexist | `useChat.ts`, `server.ts` | P | 1 h |
 | 0.2 | Add Vitest to `frontend/` and `primary-backend/`, plus a GitHub Actions workflow running lint + tests on every PR | `package.json` ×2, `.github/workflows/ci.yml` | S | 3 h |
-| 0.3 | **Evil relay v0 run.** Add an `EVIL_MODE` env flag to the server with 4 attacks: replay handshake, swap public key, drop one message, flip `type` to `image`. Record what v0 does in `eval/attack-matrix-v0.md` | `primary-backend/src/evil.ts` (new) | S | 1 day |
+| 0.3 | **Evil relay v0 run.** Add an `EVIL_MODE` env flag to the server with 4 attacks: replay handshake, swap public key, drop one message, flip `type` to `image`. Record what v0 does in `evaluation/attack-matrix-v0.md` | `primary-backend/src/evil.ts` (new) | S | 1 day |
 | 0.4 | Real login session: server checks SRP `M1`, returns `M2`; client verifies `M2` (`useAuth.ts:125-141`); server issues a short-lived signed token (HMAC-SHA-256, 1 h, refresh on use) | `api.ts:86-126`, `useAuth.ts` | S | 1 day |
 | 0.5 | Authenticate every REST route from the token, never from body/params (fixes BOLA in `api.ts:188-560`) | `api.ts`, new `auth.ts` middleware | S | 1 day |
 | 0.6 | Authenticate sockets: client sends the token in `io(url, { auth: { token } })`; server binds `socket.data.userId`; delete trust in `register_socket(anyName)` (`server.ts:38-48`) | `server.ts`, `services/socket.ts` | S | 4 h |
@@ -85,7 +85,7 @@ gantt
 
 **Done when:**
 
-- [ ] `eval/attack-matrix-v0.md` records v0 results for the 4 attacks
+- [ ] `evaluation/attack-matrix-v0.md` records v0 results for the 4 attacks
 - [ ] A second browser that claims another username gets rejected on socket connect and on every REST route
 - [ ] No password, private key or chain key is readable in `localStorage`/`sessionStorage` (check in DevTools, screenshot for the report)
 - [ ] CI is green on `main`
@@ -138,8 +138,8 @@ Tests P must write alongside (Vitest, run in CI):
 | 1.22 | Fuzz and property tests: `fast-check` over the envelope parser; `@jazzer.js/core` for a 1-hour fuzz run; pass = only typed `DecryptError`, no crash or hang | `frontend/test/fuzz/` | 2 days |
 | 1.23 | Evil relay v1: extend `evil.ts` to the full attack list (replay, reorder, drop, duplicate, tamper header/ct/tag, key swap, prekey rollback, cross-session injection) with a CLI to pick an attack | `primary-backend/src/evil.ts` | 3 days |
 | 1.24 | Benchmark page: separate Vite entry `bench.html`, served with `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`; `tinybench` in a Web Worker; writes JSON to `window.__results` and records `crossOriginIsolated` | `frontend/bench/` | 3 days |
-| 1.25 | Playwright runner: launches Chromium, Firefox, WebKit, runs `bench.html` 5 times each, saves `eval/results/*.json` | `eval/run-bench.ts` | 2 days |
-| 1.26 | Plot scripts (Python + matplotlib, or Observable): read results JSON, output the figures listed in strategy section 6.1 | `eval/plots/` | 2 days |
+| 1.25 | Playwright runner: launches Chromium, Firefox, WebKit, runs `bench.html` 5 times each, saves `evaluation/results/*.json` | `evaluation/run-bench.ts` | 2 days |
+| 1.26 | Plot scripts (Python + matplotlib, or Observable): read results JSON, output the figures listed in strategy section 6.1 | `evaluation/plots/` | 2 days |
 
 **Track S done when:** `npm run bench` produces a results file for 3 browsers; `npm run test:kat` passes; the evil relay can run each attack by name.
 
@@ -192,12 +192,12 @@ Note: GitHub disables scheduled workflows in public repos after 60 days with no 
 
 | ID | Experiment (strategy section 6.1) | Output |
 |---|---|---|
-| 3.20 | E1-E3: PQ and classical primitives × noble / liboqs-js / native WebCrypto × Chrome / Firefox / WebKit / real Safari / Android phone | `eval/results/primitives/*.json` |
+| 3.20 | E1-E3: PQ and classical primitives × noble / liboqs-js / native WebCrypto × Chrome / Firefox / WebKit / real Safari / Android phone | `evaluation/results/primitives/*.json` |
 | 3.21 | E5: bytes per handshake and per message, raw vs Base64 vs binary frames | table |
 | 3.22 | E6: end-to-end latency, 500 messages warm and 20 cold starts on Render | CDF data |
 | 3.23 | E7: sparse ratchet K = 1, 10, 50, 100: bytes/message (about 2.3 KB at K = 1, since every header repeats `ct` + `ek`), CPU/message, messages-to-heal | the key C1 figure |
 | 3.24 | E10: Node 24.7+ native ML-KEM vs noble in Node | bar data |
-| 3.25 | Attack matrix v1: run every evil-relay attack against v1; write `eval/attack-matrix-v1.md` next to the v0 file | table |
+| 3.25 | Attack matrix v1: run every evil-relay attack against v1; write `evaluation/attack-matrix-v1.md` next to the v0 file | table |
 
 Rules for every run: record browser version, device, `crossOriginIsolated`, power state. Report median, p95 and bootstrap 95% CI. Never average warm and cold latency together.
 
@@ -265,7 +265,7 @@ primary-backend/src/
   kt.ts              log append, STH publishing                 (new, 2.21-2.23)
   evil.ts            malicious relay modes                      (new, 0.3, 1.23)
 docs/protocol/       krypt-v1.md, proverif.md, *.pv models
-eval/                bench runner, results/, plots/, attack matrices
+evaluation/                bench runner, results/, plots/, attack matrices
 ```
 
 ## 4. Decisions

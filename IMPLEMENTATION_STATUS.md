@@ -86,9 +86,9 @@ Tests: 143 unit and property tests, all passing for both suites (`mlkem768`, `xw
 | `handshake_nocache.pv` (ablation) | Attack found: without the session-id cache, a replay breaks injective agreement |
 | `binding_*.pv` | `H(ek)` is defence in depth: the attack appears only once other bindings are removed |
 
-### 6. Evaluation (`eval/`)
+### 6. Evaluation (`evaluation/`)
 
-A cross-origin-isolated benchmark page, a Playwright runner (Chromium, Firefox, WebKit), a Node runner, aggregation scripts and matplotlib plots. A quick-mode sample run from one Mac is committed in `eval/results/sample-2026-10-17/`, with its figures in `figures/`.
+A cross-origin-isolated benchmark page, a Playwright runner (Chromium, Firefox, WebKit), a Node runner, aggregation scripts and matplotlib plots. A quick-mode sample run from one Mac is committed in `evaluation/results/sample-2026-10-17/`, with its figures in `figures/`.
 
 | ML-KEM-768 encaps, median (quick mode) | noble (current) | liboqs WASM | Native Web Crypto |
 |---|---:|---:|---:|
