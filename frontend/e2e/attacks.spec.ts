@@ -188,14 +188,17 @@ test(`v1 attack: ${ATTACK}`, async ({ browser }) => {
     result.ktBadgeAlice = await alice.page.getByTestId("kt-badge").innerText().catch(() => null);
     const aliceAll = (result.aliceToasts as string[]).concat(alice.problems);
     result.ktAlert = aliceAll.some((t) => /ALERT|transparency|not trusted|refused/i.test(t));
+    // Did Alice's send complete (her own bubble shown, input cleared)?
+    const aliceSent =
+      (await alice.page.getByTestId("message").filter({ hasText: "hello bob (handshake)" }).count()) > 0;
+    result.aliceSendCompleted = aliceSent;
+    const warn = result.ktAlert ? "KT ALERT shown" : "no visible warning";
     result.observed =
       bobGotPlaintext > 0
         ? "plaintext delivered to Bob (LEAK)"
-        : EXPECT_KT
-          ? result.ktAlert
-            ? "KT ALERT, wrong key refused; no plaintext delivered"
-            : "no plaintext delivered to the wrong key (no visible KT alert captured)"
-          : "silently pinned (TOFU first-contact limit) - this is the gap KT closes; no plaintext reached Bob";
+        : aliceSent
+          ? `wrong-key message sent but not readable by Bob; ${warn}`
+          : `send did not complete (nothing left Alice's client, relay saw no message); ${warn}; no plaintext exposed`;
     await finish(result, alice.page);
     expect(bobGotPlaintext, "the wrong-key message must not reach Bob as plaintext").toBe(0);
     await alice.context.close();

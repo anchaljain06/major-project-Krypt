@@ -18,7 +18,7 @@ import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ATTACKS } from "./attacks.mjs";
-import { checkBola, checkImpersonation, spawnProc, waitForHttp, sleep } from "./lib.mjs";
+import { checkBolaV0, checkMailboxDrainV0, spawnProc, waitForHttp, sleep } from "./lib.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -94,6 +94,7 @@ function runPlaywright(attack, names) {
       ATTACK: attack.id,
       OUT_DIR,
       E2E_BASE_URL: BASE_URL,
+      PROXY_URL,
       ALICE_NAME: names.alice,
       BOB_NAME: names.bob,
       MALLORY_NAME: names.mallory,
@@ -118,9 +119,10 @@ async function main() {
     await waitForHttp(`${V0_BACKEND_URL}/api/users/search?q=x&current_user=x`).catch(() => sleep(2000));
     await sleep(800);
     try {
+      const tag = Date.now().toString(36).slice(-5);
       if (plain.includes("impersonation")) {
-        // Seed a victim with a queued message, then try to drain it as an impostor.
-        const r = await checkImpersonation({ apiUrl: V0_BACKEND_URL, flavor: "v0", victim: "victim_v0" });
+        // Seed a victim with a queued message, then drain it as an impostor.
+        const r = await checkMailboxDrainV0({ apiUrl: V0_BACKEND_URL, sender: `alice_imp_${tag}`, victim: `bob_imp_${tag}` });
         writeFileSync(
           join(OUT_DIR, "impersonation.json"),
           JSON.stringify({ attack: "impersonation", flavor: "v0", ...r }, null, 2),
@@ -128,7 +130,7 @@ async function main() {
         console.log(`  impersonation: ${r.observed} (hijacked=${r.hijacked})`);
       }
       if (plain.includes("bola")) {
-        const r = await checkBola({ apiUrl: V0_BACKEND_URL, sender: "someone", receiver: "victim_v0" });
+        const r = await checkBolaV0({ apiUrl: V0_BACKEND_URL, attacker: `mallory_bola_${tag}`, victim: `bob_bola_${tag}` });
         writeFileSync(join(OUT_DIR, "bola.json"), JSON.stringify({ attack: "bola", flavor: "v0", ...r }, null, 2));
         console.log(`  bola: ${r.observed} (refused=${r.refused})`);
       }
