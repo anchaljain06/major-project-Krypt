@@ -1,0 +1,151 @@
+version,phase,encoding,component,bytes
+v0,bundle,raw,KEM public key,1568
+v0,bundle,raw,signature public key,2592
+v0,bundle,binary,KEM public key,1568
+v0,bundle,binary,signature public key,2592
+v0,bundle,binary,framing,9
+v0,bundle,json-base64,KEM public key,2092
+v0,bundle,json-base64,signature public key,3456
+v0,bundle,json-base64,framing,92
+v0,first-message,raw,routing,12
+v0,first-message,raw,AEAD (iv+tag),28
+v0,first-message,raw,KEM ciphertext,1568
+v0,first-message,raw,signature,4627
+v0,first-message,raw,plaintext,100
+v0,first-message,binary,routing,12
+v0,first-message,binary,AEAD (iv+tag),28
+v0,first-message,binary,KEM ciphertext,1568
+v0,first-message,binary,signature,4627
+v0,first-message,binary,framing,25
+v0,first-message,binary,plaintext,100
+v0,first-message,json-base64,routing,0
+v0,first-message,json-base64,AEAD (iv+tag),76
+v0,first-message,json-base64,KEM ciphertext,2092
+v0,first-message,json-base64,signature,6172
+v0,first-message,json-base64,framing,97
+v0,first-message,json-base64,plaintext,100
+v0,steady-message,raw,routing,12
+v0,steady-message,raw,AEAD (iv+tag),28
+v0,steady-message,raw,plaintext,100
+v0,steady-message,binary,routing,12
+v0,steady-message,binary,AEAD (iv+tag),28
+v0,steady-message,binary,framing,17
+v0,steady-message,binary,plaintext,100
+v0,steady-message,json-base64,routing,0
+v0,steady-message,json-base64,AEAD (iv+tag),76
+v0,steady-message,json-base64,framing,79
+v0,steady-message,json-base64,plaintext,100
+v1,bundle,raw,signature public key,2592
+v1,bundle,raw,header fields,8
+v1,bundle,raw,KEM public key,3136
+v1,bundle,raw,signature,9254
+v1,bundle,binary,signature public key,2592
+v1,bundle,binary,header fields,8
+v1,bundle,binary,KEM public key,3136
+v1,bundle,binary,signature,9254
+v1,bundle,binary,framing,29
+v1,bundle,json-base64,signature public key,3456
+v1,bundle,json-base64,header fields,0
+v1,bundle,json-base64,KEM public key,4184
+v1,bundle,json-base64,signature,12344
+v1,bundle,json-base64,framing,105
+v1,first-message,raw,routing,12
+v1,first-message,raw,header fields,45
+v1,first-message,raw,KEM ciphertext,3136
+v1,first-message,raw,KEM public key,1184
+v1,first-message,raw,signature,4627
+v1,first-message,raw,AEAD (iv+tag),16
+v1,first-message,raw,plaintext,100
+v1,first-message,binary,routing,12
+v1,first-message,binary,header fields,45
+v1,first-message,binary,KEM ciphertext,3136
+v1,first-message,binary,KEM public key,1184
+v1,first-message,binary,signature,4627
+v1,first-message,binary,AEAD (iv+tag),16
+v1,first-message,binary,framing,53
+v1,first-message,binary,plaintext,100
+v1,first-message,json-base64,routing,0
+v1,first-message,json-base64,header fields,44
+v1,first-message,json-base64,KEM ciphertext,4184
+v1,first-message,json-base64,KEM public key,1580
+v1,first-message,json-base64,signature,6172
+v1,first-message,json-base64,AEAD (iv+tag),56
+v1,first-message,json-base64,framing,156
+v1,first-message,json-base64,plaintext,100
+v1,steady-message,raw,routing,12
+v1,steady-message,raw,header fields,45
+v1,steady-message,raw,KEM ciphertext,1088
+v1,steady-message,raw,KEM public key,1184
+v1,steady-message,raw,AEAD (iv+tag),16
+v1,steady-message,raw,plaintext,100
+v1,steady-message,binary,routing,12
+v1,steady-message,binary,header fields,45
+v1,steady-message,binary,KEM ciphertext,1088
+v1,steady-message,binary,KEM public key,1184
+v1,steady-message,binary,AEAD (iv+tag),16
+v1,steady-message,binary,framing,45
+v1,steady-message,binary,plaintext,100
+v1,steady-message,json-base64,routing,0
+v1,steady-message,json-base64,header fields,44
+v1,steady-message,json-base64,KEM ciphertext,1452
+v1,steady-message,json-base64,KEM public key,1580
+v1,steady-message,json-base64,AEAD (iv+tag),56
+v1,steady-message,json-base64,framing,128
+v1,steady-message,json-base64,plaintext,100
+v1-xwing,bundle,raw,signature public key,2592
+v1-xwing,bundle,raw,header fields,8
+v1-xwing,bundle,raw,KEM public key,3136
+v1-xwing,bundle,raw,signature,9254
+v1-xwing,bundle,binary,signature public key,2592
+v1-xwing,bundle,binary,header fields,8
+v1-xwing,bundle,binary,KEM public key,3136
+v1-xwing,bundle,binary,signature,9254
+v1-xwing,bundle,binary,framing,29
+v1-xwing,bundle,json-base64,signature public key,3456
+v1-xwing,bundle,json-base64,header fields,0
+v1-xwing,bundle,json-base64,KEM public key,4184
+v1-xwing,bundle,json-base64,signature,12344
+v1-xwing,bundle,json-base64,framing,105
+v1-xwing,first-message,raw,routing,12
+v1-xwing,first-message,raw,header fields,45
+v1-xwing,first-message,raw,KEM ciphertext,3136
+v1-xwing,first-message,raw,KEM public key,1216
+v1-xwing,first-message,raw,signature,4627
+v1-xwing,first-message,raw,AEAD (iv+tag),16
+v1-xwing,first-message,raw,plaintext,100
+v1-xwing,first-message,binary,routing,12
+v1-xwing,first-message,binary,header fields,45
+v1-xwing,first-message,binary,KEM ciphertext,3136
+v1-xwing,first-message,binary,KEM public key,1216
+v1-xwing,first-message,binary,signature,4627
+v1-xwing,first-message,binary,AEAD (iv+tag),16
+v1-xwing,first-message,binary,framing,53
+v1-xwing,first-message,binary,plaintext,100
+v1-xwing,first-message,json-base64,routing,0
+v1-xwing,first-message,json-base64,header fields,44
+v1-xwing,first-message,json-base64,KEM ciphertext,4184
+v1-xwing,first-message,json-base64,KEM public key,1624
+v1-xwing,first-message,json-base64,signature,6172
+v1-xwing,first-message,json-base64,AEAD (iv+tag),56
+v1-xwing,first-message,json-base64,framing,156
+v1-xwing,first-message,json-base64,plaintext,100
+v1-xwing,steady-message,raw,routing,12
+v1-xwing,steady-message,raw,header fields,45
+v1-xwing,steady-message,raw,KEM ciphertext,1120
+v1-xwing,steady-message,raw,KEM public key,1216
+v1-xwing,steady-message,raw,AEAD (iv+tag),16
+v1-xwing,steady-message,raw,plaintext,100
+v1-xwing,steady-message,binary,routing,12
+v1-xwing,steady-message,binary,header fields,45
+v1-xwing,steady-message,binary,KEM ciphertext,1120
+v1-xwing,steady-message,binary,KEM public key,1216
+v1-xwing,steady-message,binary,AEAD (iv+tag),16
+v1-xwing,steady-message,binary,framing,45
+v1-xwing,steady-message,binary,plaintext,100
+v1-xwing,steady-message,json-base64,routing,0
+v1-xwing,steady-message,json-base64,header fields,44
+v1-xwing,steady-message,json-base64,KEM ciphertext,1496
+v1-xwing,steady-message,json-base64,KEM public key,1624
+v1-xwing,steady-message,json-base64,AEAD (iv+tag),56
+v1-xwing,steady-message,json-base64,framing,128
+v1-xwing,steady-message,json-base64,plaintext,100

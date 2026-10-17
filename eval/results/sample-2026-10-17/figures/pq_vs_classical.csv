@@ -1,0 +1,29 @@
+source,pair,ratio,classical_backend
+chromium,KEM keygen,9.153905040358083,webcrypto-native
+chromium,KEM encaps,14.437295963027058,webcrypto-native
+chromium,KEM decaps,11.985558098949353,webcrypto-native
+chromium,sig keygen,35.32130166512358,webcrypto-native
+chromium,sign,267.80021742523695,webcrypto-native
+chromium,verify,38.71971275521633,webcrypto-native
+chromium,sign (Cat-5),338.2480867104452,webcrypto-native
+firefox,KEM keygen,4.206790602937798,webcrypto-native
+firefox,KEM encaps,10.702889374928194,webcrypto-native
+firefox,KEM decaps,9.67923946028437,webcrypto-native
+firefox,sig keygen,9.87482881402285,webcrypto-native
+firefox,sign,93.10449954085877,webcrypto-native
+firefox,verify,23.9451713395638,webcrypto-native
+firefox,sign (Cat-5),136.53856749311356,webcrypto-native
+webkit,KEM keygen,15.693021041175307,webcrypto-native
+webkit,KEM encaps,14.198102291136225,webcrypto-native
+webkit,KEM decaps,14.309408401690327,webcrypto-native
+webkit,sig keygen,40.98652849740849,webcrypto-native
+webkit,sign,216.2282091917589,webcrypto-native
+webkit,verify,47.20360824742011,webcrypto-native
+webkit,sign (Cat-5),192.26624405704774,webcrypto-native
+node,KEM keygen,6.987149193676832,webcrypto-native
+node,KEM encaps,9.46433281909573,webcrypto-native
+node,KEM decaps,7.867294415335685,webcrypto-native
+node,sig keygen,43.79087290453998,webcrypto-native
+node,sign,352.3111757335227,webcrypto-native
+node,verify,29.72442753540403,webcrypto-native
+node,sign (Cat-5),607.3792299457667,webcrypto-native

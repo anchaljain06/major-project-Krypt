@@ -1,0 +1,1671 @@
+{
+ "schema": "krypt-e5/1",
+ "plaintextBytes": 100,
+ "sizes": {
+  "kem1024": {
+   "ek": 1568,
+   "ct": 1568
+  },
+  "kem768": {
+   "ek": 1184,
+   "ct": 1088
+  },
+  "xwing": {
+   "ek": 1216,
+   "ct": 1120
+  },
+  "dsa87": {
+   "pk": 2592,
+   "sig": 4627
+  },
+  "iv": 12,
+  "tag": 16,
+  "sessionId": 32
+ },
+ "scenarios": [
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "note": "ack of request_public_key: identity JSON string",
+   "fields": [
+    {
+     "key": "kem",
+     "component": "KEM public key",
+     "bytes": 1568,
+     "kind": "bin"
+    },
+    {
+     "key": "dsa",
+     "component": "signature public key",
+     "bytes": 2592,
+     "kind": "bin"
+    }
+   ],
+   "plaintext": 0
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "note": "private_message with eph (KEM ct) + sig",
+   "fields": [
+    {
+     "key": "to",
+     "component": "routing",
+     "bytes": 3,
+     "kind": "str",
+     "value": "bob"
+    },
+    {
+     "key": "from",
+     "component": "routing",
+     "bytes": 5,
+     "kind": "str",
+     "value": "alice"
+    },
+    {
+     "key": "type",
+     "component": "routing",
+     "bytes": 4,
+     "kind": "str",
+     "value": "text"
+    },
+    {
+     "key": "ciphertext",
+     "component": "AEAD (iv+tag)",
+     "bytes": 28,
+     "kind": "bin",
+     "group": "ct"
+    },
+    {
+     "key": "eph",
+     "component": "KEM ciphertext",
+     "bytes": 1568,
+     "kind": "bin"
+    },
+    {
+     "key": "sig",
+     "component": "signature",
+     "bytes": 4627,
+     "kind": "bin"
+    }
+   ],
+   "plaintext": 100
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "note": "private_message, hash-ratchet key, no PQ material",
+   "fields": [
+    {
+     "key": "to",
+     "component": "routing",
+     "bytes": 3,
+     "kind": "str",
+     "value": "bob"
+    },
+    {
+     "key": "from",
+     "component": "routing",
+     "bytes": 5,
+     "kind": "str",
+     "value": "alice"
+    },
+    {
+     "key": "type",
+     "component": "routing",
+     "bytes": 4,
+     "kind": "str",
+     "value": "text"
+    },
+    {
+     "key": "ciphertext",
+     "component": "AEAD (iv+tag)",
+     "bytes": 28,
+     "kind": "bin",
+     "group": "ct"
+    }
+   ],
+   "plaintext": 100
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "note": "GET /bundle/:user: IK, SPK+sig, one OPK+sig",
+   "fields": [
+    {
+     "key": "ik",
+     "component": "signature public key",
+     "bytes": 2592,
+     "kind": "bin"
+    },
+    {
+     "key": "spkId",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 7
+    },
+    {
+     "key": "spk",
+     "component": "KEM public key",
+     "bytes": 1568,
+     "kind": "bin"
+    },
+    {
+     "key": "spkSig",
+     "component": "signature",
+     "bytes": 4627,
+     "kind": "bin"
+    },
+    {
+     "key": "opkId",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 4242
+    },
+    {
+     "key": "opk",
+     "component": "KEM public key",
+     "bytes": 1568,
+     "kind": "bin"
+    },
+    {
+     "key": "opkSig",
+     "component": "signature",
+     "bytes": 4627,
+     "kind": "bin"
+    }
+   ],
+   "plaintext": 0
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "note": "epoch-0 message with init header {ct1, ct2, ek_A1, sig_A}",
+   "fields": [
+    {
+     "key": "to",
+     "component": "routing",
+     "bytes": 3,
+     "kind": "str",
+     "value": "bob"
+    },
+    {
+     "key": "from",
+     "component": "routing",
+     "bytes": 5,
+     "kind": "str",
+     "value": "alice"
+    },
+    {
+     "key": "type",
+     "component": "routing",
+     "bytes": 4,
+     "kind": "str",
+     "value": "text"
+    },
+    {
+     "key": "v",
+     "component": "header fields",
+     "bytes": 1,
+     "kind": "num",
+     "value": 1,
+     "group": "h"
+    },
+    {
+     "key": "sid",
+     "component": "header fields",
+     "bytes": 32,
+     "kind": "bin",
+     "group": "h"
+    },
+    {
+     "key": "e",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 3,
+     "group": "h"
+    },
+    {
+     "key": "n",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 17,
+     "group": "h"
+    },
+    {
+     "key": "pn",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 12,
+     "group": "h"
+    },
+    {
+     "key": "ct1",
+     "component": "KEM ciphertext",
+     "bytes": 1568,
+     "kind": "bin",
+     "group": "init"
+    },
+    {
+     "key": "ct2",
+     "component": "KEM ciphertext",
+     "bytes": 1568,
+     "kind": "bin",
+     "group": "init"
+    },
+    {
+     "key": "ek",
+     "component": "KEM public key",
+     "bytes": 1184,
+     "kind": "bin",
+     "group": "init"
+    },
+    {
+     "key": "sig",
+     "component": "signature",
+     "bytes": 4627,
+     "kind": "bin",
+     "group": "init"
+    },
+    {
+     "key": "c",
+     "component": "AEAD (iv+tag)",
+     "bytes": 16,
+     "kind": "bin",
+     "group": "ct"
+    }
+   ],
+   "plaintext": 100
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "note": "K=1: every header repeats (ct, ek)",
+   "fields": [
+    {
+     "key": "to",
+     "component": "routing",
+     "bytes": 3,
+     "kind": "str",
+     "value": "bob"
+    },
+    {
+     "key": "from",
+     "component": "routing",
+     "bytes": 5,
+     "kind": "str",
+     "value": "alice"
+    },
+    {
+     "key": "type",
+     "component": "routing",
+     "bytes": 4,
+     "kind": "str",
+     "value": "text"
+    },
+    {
+     "key": "v",
+     "component": "header fields",
+     "bytes": 1,
+     "kind": "num",
+     "value": 1,
+     "group": "h"
+    },
+    {
+     "key": "sid",
+     "component": "header fields",
+     "bytes": 32,
+     "kind": "bin",
+     "group": "h"
+    },
+    {
+     "key": "e",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 3,
+     "group": "h"
+    },
+    {
+     "key": "n",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 17,
+     "group": "h"
+    },
+    {
+     "key": "pn",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 12,
+     "group": "h"
+    },
+    {
+     "key": "ct",
+     "component": "KEM ciphertext",
+     "bytes": 1088,
+     "kind": "bin",
+     "group": "h"
+    },
+    {
+     "key": "ek",
+     "component": "KEM public key",
+     "bytes": 1184,
+     "kind": "bin",
+     "group": "h"
+    },
+    {
+     "key": "c",
+     "component": "AEAD (iv+tag)",
+     "bytes": 16,
+     "kind": "bin",
+     "group": "ct"
+    }
+   ],
+   "plaintext": 100
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "note": "GET /bundle/:user: IK, SPK+sig, one OPK+sig",
+   "fields": [
+    {
+     "key": "ik",
+     "component": "signature public key",
+     "bytes": 2592,
+     "kind": "bin"
+    },
+    {
+     "key": "spkId",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 7
+    },
+    {
+     "key": "spk",
+     "component": "KEM public key",
+     "bytes": 1568,
+     "kind": "bin"
+    },
+    {
+     "key": "spkSig",
+     "component": "signature",
+     "bytes": 4627,
+     "kind": "bin"
+    },
+    {
+     "key": "opkId",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 4242
+    },
+    {
+     "key": "opk",
+     "component": "KEM public key",
+     "bytes": 1568,
+     "kind": "bin"
+    },
+    {
+     "key": "opkSig",
+     "component": "signature",
+     "bytes": 4627,
+     "kind": "bin"
+    }
+   ],
+   "plaintext": 0
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "note": "epoch-0 message with init header {ct1, ct2, ek_A1, sig_A}",
+   "fields": [
+    {
+     "key": "to",
+     "component": "routing",
+     "bytes": 3,
+     "kind": "str",
+     "value": "bob"
+    },
+    {
+     "key": "from",
+     "component": "routing",
+     "bytes": 5,
+     "kind": "str",
+     "value": "alice"
+    },
+    {
+     "key": "type",
+     "component": "routing",
+     "bytes": 4,
+     "kind": "str",
+     "value": "text"
+    },
+    {
+     "key": "v",
+     "component": "header fields",
+     "bytes": 1,
+     "kind": "num",
+     "value": 1,
+     "group": "h"
+    },
+    {
+     "key": "sid",
+     "component": "header fields",
+     "bytes": 32,
+     "kind": "bin",
+     "group": "h"
+    },
+    {
+     "key": "e",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 3,
+     "group": "h"
+    },
+    {
+     "key": "n",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 17,
+     "group": "h"
+    },
+    {
+     "key": "pn",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 12,
+     "group": "h"
+    },
+    {
+     "key": "ct1",
+     "component": "KEM ciphertext",
+     "bytes": 1568,
+     "kind": "bin",
+     "group": "init"
+    },
+    {
+     "key": "ct2",
+     "component": "KEM ciphertext",
+     "bytes": 1568,
+     "kind": "bin",
+     "group": "init"
+    },
+    {
+     "key": "ek",
+     "component": "KEM public key",
+     "bytes": 1216,
+     "kind": "bin",
+     "group": "init"
+    },
+    {
+     "key": "sig",
+     "component": "signature",
+     "bytes": 4627,
+     "kind": "bin",
+     "group": "init"
+    },
+    {
+     "key": "c",
+     "component": "AEAD (iv+tag)",
+     "bytes": 16,
+     "kind": "bin",
+     "group": "ct"
+    }
+   ],
+   "plaintext": 100
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "note": "K=1: every header repeats (ct, ek)",
+   "fields": [
+    {
+     "key": "to",
+     "component": "routing",
+     "bytes": 3,
+     "kind": "str",
+     "value": "bob"
+    },
+    {
+     "key": "from",
+     "component": "routing",
+     "bytes": 5,
+     "kind": "str",
+     "value": "alice"
+    },
+    {
+     "key": "type",
+     "component": "routing",
+     "bytes": 4,
+     "kind": "str",
+     "value": "text"
+    },
+    {
+     "key": "v",
+     "component": "header fields",
+     "bytes": 1,
+     "kind": "num",
+     "value": 1,
+     "group": "h"
+    },
+    {
+     "key": "sid",
+     "component": "header fields",
+     "bytes": 32,
+     "kind": "bin",
+     "group": "h"
+    },
+    {
+     "key": "e",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 3,
+     "group": "h"
+    },
+    {
+     "key": "n",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 17,
+     "group": "h"
+    },
+    {
+     "key": "pn",
+     "component": "header fields",
+     "bytes": 4,
+     "kind": "num",
+     "value": 12,
+     "group": "h"
+    },
+    {
+     "key": "ct",
+     "component": "KEM ciphertext",
+     "bytes": 1120,
+     "kind": "bin",
+     "group": "h"
+    },
+    {
+     "key": "ek",
+     "component": "KEM public key",
+     "bytes": 1216,
+     "kind": "bin",
+     "group": "h"
+    },
+    {
+     "key": "c",
+     "component": "AEAD (iv+tag)",
+     "bytes": 16,
+     "kind": "bin",
+     "group": "ct"
+    }
+   ],
+   "plaintext": 100
+  }
+ ],
+ "rows": [
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "KEM public key",
+   "bytes": 1568
+  },
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "signature public key",
+   "bytes": 2592
+  },
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "KEM public key",
+   "bytes": 1568
+  },
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "signature public key",
+   "bytes": 2592
+  },
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 9
+  },
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "KEM public key",
+   "bytes": 2092
+  },
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "signature public key",
+   "bytes": 3456
+  },
+  {
+   "version": "v0",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 92
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "AEAD (iv+tag)",
+   "bytes": 28
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "KEM ciphertext",
+   "bytes": 1568
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "signature",
+   "bytes": 4627
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "AEAD (iv+tag)",
+   "bytes": 28
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "KEM ciphertext",
+   "bytes": 1568
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "signature",
+   "bytes": 4627
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 25
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "routing",
+   "bytes": 0
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "AEAD (iv+tag)",
+   "bytes": 76
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "KEM ciphertext",
+   "bytes": 2092
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "signature",
+   "bytes": 6172
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 97
+  },
+  {
+   "version": "v0",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "AEAD (iv+tag)",
+   "bytes": 28
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "AEAD (iv+tag)",
+   "bytes": 28
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 17
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "routing",
+   "bytes": 0
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "AEAD (iv+tag)",
+   "bytes": 76
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 79
+  },
+  {
+   "version": "v0",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "signature public key",
+   "bytes": 2592
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "header fields",
+   "bytes": 8
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "KEM public key",
+   "bytes": 3136
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "signature",
+   "bytes": 9254
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "signature public key",
+   "bytes": 2592
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "header fields",
+   "bytes": 8
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "KEM public key",
+   "bytes": 3136
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "signature",
+   "bytes": 9254
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 29
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "signature public key",
+   "bytes": 3456
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "header fields",
+   "bytes": 0
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "KEM public key",
+   "bytes": 4184
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "signature",
+   "bytes": 12344
+  },
+  {
+   "version": "v1",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 105
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "header fields",
+   "bytes": 45
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "KEM ciphertext",
+   "bytes": 3136
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "KEM public key",
+   "bytes": 1184
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "signature",
+   "bytes": 4627
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "AEAD (iv+tag)",
+   "bytes": 16
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "header fields",
+   "bytes": 45
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "KEM ciphertext",
+   "bytes": 3136
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "KEM public key",
+   "bytes": 1184
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "signature",
+   "bytes": 4627
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "AEAD (iv+tag)",
+   "bytes": 16
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 53
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "routing",
+   "bytes": 0
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "header fields",
+   "bytes": 44
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "KEM ciphertext",
+   "bytes": 4184
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "KEM public key",
+   "bytes": 1580
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "signature",
+   "bytes": 6172
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "AEAD (iv+tag)",
+   "bytes": 56
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 156
+  },
+  {
+   "version": "v1",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "header fields",
+   "bytes": 45
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "KEM ciphertext",
+   "bytes": 1088
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "KEM public key",
+   "bytes": 1184
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "AEAD (iv+tag)",
+   "bytes": 16
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "header fields",
+   "bytes": 45
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "KEM ciphertext",
+   "bytes": 1088
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "KEM public key",
+   "bytes": 1184
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "AEAD (iv+tag)",
+   "bytes": 16
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 45
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "routing",
+   "bytes": 0
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "header fields",
+   "bytes": 44
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "KEM ciphertext",
+   "bytes": 1452
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "KEM public key",
+   "bytes": 1580
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "AEAD (iv+tag)",
+   "bytes": 56
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 128
+  },
+  {
+   "version": "v1",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "signature public key",
+   "bytes": 2592
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "header fields",
+   "bytes": 8
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "KEM public key",
+   "bytes": 3136
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "raw",
+   "component": "signature",
+   "bytes": 9254
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "signature public key",
+   "bytes": 2592
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "header fields",
+   "bytes": 8
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "KEM public key",
+   "bytes": 3136
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "signature",
+   "bytes": 9254
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 29
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "signature public key",
+   "bytes": 3456
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "header fields",
+   "bytes": 0
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "KEM public key",
+   "bytes": 4184
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "signature",
+   "bytes": 12344
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "bundle",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 105
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "header fields",
+   "bytes": 45
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "KEM ciphertext",
+   "bytes": 3136
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "KEM public key",
+   "bytes": 1216
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "signature",
+   "bytes": 4627
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "AEAD (iv+tag)",
+   "bytes": 16
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "raw",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "header fields",
+   "bytes": 45
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "KEM ciphertext",
+   "bytes": 3136
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "KEM public key",
+   "bytes": 1216
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "signature",
+   "bytes": 4627
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "AEAD (iv+tag)",
+   "bytes": 16
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 53
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "binary",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "routing",
+   "bytes": 0
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "header fields",
+   "bytes": 44
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "KEM ciphertext",
+   "bytes": 4184
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "KEM public key",
+   "bytes": 1624
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "signature",
+   "bytes": 6172
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "AEAD (iv+tag)",
+   "bytes": 56
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 156
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "first-message",
+   "encoding": "json-base64",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "header fields",
+   "bytes": 45
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "KEM ciphertext",
+   "bytes": 1120
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "KEM public key",
+   "bytes": 1216
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "AEAD (iv+tag)",
+   "bytes": 16
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "raw",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "routing",
+   "bytes": 12
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "header fields",
+   "bytes": 45
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "KEM ciphertext",
+   "bytes": 1120
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "KEM public key",
+   "bytes": 1216
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "AEAD (iv+tag)",
+   "bytes": 16
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "framing",
+   "bytes": 45
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "binary",
+   "component": "plaintext",
+   "bytes": 100
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "routing",
+   "bytes": 0
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "header fields",
+   "bytes": 44
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "KEM ciphertext",
+   "bytes": 1496
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "KEM public key",
+   "bytes": 1624
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "AEAD (iv+tag)",
+   "bytes": 56
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "framing",
+   "bytes": 128
+  },
+  {
+   "version": "v1-xwing",
+   "phase": "steady-message",
+   "encoding": "json-base64",
+   "component": "plaintext",
+   "bytes": 100
+  }
+ ]
+}
