@@ -106,4 +106,41 @@ model OneTimePrekey {
   @@index([userId, createdAt])
 }
 
+// ---------- Key transparency (plan 2.21-2.22, strategy §5) ----------
+// Append-only: rows are never updated or deleted in normal operation.
+
+// One row per log entry. leaf is the 153-byte KT leaf (shared/src/leaf.ts),
+// leafHash = SHA-256(0x00 || leaf), ownerSig is the full ML-DSA-87 signature
+// whose SHA-256 is inside the leaf.
+model KtLeaf {
+  idx        BigInt   @id
+  leaf       Bytes
+  leafHash   Bytes
+  userHash   Bytes
+  keyVersion Int
+  ownerSig   Bytes
+  createdAt  DateTime @default(now())
+
+  @@index([userHash, idx])
+}
+
+// Perfect-subtree hashes of the Merkle tree: (level, idx) covers leaves
+// [idx * 2^level, (idx + 1) * 2^level). Written once, never changed.
+model KtNode {
+  level Int
+  idx   BigInt
+  hash  Bytes
+
+  @@id([level, idx])
+}
+
+// Signed tree heads, one row per published tree size.
+model KtSth {
+  treeSize  BigInt   @id
+  rootHash  Bytes
+  timestamp BigInt
+  signature Bytes
+  createdAt DateTime @default(now())
+}
+
 
