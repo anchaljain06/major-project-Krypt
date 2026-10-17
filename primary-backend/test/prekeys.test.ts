@@ -156,6 +156,36 @@ describe("GET /bundle/:username", () => {
     );
   });
 
+  it("stops handing out OPKs after 10 claims per requester and target, serving the SPK only", async () => {
+    db.user.findUnique.mockResolvedValue({
+      id: "u-carol",
+      username: "carol",
+      identityKeyPub: "IK_C",
+      signedPrekey: spk,
+    });
+    db.$queryRaw.mockResolvedValue([{ keyId: 1, publicKey: "opk", signature: "osig" }]);
+    db.oneTimePrekey.count.mockResolvedValue(50);
+
+    for (let i = 0; i < 10; i++) {
+      const body = await (await fetch(`${base}/bundle/carol`, { headers: auth })).json();
+      expect(body.oneTimePrekey).not.toBeNull();
+    }
+    expect(db.$queryRaw).toHaveBeenCalledTimes(10);
+    const limited = await fetch(`${base}/bundle/carol`, { headers: auth });
+    expect(limited.status).toBe(200);
+    expect(await limited.json()).toEqual({
+      username: "carol",
+      identityKey: "IK_C",
+      signedPrekey: spk,
+      oneTimePrekey: null,
+    });
+    expect(db.$queryRaw).toHaveBeenCalledTimes(10); // nothing claimed
+
+    // Another requester has its own quota.
+    const dave = { authorization: `Bearer ${issueToken({ userId: "u-dave", username: "dave" })}` };
+    expect((await (await fetch(`${base}/bundle/carol`, { headers: dave })).json()).oneTimePrekey).not.toBeNull();
+  });
+
   it("404s for an unknown user", async () => {
     db.user.findUnique.mockResolvedValue(null);
     expect((await fetch(`${base}/bundle/nobody`, { headers: auth })).status).toBe(404);

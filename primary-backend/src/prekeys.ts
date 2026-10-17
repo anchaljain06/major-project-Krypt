@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "./db.js";
+import { SlidingWindowLimiter } from "./rateLimit.js";
 import { emitToUser } from "./realtime.js";
 import { parseOr400, uploadPrekeysBody, usernameSchema } from "./schemas.js";
 
@@ -61,13 +62,20 @@ export async function warnIfLow(owner: { id: string; username: string }) {
   }
 }
 
+/** OPK claims allowed per (requester, target) per window; beyond that, SPK only. */
+export const OPK_CLAIMS_PER_TARGET = 10;
+export const OPK_CLAIM_WINDOW_MS = 60 * 60 * 1000;
+export const opkClaimLimiter = new SlidingWindowLimiter(OPK_CLAIMS_PER_TARGET, OPK_CLAIM_WINDOW_MS);
+
 /**
- * Build the bundle for `username`, claiming one OPK. Returns null if no such user.
+ * Build the bundle for `username`, claiming one OPK if `mayClaim(ownerId)`
+ * allows it. Returns null if no such user.
  * `keysFrom` lets the evil relay serve another user's keys under this name.
  */
 export async function fetchBundle(
   username: string,
   keysFrom: string = username,
+  mayClaim: (ownerId: string) => boolean = () => true,
 ): Promise<{ bundle: Bundle; owner: { id: string; username: string } } | null> {
   const owner = await prisma.user.findUnique({
     where: { username: keysFrom },
@@ -79,7 +87,7 @@ export async function fetchBundle(
     },
   });
   if (!owner) return null;
-  const oneTimePrekey = await claimOneTimePrekey(owner.id);
+  const oneTimePrekey = mayClaim(owner.id) ? await claimOneTimePrekey(owner.id) : null;
   return {
     owner: { id: owner.id, username: owner.username },
     bundle: {
@@ -158,7 +166,10 @@ router.get("/bundle/:username", async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Invalid username." });
 
   try {
-    const result = await fetchBundle(parsed.data, bundleKeySource(parsed.data));
+    const requester = req.auth!.userId;
+    const result = await fetchBundle(parsed.data, bundleKeySource(parsed.data), (ownerId) =>
+      opkClaimLimiter.take(`${requester}\u0000${ownerId}`),
+    );
     if (!result) return res.status(404).json({ error: "User not found." });
     res.status(200).json(result.bundle);
 
