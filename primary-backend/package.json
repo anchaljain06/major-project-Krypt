@@ -12,13 +12,15 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "vendor:shared": "node scripts/vendor-shared.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@noble/post-quantum": "^0.7.1",
     "@prisma/client": "6.19",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
