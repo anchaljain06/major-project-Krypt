@@ -37,10 +37,5 @@ Thumbs.db
 # Local team discussion and scratch notes
 TEAM_DISCUSSION.md
 
-# Contains exploitable-bug details for the deployed v0; keep local until Phase 0 ships
-Krypt_Major_Project_Strategy.md
-
-#extra personal docs
-Krypt_Cryptographic_Handoff.md
-Krypt_Implementation_Plan.md
-IMPLEMENTATION_STATUS.md
+# Team working docs (plan, status, strategy with v0 bug details); shared directly, not via git
+team-docs/
