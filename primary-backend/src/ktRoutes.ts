@@ -74,7 +74,7 @@ export function setKtLog(log: KtLog | null) {
 // Hooks for the evil relay's KT attacks (evil.ts); null in normal operation.
 export interface KtEvilHooks {
   /** kt_fork / kt_rewrite: the view to serve this request. */
-  viewFor(req: Request, log: KtLog): KtView;
+  viewFor(req: Request): KtView;
   /** kt_rogue_leaf: /api/kt/register appends any well-formed leaf unchecked. */
   skipRegisterChecks: boolean;
   /** kt_rogue_leaf: POST /kt/evil/rogue-leaf?victim=<name>; returns the leaf index. */
@@ -127,7 +127,7 @@ function bad(res: import("express").Response, error: string, status = 400) {
 
 export function ktPublicRouter(getLog: () => KtLog = ktLog): Router {
   const router = Router();
-  const view = (req: Request) => (evil ? evil.viewFor(req, getLog()) : getLog().honestView());
+  const view = (req: Request) => (evil ? evil.viewFor(req) : getLog().honestView());
 
   router.use((_req, res, next) => {
     res.set("Cache-Control", "no-store");

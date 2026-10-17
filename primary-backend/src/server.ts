@@ -3,8 +3,8 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { ALLOWED_ORIGINS, createApp } from "./app.js";
 import { prisma } from "./db.js";
-import { loadEvilRelay } from "./evil.js";
-import { ktLog } from "./ktRoutes.js";
+import { createEvilKt, loadEvilRelay } from "./evil.js";
+import { ktLog, setKtEvil } from "./ktRoutes.js";
 import { MAX_SOCKET_MESSAGE_BYTES } from "./schemas.js";
 import { purgeExpiredMailbox, registerSocketHandlers } from "./sockets.js";
 
@@ -20,7 +20,16 @@ const io = new Server(httpServer, {
 });
 
 // Evil relay test harness; null unless EVIL_MODE is set.
-registerSocketHandlers(io, loadEvilRelay());
+const evil = loadEvilRelay();
+registerSocketHandlers(io, evil);
+if (evil) {
+  setKtEvil(
+    createEvilKt(evil.config, ktLog(), async (username) =>
+      (await prisma.user.findUnique({ where: { username }, select: { identityKeyPub: true } }))
+        ?.identityKeyPub ?? null,
+    ),
+  );
+}
 
 const MAILBOX_PURGE_INTERVAL_MS = 60 * 60 * 1000;
 
