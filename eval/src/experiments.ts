@@ -91,7 +91,6 @@ export function detectNativeSupport(): NativeSupport {
     ['generateKey', 'ML-DSA-87'],
     ['sign', 'ML-DSA-65'],
     ['generateKey', 'X25519'],
-    ['deriveBits', 'X25519'],
     ['generateKey', 'Ed25519'],
     ['sign', 'Ed25519'],
   ];

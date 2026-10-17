@@ -103,7 +103,9 @@ plt.rcParams.update(
 
 def save(fig, out: Path, name: str, note: str = "") -> None:
     if note:
-        fig.text(0.01, 0.005, note, fontsize=7, color=INK_2, ha="left", va="bottom")
+        # place the provenance note just below everything already drawn (tick labels included)
+        bb = fig.get_tightbbox(fig.canvas.get_renderer())
+        fig.text(0.01, (bb.y0 - 0.08) / fig.get_figheight(), note, fontsize=7, color=INK_2, ha="left", va="top")
     out.mkdir(parents=True, exist_ok=True)
     for ext in ("png", "svg"):
         fig.savefig(out / f"{name}.{ext}", dpi=200, bbox_inches="tight")
@@ -167,9 +169,10 @@ def fig_ops_by_browser(s: pd.DataFrame, out: Path, note: str) -> None:
         )
         ax.set_title(title, loc="left")
         ax.set_ylabel("operations per second (log)")
-    axes[0].legend(ncol=len(sources), loc="upper right", bbox_to_anchor=(1.0, 1.13))
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, ncol=len(sources), loc="upper left", bbox_to_anchor=(0.01, 1.04))
     fig.suptitle("Post-quantum primitives by browser: higher is faster; bars = median, whiskers = p5–p95 of batches",
-                 x=0.01, ha="left", fontsize=10, color=INK_2, y=1.04)
+                 x=0.01, ha="left", fontsize=10, color=INK_2, y=1.10)
     save(fig, out, "e1e2_ops_by_browser", note)
 
 
@@ -241,8 +244,9 @@ def fig_pq_vs_classical(s: pd.DataFrame, out: Path, note: str) -> None:
     grouped_bars(ax, cats, sources, get=lambda src, c: idx.get((src, c), np.nan), colors=SOURCE_COLORS)
     ax.axhline(1, color=INK_2, linewidth=0.8, linestyle="--", zorder=2)
     ax.set_ylabel("slowdown: PQ median ÷ classical median (log)")
-    ax.set_title("PQ ÷ classical cost (PQ = noble ML-KEM-768 / ML-DSA; classical = native WebCrypto where supported)",
-                 loc="left")
+    ax.set_title("PQ ÷ classical cost", loc="left")
+    fig.text(0.01, 1.0, "PQ = noble ML-KEM-768 / ML-DSA-65 (87 where marked Cat-5); classical = X25519 / Ed25519 via "
+             "native WebCrypto (node:crypto in Node). Dashed line = parity.", fontsize=8, color=INK_2, ha="left")
     ax.legend(ncol=len(sources), loc="upper left")
     r.to_csv(out / "pq_vs_classical.csv", index=False)
     save(fig, out, "pq_vs_classical", note)
@@ -260,8 +264,6 @@ def fig_aes(s: pd.DataFrame, out: Path, note: str) -> None:
                 continue
             ax.plot(dd.bytes, dd.mbps, marker="o", markersize=5, linewidth=2, color=SOURCE_COLORS[src], label=src,
                     markeredgecolor="white", markeredgewidth=1)
-            ax.annotate(src, (dd.bytes.iloc[-1], dd.mbps.iloc[-1]), xytext=(4, 0), textcoords="offset points",
-                        fontsize=7.5, color=INK_2, va="center")
         ax.set_xscale("log", base=2)
         ax.set_yscale("log")
         ticks = [64, 1024, 16384, 262144, 1048576]
@@ -294,7 +296,7 @@ def fig_e5(e5: pd.DataFrame | None, out: Path) -> None:
         for v in versions:
             for e in encs:
                 xs.append(pos)
-                labels.append(f"{v}\n{e}")
+                labels.append(f"{v}\n{ {'raw': 'raw', 'binary': 'bin', 'json-base64': 'json'}[e]}")
                 pos += 1
             pos += 0.6
         bottoms = np.zeros(len(xs))
@@ -316,7 +318,7 @@ def fig_e5(e5: pd.DataFrame | None, out: Path) -> None:
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, ncol=8, loc="upper left", bbox_to_anchor=(0.01, 1.07), fontsize=8)
     save(fig, out, "e5_bytes", "E5 byte accounting from FIPS 203/204 sizes; json-base64 = Socket.io text frame; "
-                               "plaintext = 100 B.")
+                               "plaintext = 100 B; bin = length-prefixed binary frame.")
 
 
 def fig_e10(s: pd.DataFrame, out: Path, note: str) -> None:
