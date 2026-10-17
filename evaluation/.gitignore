@@ -10,3 +10,7 @@ test-results/
 # Raw results stay local; only curated samples are committed
 results/*
 !results/sample-*/
+# E7 full runs: summaries and figures are committed, the per-message CSV (~12 MB) is not
+!results/e7-*/
+results/e7-*/messages.csv
+results/e7-*-quick/
