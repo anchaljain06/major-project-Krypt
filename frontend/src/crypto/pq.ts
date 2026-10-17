@@ -52,6 +52,10 @@ function wrapKem(name: string, impl: NobleKem): Kem & {
   encapsulateDerand(publicKey: Uint8Array, m: Uint8Array): { cipherText: Uint8Array; sharedSecret: Uint8Array };
   /** Deterministic key generation from a seed. For known-answer tests only. */
   keygenDerand(seed: Uint8Array): KemKeyPair;
+  /** FIPS 203 section 7.2 encapsulation-key input check (length + modulus). */
+  checkEncapsulationKey(publicKey: Uint8Array): boolean;
+  /** FIPS 203 section 7.3 decapsulation-key input check (length + H(ek) hash). */
+  checkDecapsulationKey(secretKey: Uint8Array): boolean;
 } {
   const lengths = {
     publicKey: impl.lengths.publicKey!,
@@ -85,6 +89,28 @@ function wrapKem(name: string, impl: NobleKem): Kem & {
       expectLen(`${name} public key`, publicKey, lengths.publicKey);
       const { cipherText, sharedSecret } = impl.encapsulate(publicKey, m);
       return { cipherText, sharedSecret: checkSs(sharedSecret) };
+    },
+    // noble performs both FIPS 203 input checks inside encapsulate/decapsulate
+    // (it throws "wrong publicKey modulus" / "hash check failed"); these helpers
+    // expose them as booleans. The X-Wing secret key is a seed, so only the
+    // length can be checked for it.
+    checkEncapsulationKey(publicKey) {
+      if (!(publicKey instanceof Uint8Array) || publicKey.length !== lengths.publicKey) return false;
+      try {
+        impl.encapsulate(publicKey);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    checkDecapsulationKey(secretKey) {
+      if (!(secretKey instanceof Uint8Array) || secretKey.length !== lengths.secretKey) return false;
+      try {
+        impl.decapsulate(new Uint8Array(lengths.cipherText), secretKey);
+        return true;
+      } catch {
+        return false;
+      }
     },
     decapsulate(cipherText, secretKey) {
       expectLen(`${name} ciphertext`, cipherText, lengths.cipherText);
