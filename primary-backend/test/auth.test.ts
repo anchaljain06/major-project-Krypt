@@ -1,11 +1,9 @@
 import { createHmac } from "crypto";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  isActingUserMismatch,
   issueToken,
   readBearerToken,
   requireAuth,
-  requireSelf,
   socketAuth,
   verifyToken,
 } from "../src/auth.js";
@@ -138,39 +136,5 @@ describe("socketAuth", () => {
       expect(next.mock.calls[0]![0]).toBeInstanceOf(Error);
       expect(socket.data.username).toBeUndefined();
     }
-  });
-});
-
-describe("acting user must equal token user (BOLA rule)", () => {
-  it("allows a missing or matching name, case-insensitive", () => {
-    expect(isActingUserMismatch(undefined, alice)).toBe(false);
-    expect(isActingUserMismatch("", alice)).toBe(false);
-    expect(isActingUserMismatch("Alice", alice)).toBe(false);
-    expect(isActingUserMismatch("alice", alice)).toBe(false);
-    expect(isActingUserMismatch(" ALICE ", alice)).toBe(false);
-  });
-
-  it("flags a different or non-string name", () => {
-    expect(isActingUserMismatch("bob", alice)).toBe(true);
-    expect(isActingUserMismatch(["alice"], alice)).toBe(true);
-    expect(isActingUserMismatch(1, alice)).toBe(true);
-  });
-
-  it("requireSelf returns 403 on mismatch and passes on match", () => {
-    const guard = requireSelf((req) => req.params.username);
-    const bad = fakeRes();
-    const next = vi.fn();
-    guard({ auth: alice, params: { username: "bob" } } as any, bad, next);
-    expect(bad.statusCode).toBe(403);
-    expect(next).not.toHaveBeenCalled();
-
-    guard({ auth: alice, params: { username: "alice" } } as any, fakeRes(), next);
-    expect(next).toHaveBeenCalledOnce();
-  });
-
-  it("requireSelf returns 401 when no auth ran", () => {
-    const res = fakeRes();
-    requireSelf(() => "alice")({ params: {} } as any, res, vi.fn());
-    expect(res.statusCode).toBe(401);
   });
 });

@@ -140,30 +140,7 @@ export function socketAuth(socket: Socket, next: (err?: Error) => void) {
   next();
 }
 
-/**
- * BOLA guard. A request may name "the acting user" in its body or URL for
- * backwards compatibility, but that name must match the token user
- * (case-insensitive). A missing name is fine: identity comes from the token.
- */
-export function isActingUserMismatch(claimed: unknown, identity: AuthIdentity): boolean {
-  if (claimed === undefined || claimed === null || claimed === "") return false;
-  if (typeof claimed !== "string") return true;
-  return claimed.trim().toLowerCase() !== identity.username.toLowerCase();
-}
-
+/** Usernames compare case-insensitively (e.g. "you cannot add yourself"). */
 export function sameUsername(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
-}
-
-/** Route middleware factory: 403 when the named acting user is not the token user. */
-export function requireSelf(pick: (req: Request) => unknown) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.auth) {
-      return res.status(401).json({ error: "Authentication required." });
-    }
-    if (isActingUserMismatch(pick(req), req.auth)) {
-      return res.status(403).json({ error: "Forbidden." });
-    }
-    next();
-  };
 }

@@ -58,47 +58,36 @@ const post = (path: string, body: unknown, token?: string) =>
 
 describe("authenticated REST routes", () => {
   it("returns 401 without a token", async () => {
-    for (const path of ["/friends/alice", "/blocked/alice", "/request/pending/alice"]) {
+    for (const path of ["/friends", "/blocked", "/request/pending", "/request/sent"]) {
       expect((await get(path)).status).toBe(401);
     }
-    expect((await post("/request/send", { sender: "alice", receiver: "bob" })).status).toBe(401);
+    expect((await post("/request/send", { receiver: "bob" })).status).toBe(401);
   });
 
-  it("returns 403 when the URL names another user", async () => {
-    for (const path of [
-      "/friends/bob",
-      "/blocked/bob",
-      "/request/pending/bob",
-      "/request/sent/bob",
-    ]) {
-      expect((await get(path, aliceToken)).status).toBe(403);
-    }
-    expect(db.friendRequest.findMany).not.toHaveBeenCalled();
+  it("acts only as the token user, whatever the body or URL names", async () => {
+    // The old /friends/:username form no longer exists.
+    expect((await get("/friends/bob", aliceToken)).status).toBe(404);
+
+    // A body that names another acting user still acts as alice.
+    db.friendRequest.findFirst.mockResolvedValue(null);
+    const res = await post("/request/accept", { sender: "carol", receiver: "bob" }, aliceToken);
+    expect(res.status).toBe(400); // no pending request from carol to alice
+    expect(db.friendRequest.findFirst.mock.calls[0]![0].where).toEqual({
+      sender: { username: "carol" },
+      receiverId: "u-alice",
+      status: "pending",
+    });
   });
 
-  it("returns 403 when the body names another acting user", async () => {
-    const cases: [string, unknown][] = [
-      ["/request/send", { sender: "bob", receiver: "carol" }],
-      ["/request/revoke", { sender: "bob", receiver: "carol" }],
-      ["/request/accept", { sender: "carol", receiver: "bob" }],
-      ["/request/reject", { sender: "carol", receiver: "bob" }],
-      ["/block", { blocker: "bob", blocked: "carol" }],
-      ["/unblock", { blocker: "bob", blocked: "carol" }],
-    ];
-    for (const [path, body] of cases) {
-      expect((await post(path, body, aliceToken)).status, path).toBe(403);
-    }
-  });
-
-  it("serves the token user, matching case-insensitively", async () => {
+  it("serves the token user's own lists", async () => {
     db.friendRequest.findMany.mockResolvedValue([
       { senderId: "u-alice", sender: { username: "alice" }, receiver: { username: "bob" } },
       { senderId: "u-carol", sender: { username: "carol" }, receiver: { username: "alice" } },
     ]);
-    const res = await get("/friends/ALICE", aliceToken);
+    const res = await get("/friends", aliceToken);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ friends: ["bob", "carol"] });
-    // The query is scoped by the token's User.id, not by the URL.
+    // The query is scoped by the token's User.id.
     const where = db.friendRequest.findMany.mock.calls[0]![0].where;
     expect(where.OR).toEqual([{ senderId: "u-alice" }, { receiverId: "u-alice" }]);
   });
@@ -107,7 +96,7 @@ describe("authenticated REST routes", () => {
     expect((await post("/request/send", { receiver: 5 }, aliceToken)).status).toBe(400);
 
     db.friendRequest.findMany.mockRejectedValue(new Error("secret table layout"));
-    const res = await get("/request/sent/alice", aliceToken);
+    const res = await get("/request/sent", aliceToken);
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(JSON.stringify(body)).not.toContain("secret");

@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import { prisma } from "./db.js";
 import srp from "secure-remote-password/server.js";
-import { issueToken, requireAuth, requireSelf, sameUsername } from "./auth.js";
+import { issueToken, requireAuth, sameUsername } from "./auth.js";
 import { ktApiRouter } from "./ktRoutes.js";
 import prekeys from "./prekeys.js";
 import { emitToUser } from "./realtime.js";
@@ -167,8 +167,8 @@ router.post("/login/verify", async (req, res) => {
 });
 
 // ===================== Authenticated routes =====================
-// Identity comes only from the bearer token. Body/URL usernames that name the
-// acting user are kept for compatibility and must match it (else 403).
+// Identity comes only from the bearer token. Requests name only the other
+// user; every query is scoped by the token's User.id.
 
 router.use(requireAuth);
 
@@ -204,7 +204,6 @@ async function searchUsers(req: Request, query: string) {
 // Search users (excludes self and blocked users)
 router.get(
   "/users/search",
-  requireSelf((req) => req.query.current_user),
   async (req, res) => {
     const query = parseOr400(searchQuery, req.query, res);
     if (!query) return;
@@ -222,7 +221,6 @@ router.get(
 // Send a friend request
 router.post(
   "/request/send",
-  requireSelf((req) => req.body?.sender),
   async (req, res) => {
     const body = parseOr400(sendOrRevokeBody, req.body, res);
     if (!body) return;
@@ -303,8 +301,7 @@ router.post(
 
 // Get incoming pending requests
 router.get(
-  "/request/pending/:username",
-  requireSelf((req) => req.params.username),
+  "/request/pending",
   async (req, res) => {
     try {
       const pending = await prisma.friendRequest.findMany({
@@ -324,8 +321,7 @@ router.get(
 
 // Get outgoing sent requests
 router.get(
-  "/request/sent/:username",
-  requireSelf((req) => req.params.username),
+  "/request/sent",
   async (req, res) => {
     try {
       const sent = await prisma.friendRequest.findMany({
@@ -344,7 +340,6 @@ router.get(
 // Revoke an outgoing friend request
 router.post(
   "/request/revoke",
-  requireSelf((req) => req.body?.sender),
   async (req, res) => {
     const body = parseOr400(sendOrRevokeBody, req.body, res);
     if (!body) return;
@@ -370,7 +365,6 @@ router.post(
 // Accept a friend request (the token user is the receiver)
 router.post(
   "/request/accept",
-  requireSelf((req) => req.body?.receiver),
   async (req, res) => {
     const body = parseOr400(acceptOrRejectBody, req.body, res);
     if (!body) return;
@@ -421,7 +415,6 @@ router.post(
 // Reject a friend request (the token user is the receiver)
 router.post(
   "/request/reject",
-  requireSelf((req) => req.body?.receiver),
   async (req, res) => {
     const body = parseOr400(acceptOrRejectBody, req.body, res);
     if (!body) return;
@@ -449,8 +442,7 @@ router.post(
 
 // Get all accepted friends for a user
 router.get(
-  "/friends/:username",
-  requireSelf((req) => req.params.username),
+  "/friends",
   async (req, res) => {
     const userId = myId(req);
     try {
@@ -482,7 +474,6 @@ router.get(
 // Block a user
 router.post(
   "/block",
-  requireSelf((req) => req.body?.blocker),
   async (req, res) => {
     const body = parseOr400(blockBody, req.body, res);
     if (!body) return;
@@ -534,7 +525,6 @@ router.post(
 // Unblock a user
 router.post(
   "/unblock",
-  requireSelf((req) => req.body?.blocker),
   async (req, res) => {
     const body = parseOr400(blockBody, req.body, res);
     if (!body) return;
@@ -557,8 +547,7 @@ router.post(
 
 // Get blocked users list
 router.get(
-  "/blocked/:username",
-  requireSelf((req) => req.params.username),
+  "/blocked",
   async (req, res) => {
     try {
       const blocked = await prisma.blockedUser.findMany({

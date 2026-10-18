@@ -54,10 +54,10 @@ describe("auth bodies", () => {
 });
 
 describe("social bodies", () => {
-  it("makes the acting-user field optional", () => {
-    expect(sendOrRevokeBody.safeParse({ receiver: "bob" }).success).toBe(true);
-    expect(acceptOrRejectBody.safeParse({ sender: "bob" }).success).toBe(true);
-    expect(blockBody.safeParse({ blocked: "bob" }).success).toBe(true);
+  it("names only the other user and drops any acting-user field", () => {
+    expect(sendOrRevokeBody.parse({ sender: "mallory", receiver: "bob" })).toEqual({ receiver: "bob" });
+    expect(acceptOrRejectBody.parse({ sender: "bob", receiver: "mallory" })).toEqual({ sender: "bob" });
+    expect(blockBody.parse({ blocker: "mallory", blocked: "bob" })).toEqual({ blocked: "bob" });
   });
   it("requires the target user", () => {
     expect(sendOrRevokeBody.safeParse({ sender: "alice" }).success).toBe(false);

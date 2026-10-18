@@ -21,8 +21,6 @@ export const usernameSchema = z
   .max(MAX_USERNAME_LENGTH)
   .regex(/^[^\u0000-\u001f\u007f]+$/, "Invalid characters in username.");
 
-const optionalUsername = usernameSchema.optional();
-
 const hexString = (max: number) =>
   z
     .string()
@@ -51,27 +49,22 @@ export const loginVerifyBody = z.object({
 });
 
 // ---------- Social ----------
-// The acting-user field (sender / receiver / blocker) is optional: identity comes
-// from the token, the field is only accepted (and checked) for compatibility.
+// Bodies name only the other user; the acting user always comes from the token.
 
 export const sendOrRevokeBody = z.object({
-  sender: optionalUsername,
   receiver: usernameSchema,
 });
 
 export const acceptOrRejectBody = z.object({
   sender: usernameSchema,
-  receiver: optionalUsername,
 });
 
 export const blockBody = z.object({
-  blocker: optionalUsername,
   blocked: usernameSchema,
 });
 
 export const searchQuery = z.object({
   q: z.string().max(MAX_USERNAME_LENGTH).optional(),
-  current_user: optionalUsername,
 });
 
 // ---------- Prekeys ----------

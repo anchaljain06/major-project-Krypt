@@ -30,9 +30,7 @@ export function useSocial(
     }
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const res = await apiFetch(
-          `/api/users/search?q=${encodeURIComponent(searchQuery)}&current_user=${encodeURIComponent(user)}`,
-        );
+        const res = await apiFetch(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
         if (!res.ok) return setSearchResults([]);
         const data = await res.json();
         setSearchResults(Array.isArray(data) ? data : []);
@@ -41,7 +39,7 @@ export function useSocial(
       }
     }, 300);
     return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, user]);
+  }, [searchQuery]);
 
   // Loaded once the session is live. Keyed on `signedIn` too: a returning
   // login in a new tab starts with `user` already set (from localStorage) but
@@ -49,14 +47,10 @@ export function useSocial(
   useEffect(() => {
     if (!user || !signedIn) return;
     const endpoints = [
-      {
-        url: `request/pending/${user}`,
-        setter: setPendingRequests,
-        key: "requests",
-      },
-      { url: `request/sent/${user}`, setter: setSentRequests, key: "requests" },
-      { url: `friends/${user}`, setter: setFriendsList, key: "friends" },
-      { url: `blocked/${user}`, setter: setBlockedUsers, key: "blocked" },
+      { url: "request/pending", setter: setPendingRequests, key: "requests" },
+      { url: "request/sent", setter: setSentRequests, key: "requests" },
+      { url: "friends", setter: setFriendsList, key: "friends" },
+      { url: "blocked", setter: setBlockedUsers, key: "blocked" },
     ];
     endpoints.forEach(({ url, setter, key }) => {
       apiFetch(`/api/${url}`)
@@ -74,10 +68,7 @@ export function useSocial(
     async (targetUser: string) => {
       if (targetUser === user) return toast.error("You cannot add yourself!");
       try {
-        const res = await apiPostJson("/api/request/send", {
-          sender: user,
-          receiver: targetUser,
-        });
+        const res = await apiPostJson("/api/request/send", { receiver: targetUser });
         const data = await res.json();
         if (!res.ok)
           return toast.error(data.error || "Failed to send request.");
@@ -95,10 +86,7 @@ export function useSocial(
   const acceptRequest = useCallback(
     async (requester: string) => {
       try {
-        const res = await apiPostJson("/api/request/accept", {
-          sender: requester,
-          receiver: user,
-        });
+        const res = await apiPostJson("/api/request/accept", { sender: requester });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || "Failed to accept request.");
@@ -110,16 +98,13 @@ export function useSocial(
         toast.error((err instanceof Error && err.message) || "Failed to accept request.");
       }
     },
-    [user],
+    [],
   );
 
   const rejectRequest = useCallback(
     async (requester: string) => {
       try {
-        const res = await apiPostJson("/api/request/reject", {
-          sender: requester,
-          receiver: user,
-        });
+        const res = await apiPostJson("/api/request/reject", { sender: requester });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || "Failed to reject request.");
@@ -130,16 +115,13 @@ export function useSocial(
         toast.error((err instanceof Error && err.message) || "Failed to reject request.");
       }
     },
-    [user],
+    [],
   );
 
   const revokeRequest = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await apiPostJson("/api/request/revoke", {
-          sender: user,
-          receiver: targetUser,
-        });
+        const res = await apiPostJson("/api/request/revoke", { receiver: targetUser });
         const data = await res.json();
         if (!res.ok)
           return toast.error(data.error || "Failed to revoke request.");
@@ -149,16 +131,13 @@ export function useSocial(
         toast.error("Failed to revoke request.");
       }
     },
-    [user],
+    [],
   );
 
   const blockUser = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await apiPostJson("/api/block", {
-          blocker: user,
-          blocked: targetUser,
-        });
+        const res = await apiPostJson("/api/block", { blocked: targetUser });
         const data = await res.json();
         if (!res.ok) return toast.error(data.error);
         setBlockedUsers((prev) => [...prev, targetUser]);
@@ -171,16 +150,13 @@ export function useSocial(
         toast.error("Failed to block user.");
       }
     },
-    [user, activeChat, setActiveChat],
+    [activeChat, setActiveChat],
   );
 
   const unblockUser = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await apiPostJson("/api/unblock", {
-          blocker: user,
-          blocked: targetUser,
-        });
+        const res = await apiPostJson("/api/unblock", { blocked: targetUser });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || "Failed to unblock user.");
@@ -191,7 +167,7 @@ export function useSocial(
         toast.error((err instanceof Error && err.message) || "Failed to unblock user.");
       }
     },
-    [user],
+    [],
   );
 
   const getRelationship = useCallback(

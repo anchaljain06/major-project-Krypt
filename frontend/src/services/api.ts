@@ -25,7 +25,7 @@ export function notifyUnauthorized() {
 
 /**
  * fetch() wrapper for the Krypt REST API.
- * - Prefixes `path` with VITE_API_URL (pass paths like "/api/friends/alice").
+ * - Prefixes `path` with VITE_API_URL (pass paths like "/api/friends").
  * - Adds `Authorization: Bearer <token>` when a session token exists.
  * - On 401 for a request that carried a token, triggers logout and throws
  *   SessionExpiredError. Login/registration calls run without a token, so a
