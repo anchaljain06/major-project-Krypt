@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from "react";
-import type { StoredMessage } from "../services/messaging";
+import type { FileCardInfo, StoredMessage } from "../services/messaging";
+import FileTransferCard from "./FileTransferCard";
 
 interface ChatWindowProps {
   user: string;
@@ -11,6 +12,7 @@ interface ChatWindowProps {
   onSendMessage: () => void;
   onSendImage: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSendAudio: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onSendFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
   setPreviewImage: (url: string | null) => void;
   isSending: boolean;
   onlineUsers: string[];
@@ -26,6 +28,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onSendMessage,
   onSendImage,
   onSendAudio,
+  onSendFile,
   setPreviewImage,
   isSending,
   onlineUsers,
@@ -126,6 +129,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             className="max-w-full max-h-62.5 rounded-xl object-contain block mx-auto cursor-zoom-in hover:opacity-90 transition-opacity"
                             loading="lazy"
                           />
+                        ) : msg.type === "file" ? (
+                          <FileTransferCard info={JSON.parse(msg.decryptedText) as FileCardInfo} />
                         ) : msg.type === "audio" ? (
                           <audio
                             controls
@@ -217,6 +222,28 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     strokeLinejoin="round"
                     strokeWidth="2"
                     d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                  ></path>
+                </svg>
+              </label>
+
+              <input
+                type="file"
+                id="file-upload"
+                className="hidden"
+                onChange={onSendFile}
+                disabled={isInputDisabled}
+              />
+              <label
+                htmlFor={isInputDisabled ? undefined : "file-upload"}
+                className={`p-3 bg-slate-800 text-slate-400 rounded-xl transition-colors border border-slate-700 shadow-sm ${isInputDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-slate-700 cursor-pointer"}`}
+                title="Send Encrypted File"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                   ></path>
                 </svg>
               </label>

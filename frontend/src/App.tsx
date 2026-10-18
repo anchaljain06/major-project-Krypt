@@ -55,6 +55,7 @@ export default function App() {
     sendMessage,
     sendImage,
     sendAudio,
+    sendFile,
     isSending,
   } = useChat(user, myPrivateKey, protocol);
 
@@ -159,6 +160,7 @@ export default function App() {
           onSendMessage={sendMessage}
           onSendImage={sendImage}
           onSendAudio={sendAudio}
+          onSendFile={sendFile}
           setPreviewImage={setPreviewImage}
           isSending={isSending}
           onlineUsers={onlineUsers}

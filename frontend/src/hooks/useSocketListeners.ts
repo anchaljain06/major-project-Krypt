@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { socket } from "../services/socket";
 import toast from "react-hot-toast";
-import { describeSendFailure, enqueueIncoming } from "../services/messaging";
+import { describeSendFailure, enqueueIncoming, onFileChunk, resumeFileTransfers } from "../services/messaging";
 
 interface SocketListenersProps {
   user: string;
@@ -40,6 +40,22 @@ export function useSocketListeners({
       socket.off("receive_message", onMessage);
       socket.off("message_queued", onQueued);
       socket.off("message_failed", onFailed);
+    };
+  }, [user]);
+
+  // Large files (spec 15): chunks arrive as binary frames. After our own
+  // reconnect, or when a sender comes back online, ask senders to resume.
+  useEffect(() => {
+    if (!user) return;
+    const onReconnect = () => resumeFileTransfers();
+    const onPeerOnline = (peer: string) => resumeFileTransfers(peer);
+    socket.on("file:chunk", onFileChunk);
+    socket.on("connect", onReconnect);
+    socket.on("user_connected", onPeerOnline);
+    return () => {
+      socket.off("file:chunk", onFileChunk);
+      socket.off("connect", onReconnect);
+      socket.off("user_connected", onPeerOnline);
     };
   }, [user]);
 

@@ -6,7 +6,8 @@ import { decryptLocal } from "../crypto/localStore";
 import type { UserIdentityKeys } from "../crypto/mlkem";
 import { MAX_ATTACHMENT_BYTES, formatBytes } from "../crypto/media";
 import type { Protocol } from "../services/protocol";
-import { reportSendError, sendChatMessage, type StoredMessage } from "../services/messaging";
+import { MAX_FILE_BYTES } from "../crypto/fileManifest";
+import { reportSendError, sendChatMessage, sendFile as offerFile, type StoredMessage } from "../services/messaging";
 
 export type DecryptedMessage = StoredMessage;
 
@@ -150,6 +151,29 @@ export function useChat(user: string, myPrivateKey: UserIdentityKeys | null, pro
     [activeChat, isSending, protocol],
   );
 
+  /** Any file, sent in encrypted chunks after the peer accepts (spec 15). Images and audio keep their own buttons. */
+  const sendFile = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file || !activeChat) return;
+      if (!protocol) {
+        toast.error("Secure messaging is still starting. Try again in a moment.");
+        return;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        toast.error(`File is too large: ${formatBytes(file.size)} (limit ${formatBytes(MAX_FILE_BYTES)}).`);
+        return;
+      }
+      try {
+        await offerFile(protocol, activeChat, file);
+      } catch (err) {
+        reportSendError(err, activeChat);
+      }
+    },
+    [activeChat, protocol],
+  );
+
   return {
     activeChat,
     setActiveChat,
@@ -161,6 +185,7 @@ export function useChat(user: string, myPrivateKey: UserIdentityKeys | null, pro
     sendMessage,
     sendImage,
     sendAudio,
+    sendFile,
     isSending,
   };
 }

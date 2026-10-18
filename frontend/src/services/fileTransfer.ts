@@ -293,6 +293,11 @@ export class FileTransferManager {
     return packet;
   }
 
+  /** Starts sending without making the caller (the receive queue) wait for it. */
+  private kick(id: string) {
+    this.pump(id).catch((err) => console.error("[Krypt] file send:", err));
+  }
+
   /** Sends what the window allows. Single-flight per transfer; a call during a run schedules one more run. */
   private async pump(id: string): Promise<void> {
     if (this.pumping.has(id)) {
@@ -380,7 +385,7 @@ export class FileTransferManager {
     if (resume) this.inFlight.set(id, new Set());
     else acked.forEach((i) => sent?.delete(i));
     await this.d.store.deletePackets(id, acked);
-    await this.pump(id);
+    this.kick(id);
   }
 
   // -------------------------------------------------------------------------
@@ -406,6 +411,7 @@ export class FileTransferManager {
 
   private async onOffer(peer: string, m: FileManifestV1): Promise<boolean> {
     if (this.views.has(m.transferId) || (await this.d.store.getTransfer(m.transferId))) return false;
+    await this.expire();
     const records = await this.d.store.listTransfers();
     const active = records.filter((r) => r.direction === "in" && ACTIVE.includes(r.status));
     const stored = records
@@ -589,7 +595,7 @@ export class FileTransferManager {
             x.status = "sending";
             return true;
           });
-          await this.pump(id);
+          this.kick(id);
         }
         break;
       case "reject":

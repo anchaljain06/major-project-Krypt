@@ -18,6 +18,8 @@ import {
   type FileManifestV1,
 } from "../src/crypto/fileManifest";
 import { decryptFileChunk, encryptFileChunk, importFileKey } from "../src/crypto/fileTransfer";
+import { encodeAppMessage, parseAppMessage } from "../src/crypto/appMessage";
+import { parseFileControl } from "../src/crypto/fileManifest";
 
 const m = (size = 2.5 * FILE_CHUNK_SIZE): FileManifestV1 => createManifest("report.pdf", "application/pdf", size);
 
@@ -165,5 +167,29 @@ describe("safeFileName", () => {
     ["photo.jpg", "photo.jpg"],
   ])("%j -> %j", (input, out) => {
     expect(safeFileName(input)).toBe(out);
+  });
+});
+
+describe("control messages", () => {
+  const id = m().transferId;
+  it("parse inside a v1 message with contentType \"file\"", () => {
+    const offer = { op: "offer" as const, manifest: m() };
+    const msg = parseAppMessage(encodeAppMessage({ v: 1, id: "x", sentAt: 1, ctl: offer }), "file");
+    expect(msg.ctl).toEqual(offer);
+    const ack = { op: "ack" as const, transferId: id, have: toBase64url(new Uint8Array([3])) };
+    expect(parseAppMessage(encodeAppMessage({ v: 1, id: "y", sentAt: 1, ctl: ack }), "file").ctl).toEqual(ack);
+  });
+
+  it.each([
+    ["no op", { transferId: id }],
+    ["unknown op", { op: "delete", transferId: id }],
+    ["bad transferId", { op: "cancel", transferId: "x" }],
+    ["ack without a bitmap", { op: "ack", transferId: id }],
+    ["ack with an empty bitmap", { op: "ack", transferId: id, have: "" }],
+    ["ack with an oversize bitmap", { op: "ack", transferId: id, have: toBase64url(new Uint8Array(513)) }],
+    ["offer with a bad manifest", { op: "offer", manifest: { ...m(), size: -1 } }],
+  ])("reject %s", (_n, ctl) => {
+    expect(() => parseFileControl(ctl)).toThrow(/malformed/);
+    expect(() => parseAppMessage(encodeAppMessage({ v: 1, id: "z", sentAt: 1, ctl: ctl as never }), "file")).toThrow();
   });
 });

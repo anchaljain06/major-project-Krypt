@@ -16,6 +16,10 @@
  * they are re-sent on the surviving session. Receivers drop duplicates by id.
  * The outbox and the seen ids are persisted, encrypted under the store key
  * (services/messageState.ts), so a refresh loses neither.
+ *
+ * Large files (spec 15): control messages are ordinary v1 messages with
+ * contentType "file"; chunks are binary `file:chunk` frames. Both are handled
+ * by one FileTransferManager per Protocol (`filesFor`).
  */
 import toast from "react-hot-toast";
 import { toBase64 } from "@krypt/shared";
@@ -30,13 +34,15 @@ import {
 } from "../crypto/appMessage";
 import { fromBase64url, toBase64url } from "../crypto/encoding";
 import { DecryptError, HandshakeError, type DecryptErrorCode } from "../crypto/errors";
+import type { FileControl } from "../crypto/fileManifest";
 import { encryptLocal } from "../crypto/localStore";
 import { AttachmentError, decryptAttachment, encryptAttachment } from "../crypto/media";
 import type { UserIdentityKeys } from "../crypto/mlkem";
 import { db } from "./db";
+import { FileTransferManager, type ChunkFrame, type ChunkSendResult } from "./fileTransfer";
 import type { OutgoingItem } from "./messageState";
 import { resetOneTimePrekeysAfterUnknown } from "./prekeyMaintenance";
-import { protocolReady, type Protocol } from "./protocol";
+import { appLock, protocolReady, type Protocol } from "./protocol";
 import { socket } from "./socket";
 
 /** A message as kept (encrypted) in the local Dexie store and shown in the UI. */
@@ -44,12 +50,19 @@ export interface StoredMessage {
   id?: number;
   from: string;
   to: string;
-  /** Text, or a data: URL for images and audio. */
+  /** Text, a data: URL for images and audio, or FileCardInfo JSON for a file transfer. */
   decryptedText: string;
   type: ChatContentType;
   timestamp: number;
   /** Application message id (v1). */
   msgId?: string;
+}
+
+/** What the chat shows for a file transfer; live status comes from the FileTransferManager. */
+export interface FileCardInfo {
+  transferId: string;
+  name: string;
+  size: number;
 }
 
 export async function storeMessage(keys: UserIdentityKeys, m: StoredMessage) {
@@ -209,6 +222,67 @@ export async function sendChatMessage(p: Protocol, peer: string, content: Outgoi
   await storeMessage(p.keys, { from: p.username, to: peer, decryptedText: display, type: content.type, timestamp: msg.sentAt, msgId: msg.id });
 }
 
+// ---------------------------------------------------------------------------
+// Large files
+
+/** Sends one file control message as a normal v1 message (kept for re-send like any other). */
+async function sendFileControl(p: Protocol, peer: string, ctl: FileControl): Promise<void> {
+  const item: Outgoing = { contentType: "file", msg: { v: 1, id: newId(), sentAt: Date.now(), ctl } };
+  const sessionId = await transmit(p, peer, item);
+  await track(p, peer, sessionId, item);
+}
+
+/** Relays one chunk; the relay answers { ok } or { ok: false, error }. */
+function sendFileChunk(peer: string, frame: ChunkFrame): Promise<ChunkSendResult> {
+  return new Promise((resolve) => {
+    socket.timeout(30_000).emit("file:chunk", { to: peer, ...frame }, (err: Error | null, ack?: { ok?: boolean; error?: string }) => {
+      if (err) resolve("NO_ACK");
+      else resolve(ack?.ok ? "ok" : (ack?.error ?? "INVALID"));
+    });
+  });
+}
+
+const managers = new WeakMap<Protocol, FileTransferManager>();
+
+/** The file-transfer manager of this Protocol. */
+export function filesFor(p: Protocol): FileTransferManager {
+  let m = managers.get(p);
+  if (!m) {
+    m = new FileTransferManager({
+      self: p.username,
+      store: p.files,
+      lock: appLock,
+      sendControl: (peer, ctl) => sendFileControl(p, peer, ctl),
+      sendChunk: sendFileChunk,
+    });
+    managers.set(p, m);
+  }
+  return m;
+}
+
+/** Offers `file` to `peer` and shows it in the chat. */
+export async function sendFile(p: Protocol, peer: string, file: File): Promise<void> {
+  const m = await filesFor(p).offer(peer, file, file.name || "file", file.type);
+  const info: FileCardInfo = { transferId: m.transferId, name: m.name, size: m.size };
+  await storeMessage(p.keys, { from: p.username, to: peer, decryptedText: JSON.stringify(info), type: "file", timestamp: Date.now() });
+}
+
+/** A relayed `file:chunk` frame. */
+export function onFileChunk(raw: unknown) {
+  const from = (raw as { from?: unknown } | null)?.from;
+  if (typeof from !== "string") return;
+  void protocolReady()
+    .then((p) => filesFor(p).onChunk(from, raw))
+    .catch((err) => console.error("[Krypt] file chunk:", err));
+}
+
+/** After a reconnect (no peer) or when `peer` comes online: ask senders to continue. */
+export function resumeFileTransfers(peer?: string) {
+  void protocolReady()
+    .then((p) => filesFor(p).resumeWith(peer))
+    .catch((err) => console.warn("[Krypt] file resume:", err));
+}
+
 /** After an authenticated message from `peer` on `sessionId`: re-send what we sent on a session that lost. */
 export async function resendAfterSessionSwitch(p: Protocol, peer: string, sessionId: string) {
   const box = await p.messageState.takeOutbox(peer);
@@ -269,6 +343,17 @@ async function processIncoming(raw: unknown) {
   if (await p.messageState.hasSeen(peer, msg.id)) return;
 
   void p.kt.checkGossip(peer, msg.kt).catch((err) => console.warn("[KT] gossip check failed:", err));
+
+  if (msg.ctl) {
+    const newOffer = await filesFor(p).onControl(peer, msg.ctl);
+    if (newOffer && msg.ctl.op === "offer") {
+      const { transferId, name, size } = msg.ctl.manifest;
+      const info: FileCardInfo = { transferId, name, size };
+      await storeMessage(p.keys, { from: peer, to: p.username, decryptedText: JSON.stringify(info), type: "file", timestamp: Date.now(), msgId: msg.id });
+    }
+    await p.messageState.markSeen(peer, msg.id);
+    return;
+  }
 
   let display: string;
   if (msg.file) {

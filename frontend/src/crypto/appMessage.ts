@@ -6,20 +6,25 @@
  *   { to, type: "krypt-v1", envelope: <EnvelopeV1, spec 8.2>, attachment?: <b64url> }
  *
  * The relay stamps `from` on the frame; it must equal envelope.from. The
- * envelope's contentType ("text" | "image" | "audio") is authenticated as
- * part of the header. The plaintext inside the envelope is UTF-8 JSON:
+ * envelope's contentType ("text" | "image" | "audio" | "file") is
+ * authenticated as part of the header. The plaintext inside the envelope is
+ * UTF-8 JSON:
  *
- *   { v: 1, id, sentAt, text? , file?: AttachmentMeta, kt?: { treeSize, rootHash } }
+ *   { v: 1, id, sentAt, text?, file?: AttachmentMeta, ctl?: FileControl, kt?: { treeSize, rootHash } }
+ *
+ * contentType "file" carries a large-file control message (`ctl`, spec 15);
+ * the file's chunks travel separately as binary `file:chunk` frames.
  *
  * `kt` is key-transparency gossip (plan 3.3). `id` lets the receiver drop a
  * message the sender re-sent after a session race.
  */
 import type { EnvelopeV1 } from "./envelope";
 import { fromUtf8, utf8 } from "./encoding";
+import { parseFileControl, type FileControl } from "./fileManifest";
 import { MAX_SOCKET_MESSAGE_BYTES, parseAttachmentMeta, type AttachmentMeta } from "./media";
 
 export const WIRE_TYPE = "krypt-v1";
-export type ChatContentType = "text" | "image" | "audio";
+export type ChatContentType = "text" | "image" | "audio" | "file";
 export const MAX_TEXT_CHARS = 64 * 1024;
 /** socket.io framing around the JSON payload (`42<ack>["private_message",...]`). */
 const FRAME_OVERHEAD = 64;
@@ -35,6 +40,7 @@ export interface AppMessage {
   sentAt: number;
   text?: string;
   file?: AttachmentMeta;
+  ctl?: FileControl;
   kt?: KtGossip;
 }
 
@@ -46,7 +52,7 @@ export interface WirePayload {
 }
 
 export function isChatContentType(x: string): x is ChatContentType {
-  return x === "text" || x === "image" || x === "audio";
+  return x === "text" || x === "image" || x === "audio" || x === "file";
 }
 
 export function encodeAppMessage(m: AppMessage): Uint8Array {
@@ -69,6 +75,8 @@ export function parseAppMessage(bytes: Uint8Array, contentType: string): AppMess
   if (contentType === "text") {
     if (typeof o.text !== "string" || o.text.length > MAX_TEXT_CHARS) throw new Error("text message has no text");
     m.text = o.text;
+  } else if (contentType === "file") {
+    m.ctl = parseFileControl(o.ctl);
   } else {
     const file = parseAttachmentMeta(o.file);
     if (!file.mime.startsWith(`${contentType}/`)) throw new Error(`${contentType} message carries a ${file.mime} file`);

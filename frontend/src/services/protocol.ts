@@ -7,6 +7,8 @@
  *   "krypt-prekeys-v1:<user>" (IndexedDbPrekeyStore).
  * - Resend outbox and seen message ids: IndexedDB "krypt-msgstate-v1:<user>"
  *   (IndexedDbMessageState, services/messageState.ts).
+ * - File transfers (records with the file keys, packets, chunks): IndexedDB
+ *   "krypt-files-v1:<user>" (FileStore, services/fileStore.ts).
  * All are sealed with AES-256-GCM under ONE store key:
  *
  *   storeKey = HKDF-SHA-256(salt = "krypt-store-salt-v1",
@@ -31,6 +33,7 @@ import type { PrekeyBundleWire } from "../crypto/prekeys";
 import { SessionManager, createMutexLock, type LockFn } from "../crypto/session";
 import { IndexedDbPrekeyStore, IndexedDbSessionStore } from "../crypto/session-store";
 import { apiFetch } from "./api";
+import { FileStore } from "./fileStore";
 import { KtClient } from "./kt";
 import { IndexedDbMessageState } from "./messageState";
 import { socket } from "./socket";
@@ -70,6 +73,7 @@ export const appLock: LockFn = (() => {
 export const sessionDbName = (user: string) => `krypt-sessions-v1:${user}`;
 export const prekeyDbName = (user: string) => `krypt-prekeys-v1:${user}`;
 export const messageStateDbName = (user: string) => `krypt-msgstate-v1:${user}`;
+export const filesDbName = (user: string) => `krypt-files-v1:${user}`;
 
 /** GET /api/bundle/:username. Claims one of the peer's one-time prekeys. */
 async function fetchBundle(username: string): Promise<PrekeyBundleWire> {
@@ -103,6 +107,7 @@ export class Protocol {
   readonly sessions: IndexedDbSessionStore;
   readonly prekeys: IndexedDbPrekeyStore;
   readonly messageState: IndexedDbMessageState;
+  readonly files: FileStore;
   readonly kt: KtClient;
   private readonly trust: TrustFn;
   private readonly manager: SessionManager;
@@ -115,6 +120,7 @@ export class Protocol {
     this.sessions = new IndexedDbSessionStore({ key: storeKey, dbName: sessionDbName(username) });
     this.prekeys = new IndexedDbPrekeyStore({ key: storeKey, dbName: prekeyDbName(username) });
     this.messageState = new IndexedDbMessageState({ key: storeKey, dbName: messageStateDbName(username), lock: appLock });
+    this.files = new FileStore({ key: storeKey, dbName: filesDbName(username) });
     this.manager = new SessionManager({
       self: {
         username: this.username,
@@ -135,7 +141,7 @@ export class Protocol {
   }
 
   async close() {
-    await Promise.allSettled([this.sessions.close(), this.prekeys.close(), this.messageState.close()]);
+    await Promise.allSettled([this.sessions.close(), this.prekeys.close(), this.messageState.close(), this.files.close()]);
   }
 }
 
@@ -203,20 +209,23 @@ function deleteDb(name: string): Promise<void> {
 
 /**
  * Deletes this user's ratchet sessions on this device (Wipe Local Device
- * Cache), and with them the resend outbox and seen ids, which refer to those
- * sessions. Prekeys are kept.
+ * Cache), and with them the resend outbox, seen ids and file transfers,
+ * which refer to those sessions. Prekeys are kept.
  */
 export async function deleteSessionDatabase(user: string) {
-  if (current?.username === user) await Promise.allSettled([current.sessions.close(), current.messageState.close()]);
+  if (current?.username === user) {
+    await Promise.allSettled([current.sessions.close(), current.messageState.close(), current.files.close()]);
+  }
   await deleteDb(sessionDbName(user));
   await deleteDb(messageStateDbName(user));
+  await deleteDb(filesDbName(user));
 }
 
-/** Deletes every user's ratchet-session and message-state databases on this device (login screen "Clear" button). */
+/** Deletes every user's ratchet-session, message-state and file databases on this device (login screen "Clear" button). */
 export async function deleteAllSessionDatabases() {
   try {
     const dbs = (await indexedDB.databases?.()) ?? [];
-    const prefixes = ["krypt-sessions-v1:", "krypt-msgstate-v1:"];
+    const prefixes = ["krypt-sessions-v1:", "krypt-msgstate-v1:", "krypt-files-v1:"];
     await Promise.all(
       dbs
         .map((d) => d.name)
