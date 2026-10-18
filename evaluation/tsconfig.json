@@ -10,7 +10,9 @@
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    // frontend/src/crypto (imported by E5 and E7) uses the KT/byte helpers from shared/.
+    "paths": { "@krypt/shared": ["../shared/src/index.ts"] }
   },
   "include": ["src", "bench", "scripts", "vite.config.ts"]
 }

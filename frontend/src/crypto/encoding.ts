@@ -9,7 +9,16 @@
  * Base64url is only for the network edge, and its decoder is strict so every
  * byte string has exactly one accepted text form (a bit flip in the text can
  * never decode to the same bytes).
+ *
+ * The plain byte helpers (UTF-8, u32, concatenation, standard base64, hex,
+ * SHA-256) come from @krypt/shared, so the whole repo has one copy of each.
  */
+import { concatBytes, fromUtf8, readU32be, u32be, utf8 } from "@krypt/shared";
+
+export { fromUtf8, utf8 };
+
+/** u32(x) in the spec: 4-byte big-endian encoding of an integer in [0, 2^32). */
+export const u32 = u32be;
 
 /** Domain-separation labels. Never reuse a label for a second purpose. */
 export const LABELS = {
@@ -25,43 +34,7 @@ export const LABELS = {
   prekeysAtRest: "krypt-prekeys-v1",
 } as const;
 
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder("utf-8", { fatal: true });
-
-/** UTF-8 encode a string. */
-export function utf8(s: string): Uint8Array {
-  return textEncoder.encode(s);
-}
-
-/** Strict UTF-8 decode (throws on invalid sequences). */
-export function fromUtf8(b: Uint8Array): string {
-  return textDecoder.decode(b);
-}
-
 export const EMPTY = new Uint8Array(0);
-
-/** 4-byte big-endian encoding of an integer in [0, 2^32). */
-export function u32(x: number): Uint8Array {
-  if (!Number.isInteger(x) || x < 0 || x > 0xffffffff) {
-    throw new RangeError("u32 out of range");
-  }
-  const out = new Uint8Array(4);
-  new DataView(out.buffer).setUint32(0, x, false);
-  return out;
-}
-
-/** Concatenate byte arrays (raw, no prefixes). Only for building lp output and similar. */
-export function concat(...parts: Uint8Array[]): Uint8Array {
-  let total = 0;
-  for (const p of parts) total += p.length;
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const p of parts) {
-    out.set(p, off);
-    off += p.length;
-  }
-  return out;
-}
 
 /** A field is either raw bytes or a string (encoded as UTF-8). */
 export type Field = Uint8Array | string;
@@ -73,7 +46,7 @@ export function lp(...fields: Field[]): Uint8Array {
     const bytes = typeof f === "string" ? utf8(f) : f;
     parts.push(u32(bytes.length), bytes);
   }
-  return concat(...parts);
+  return concatBytes(...parts);
 }
 
 /**
@@ -81,12 +54,11 @@ export function lp(...fields: Field[]): Uint8Array {
  * count is undefined). Throws if the input is truncated or has trailing bytes.
  */
 export function unlp(bytes: Uint8Array, count?: number): Uint8Array[] {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const out: Uint8Array[] = [];
   let off = 0;
   while (off < bytes.length) {
     if (off + 4 > bytes.length) throw new Error("lp: truncated length");
-    const len = view.getUint32(off, false);
+    const len = readU32be(bytes, off);
     off += 4;
     if (len > bytes.length - off) throw new Error("lp: truncated field");
     out.push(bytes.subarray(off, off + len));
@@ -101,7 +73,7 @@ export function unlp(bytes: Uint8Array, count?: number): Uint8Array[] {
 /** Read a field produced by u32(). */
 export function readU32(b: Uint8Array): number {
   if (b.length !== 4) throw new Error("u32 field must be 4 bytes");
-  return new DataView(b.buffer, b.byteOffset, 4).getUint32(0, false);
+  return readU32be(b, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,25 +139,6 @@ export function fromBase64url(s: string): Uint8Array {
     out[o++] = ((vals[i + 1] & 0x0f) << 4) | (vals[i + 2] >> 2);
   }
   return out;
-}
-
-/**
- * Strict standard base64 (with '=' padding) decoder, used only to read the
- * legacy `identityKey` JSON produced by mlkem.ts. Canonical form is enforced by
- * re-encoding and comparing.
- */
-export function fromBase64Std(s: string): Uint8Array {
-  if (typeof s !== "string" || s.length % 4 !== 0) throw new Error("base64: invalid length");
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(s)) throw new Error("base64: invalid character");
-  const unpadded = s.replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
-  const bytes = fromBase64url(unpadded);
-  if (toBase64Std(bytes) !== s) throw new Error("base64: non-canonical");
-  return bytes;
-}
-
-export function toBase64Std(bytes: Uint8Array): string {
-  const u = toBase64url(bytes).replace(/-/g, "+").replace(/_/g, "/");
-  return u + "=".repeat((4 - (u.length % 4)) % 4);
 }
 
 // ---------------------------------------------------------------------------

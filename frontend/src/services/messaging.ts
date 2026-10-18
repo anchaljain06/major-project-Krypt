@@ -18,6 +18,7 @@
  * (services/messageState.ts), so a refresh loses neither.
  */
 import toast from "react-hot-toast";
+import { toBase64 } from "@krypt/shared";
 import {
   assertFrameFits,
   buildWirePayload,
@@ -32,7 +33,6 @@ import { DecryptError, HandshakeError, type DecryptErrorCode } from "../crypto/e
 import { encryptLocal } from "../crypto/localStore";
 import { AttachmentError, assertAttachmentFits, decryptAttachment, encryptAttachment } from "../crypto/media";
 import type { UserIdentityKeys } from "../crypto/mlkem";
-import { bytesToBase64 } from "../crypto/utils";
 import { db } from "./db";
 import type { OutgoingItem } from "./messageState";
 import { resetOneTimePrekeysAfterUnknown } from "./prekeyMaintenance";
@@ -186,7 +186,7 @@ function newId(): string {
 }
 
 export function toDataUrl(data: Uint8Array, mime: string): string {
-  return `data:${mime};base64,${bytesToBase64(data)}`;
+  return `data:${mime};base64,${toBase64(data)}`;
 }
 
 /** Encrypts, relays and (after the relay accepted it) stores one message. */

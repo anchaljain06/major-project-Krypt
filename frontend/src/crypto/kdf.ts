@@ -4,7 +4,8 @@
  * All primitives come from Web Crypto (`globalThis.crypto.subtle`), which works
  * in browsers and in Node, so the same code runs in the app and in tests.
  */
-import { LABELS, lp, u32 } from "./encoding";
+import { sha256 } from "@krypt/shared";
+import { LABELS, lp, u32, utf8 } from "./encoding";
 
 const subtle = (): SubtleCrypto => {
   const s = globalThis.crypto?.subtle;
@@ -23,11 +24,6 @@ export function bs(u: Uint8Array): Uint8Array<ArrayBuffer> {
 const ZERO32 = new Uint8Array(32);
 const BYTE_01 = new Uint8Array([0x01]);
 const BYTE_02 = new Uint8Array([0x02]);
-
-/** SHA-256. */
-export async function sha256(data: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await subtle().digest("SHA-256", bs(data)));
-}
 
 /** HMAC-SHA-256(key, data). */
 export async function hmacSha256(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
@@ -90,7 +86,7 @@ export async function kdfChain(ck: Uint8Array): Promise<{ mk: Uint8Array; ck: Ui
  */
 export async function messageKeyAndIv(mk: Uint8Array): Promise<{ key: Uint8Array; iv: Uint8Array }> {
   if (mk.length !== 32) throw new RangeError("messageKeyAndIv: mk must be 32 bytes");
-  const okm = await hkdf(ZERO32, mk, new TextEncoder().encode(LABELS.messageKey), 44);
+  const okm = await hkdf(ZERO32, mk, utf8(LABELS.messageKey), 44);
   return { key: okm.slice(0, 32), iv: okm.slice(32, 44) };
 }
 

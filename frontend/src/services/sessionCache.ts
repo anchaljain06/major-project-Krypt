@@ -1,5 +1,5 @@
 import { Dexie, type Table } from "dexie";
-import { bytesToBase64, base64ToBytes } from "../crypto/utils";
+import { fromBase64, toBase64 } from "@krypt/shared";
 
 /**
  * Refresh-survivable session cache for the private identity key bundle.
@@ -64,7 +64,7 @@ export async function createSessionCache(user: string, bundle: string): Promise<
   combined.set(new Uint8Array(ciphertext), iv.length);
 
   await keyDb.keys.put({ id: user, key });
-  localStorage.setItem(cacheKey(user), CACHE_HEADER + bytesToBase64(combined));
+  localStorage.setItem(cacheKey(user), CACHE_HEADER + toBase64(combined));
   sessionStorage.setItem(ACTIVE_FLAG, "1");
 }
 
@@ -86,7 +86,7 @@ export async function restoreSessionCache(user: string): Promise<string | null> 
   }
 
   try {
-    const combined = base64ToBytes(stored.substring(CACHE_HEADER.length));
+    const combined = fromBase64(stored.substring(CACHE_HEADER.length));
     const plaintext = await window.crypto.subtle.decrypt(
       {
         name: "AES-GCM",

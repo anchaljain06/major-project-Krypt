@@ -6,7 +6,8 @@
  * label ("Krypt-SPK" / "Krypt-OPK"), so the relay cannot pass one kind off as
  * the other. Private halves live in an injectable `PrekeyStore`.
  */
-import { LABELS, fromBase64Std, fromBase64url, lp, toBase64url, u32 } from "./encoding";
+import { fromBase64 } from "@krypt/shared";
+import { LABELS, fromBase64url, lp, toBase64url, u32 } from "./encoding";
 import { HandshakeError } from "./errors";
 import { MLDSA87, mldsaSign, mldsaVerify, prekeyKem } from "./pq";
 
@@ -231,7 +232,7 @@ export function parseIdentityKey(identityKey: string): Uint8Array {
   if (typeof dsa !== "string") throw new HandshakeError("BAD_BUNDLE", "identityKey has no ML-DSA key");
   let key: Uint8Array;
   try {
-    key = fromBase64Std(dsa);
+    key = fromBase64(dsa);
   } catch {
     throw new HandshakeError("BAD_BUNDLE", "identityKey ML-DSA key is not base64");
   }

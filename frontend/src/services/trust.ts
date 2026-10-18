@@ -11,11 +11,11 @@
  *      re-pins it, and the change is recorded in the contact.
  */
 import toast from "react-hot-toast";
-import { ctEqual, fromBase64Std, toBase64Std } from "../crypto/encoding";
+import { fromBase64, sha256, toBase64, toHex, utf8 } from "@krypt/shared";
+import { ctEqual } from "../crypto/encoding";
 import { decryptLocal, encryptLocal } from "../crypto/localStore";
 import type { UserIdentityKeys } from "../crypto/mlkem";
 import { keyFingerprint } from "../crypto/safetyNumber";
-import { sha256Hex } from "../crypto/utils";
 import { db } from "./db";
 import { askIdentityChange } from "./identityPrompt";
 import type { KtClient, KtPeerState } from "./kt";
@@ -31,7 +31,7 @@ export interface ContactRecord {
   keyChanges?: { at: number; from: string; to: string }[];
 }
 
-const contactId = (username: string) => sha256Hex(username);
+const contactId = async (username: string) => toHex(await sha256(utf8(username)));
 
 export async function loadContact(username: string, keys: UserIdentityKeys): Promise<ContactRecord | null> {
   const row = await db.contacts.get(await contactId(username));
@@ -47,10 +47,10 @@ async function saveContact(rec: ContactRecord, keys: UserIdentityKeys) {
 /** The pinned ML-DSA key of a contact, or null if none is pinned. */
 export function pinnedDsa(rec: ContactRecord): Uint8Array | null {
   try {
-    if (rec.dsa) return fromBase64Std(rec.dsa);
+    if (rec.dsa) return fromBase64(rec.dsa);
     if (rec.publicKey) {
       const dsa = (JSON.parse(rec.publicKey) as { dsa?: unknown }).dsa;
-      if (typeof dsa === "string" && dsa.length > 0) return fromBase64Std(dsa);
+      if (typeof dsa === "string" && dsa.length > 0) return fromBase64(dsa);
     }
   } catch {
     // Unparseable legacy pin: treat as no ML-DSA pin.
@@ -93,7 +93,7 @@ export function createTrustIdentity(keys: UserIdentityKeys, kt: KtClient) {
     const pinned = contact ? pinnedDsa(contact) : null;
     const now = Date.now();
     if (!pinned) {
-      await saveContact({ ...(contact ?? {}), username: peer, dsa: toBase64Std(dsaPub), pinnedAt: now }, keys);
+      await saveContact({ ...(contact ?? {}), username: peer, dsa: toBase64(dsaPub), pinnedAt: now }, keys);
       return true;
     }
     if (ctEqual(pinned, dsaPub)) return true;
@@ -109,7 +109,7 @@ export function createTrustIdentity(keys: UserIdentityKeys, kt: KtClient) {
       {
         ...contact!,
         username: peer,
-        dsa: toBase64Std(dsaPub),
+        dsa: toBase64(dsaPub),
         publicKey: undefined,
         pinnedAt: now,
         keyChanges: [...(contact!.keyChanges ?? []), { at: now, from, to }],

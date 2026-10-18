@@ -21,6 +21,7 @@ export default defineConfig({
         },
       },
       {
+        resolve: { alias: { "@krypt/shared": shared } },
         test: {
           name: "kat",
           environment: "node",

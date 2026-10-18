@@ -1,6 +1,6 @@
 import { ml_kem1024 } from "@noble/post-quantum/ml-kem.js";
 import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
-import { bytesToBase64, base64ToBytes } from "./utils";
+import { fromBase64, toBase64 } from "@krypt/shared";
 
 /**
  * Project Krypt - long-term identity keys and their storage formats.
@@ -51,8 +51,8 @@ export function exportPublicIdentity(
 ): string {
   return JSON.stringify({
     version: "ML-KEM-1024/ML-DSA-87 (NIST FIPS 203/204)",
-    kem: bytesToBase64(keys.kemPublicKey),
-    dsa: bytesToBase64(keys.dsaPublicKey),
+    kem: toBase64(keys.kemPublicKey),
+    dsa: toBase64(keys.dsaPublicKey),
   });
 }
 
@@ -60,10 +60,10 @@ export function exportPublicIdentity(
 export function exportPrivateIdentity(keys: UserIdentityKeys): string {
   return JSON.stringify({
     version: "ML-KEM-1024/ML-DSA-87 (NIST FIPS 203/204)",
-    kemPub: bytesToBase64(keys.kemPublicKey),
-    kemSec: bytesToBase64(keys.kemSecretKey),
-    dsaPub: bytesToBase64(keys.dsaPublicKey),
-    dsaSec: bytesToBase64(keys.dsaSecretKey),
+    kemPub: toBase64(keys.kemPublicKey),
+    kemSec: toBase64(keys.kemSecretKey),
+    dsaPub: toBase64(keys.dsaPublicKey),
+    dsaSec: toBase64(keys.dsaSecretKey),
   });
 }
 
@@ -77,16 +77,16 @@ export function importPrivateIdentity(serialized: string): UserIdentityKeys {
     const parsed = JSON.parse(serialized);
     if (parsed.kemSec && parsed.kemPub) {
       return {
-        kemPublicKey: base64ToBytes(parsed.kemPub),
-        kemSecretKey: base64ToBytes(parsed.kemSec),
-        dsaPublicKey: parsed.dsaPub ? base64ToBytes(parsed.dsaPub) : new Uint8Array(0),
-        dsaSecretKey: parsed.dsaSec ? base64ToBytes(parsed.dsaSec) : new Uint8Array(0),
+        kemPublicKey: fromBase64(parsed.kemPub),
+        kemSecretKey: fromBase64(parsed.kemSec),
+        dsaPublicKey: parsed.dsaPub ? fromBase64(parsed.dsaPub) : new Uint8Array(0),
+        dsaSecretKey: parsed.dsaSec ? fromBase64(parsed.dsaSec) : new Uint8Array(0),
       };
     }
   } catch {
     // Fallback for raw base64 ML-KEM secret key
   }
-  const kemSecretKey = base64ToBytes(serialized);
+  const kemSecretKey = fromBase64(serialized);
   const kemPublicKey = ml_kem1024.getPublicKey(kemSecretKey);
   return {
     kemPublicKey,

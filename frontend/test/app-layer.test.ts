@@ -32,7 +32,7 @@ describe("attachments", () => {
     flipped[10] ^= 1;
     await expect(decryptAttachment(flipped, meta)).rejects.toThrow(AttachmentError);
     // Fix up the hash so only GCM catches it.
-    const { sha256 } = await import("../src/crypto/kdf");
+    const { sha256 } = await import("@krypt/shared");
     await expect(decryptAttachment(flipped, { ...meta, sha256: toBase64url(await sha256(flipped)) })).rejects.toThrow(
       /authentication/,
     );

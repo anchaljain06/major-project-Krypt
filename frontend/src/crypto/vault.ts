@@ -1,5 +1,5 @@
 import { db } from "../services/db";
-import { bytesToBase64, base64ToBytes } from "./utils";
+import { fromBase64, toBase64 } from "@krypt/shared";
 
 /**
  * Project Krypt - Vault & Backup Cryptographic Engine
@@ -89,7 +89,7 @@ export async function encryptVaultData(
   combined.set(iv, salt.length);
   combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
 
-  return "ENC:v2:" + bytesToBase64(combined);
+  return "ENC:v2:" + toBase64(combined);
 }
 
 export async function decryptVaultData(
@@ -114,7 +114,7 @@ export async function decryptVaultData(
   const base64 = isV2 ? trimmed.substring(7) : trimmed.substring(4);
   let combined: Uint8Array;
   try {
-    combined = base64ToBytes(base64);
+    combined = fromBase64(base64);
   } catch {
     throw new Error("Invalid vault payload: corrupted or incomplete file.");
   }

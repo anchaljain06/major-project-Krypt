@@ -20,8 +20,9 @@
  * base64'd its ciphertext again, which is where the old ~8.5 MB limit came
  * from). The sender also checks the final frame length before emitting.
  */
+import { sha256 } from "@krypt/shared";
 import { lp, toBase64url, fromBase64url, ctEqual } from "./encoding";
-import { bs, sha256 } from "./kdf";
+import { bs } from "./kdf";
 
 export const MAX_SOCKET_MESSAGE_BYTES = 16 * 1024 * 1024;
 export const ENVELOPE_RESERVE_BYTES = 64 * 1024;

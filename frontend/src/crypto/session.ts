@@ -14,7 +14,7 @@
  *  - A root step happens only when a new peer key arrives (receive step) or
  *    when we next send after that (send step), never because of timing.
  */
-import { compareBytes, ctEqual, toBase64url, wipe } from "./encoding";
+import { compareBytes, ctEqual, toBase64url, utf8, wipe } from "./encoding";
 import {
   headerAad,
   parseEnvelope,
@@ -122,7 +122,7 @@ const fail = (code: ConstructorParameters<typeof DecryptError>[0], detail?: stri
 };
 
 function validName(s: string): boolean {
-  const len = new TextEncoder().encode(s).length;
+  const len = utf8(s).length;
   return len >= 1 && len <= MAX_NAME_BYTES;
 }
 
@@ -183,7 +183,7 @@ export class SessionManager {
    */
   async encrypt(peer: string, plaintext: Uint8Array, contentType: string): Promise<EnvelopeV1> {
     if (!validName(peer) || peer === this.self.username) throw new Error("invalid peer");
-    const ctLen = new TextEncoder().encode(contentType).length;
+    const ctLen = utf8(contentType).length;
     if (ctLen < 1 || ctLen > MAX_CONTENT_TYPE_BYTES) throw new Error("invalid contentType");
     if (plaintext.length > MAX_PLAINTEXT_BYTES) throw new Error("plaintext too large");
 

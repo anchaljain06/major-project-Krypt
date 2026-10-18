@@ -10,16 +10,16 @@
  * stretches the 32-byte digest to the 60 bytes that 12 groups need; the
  * security of the comparison is that of h.
  */
-import { compareBytes, concat } from "./encoding";
-import { sha256 } from "./kdf";
+import { concatBytes, sha256, toHex } from "@krypt/shared";
+import { compareBytes } from "./encoding";
 
 export const SAFETY_GROUPS = 12;
 
 export async function safetyNumber(ikA: Uint8Array, ikB: Uint8Array): Promise<string[]> {
   if (ikA.length === 0 || ikB.length === 0) throw new Error("both identity keys are required");
   const [lo, hi] = compareBytes(ikA, ikB) <= 0 ? [ikA, ikB] : [ikB, ikA];
-  const h = await sha256(concat(lo, hi));
-  const stream = concat(h, await sha256(h));
+  const h = await sha256(lo, hi);
+  const stream = concatBytes(h, await sha256(h));
   const groups: string[] = [];
   for (let i = 0; i < SAFETY_GROUPS; i++) {
     let v = 0;
@@ -32,6 +32,5 @@ export async function safetyNumber(ikA: Uint8Array, ikB: Uint8Array): Promise<st
 /** Short fingerprint of one key for warnings: first 16 bytes of SHA-256, hex in groups of 4. */
 export async function keyFingerprint(key: Uint8Array): Promise<string> {
   const h = await sha256(key);
-  const hex = Array.from(h.subarray(0, 16), (b) => b.toString(16).padStart(2, "0")).join("");
-  return hex.match(/.{4}/g)!.join(" ");
+  return toHex(h.subarray(0, 16)).match(/.{4}/g)!.join(" ");
 }

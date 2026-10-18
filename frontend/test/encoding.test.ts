@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { fromBase64, toBase64 } from "@krypt/shared";
 import {
   compareBytes,
   ctEqual,
-  fromBase64Std,
   fromBase64url,
   lp,
   readU32,
-  toBase64Std,
   toBase64url,
   u32,
   unlp,
@@ -80,15 +79,17 @@ describe("base64url", () => {
   });
 });
 
-describe("standard base64 (legacy identityKey)", () => {
+// The identityKey JSON and the local stores use @krypt/shared standard base64;
+// the app relies on its decoder being strict, so that is pinned here too.
+describe("standard base64 (@krypt/shared)", () => {
   it("round-trips and rejects non-canonical input", () => {
     const b = new Uint8Array([0xfb, 0xff, 0x01]);
-    expect(toBase64Std(b)).toBe("+/8B");
-    expect(hex(fromBase64Std("+/8B"))).toBe("fbff01");
-    expect(hex(fromBase64Std("Zg=="))).toBe("66");
-    expect(() => fromBase64Std("Zg")).toThrow();
-    expect(() => fromBase64Std("Zh==")).toThrow();
-    expect(() => fromBase64Std("-_8B")).toThrow();
+    expect(toBase64(b)).toBe("+/8B");
+    expect(hex(fromBase64("+/8B"))).toBe("fbff01");
+    expect(hex(fromBase64("Zg=="))).toBe("66");
+    expect(() => fromBase64("Zg")).toThrow();
+    expect(() => fromBase64("Zh==")).toThrow();
+    expect(() => fromBase64("-_8B")).toThrow();
   });
 });
 

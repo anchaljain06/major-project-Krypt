@@ -1,5 +1,5 @@
 import type { UserIdentityKeys } from "./mlkem";
-import { bytesToBase64, base64ToBytes, sha256Bytes } from "./utils";
+import { fromBase64, sha256, toBase64 } from "@krypt/shared";
 
 /**
  * Project Krypt - Local Device Storage Cryptographic Engine
@@ -54,7 +54,7 @@ export async function getLocalKey(privateKey: UserIdentityKeys): Promise<CryptoK
  * Legacy key derivation helper for pre-upgrade IndexedDB entries.
  */
 async function getLegacyLocalKey(privateKey: UserIdentityKeys): Promise<CryptoKey> {
-  const hash = await sha256Bytes(privateKey.kemSecretKey);
+  const hash = await sha256(privateKey.kemSecretKey);
   return await window.crypto.subtle.importKey(
     "raw",
     hash as unknown as BufferSource,
@@ -82,7 +82,7 @@ export async function encryptLocal(
   combined.set(iv, 0);
   combined.set(new Uint8Array(ciphertext), iv.length);
 
-  return "LOC:" + bytesToBase64(combined);
+  return "LOC:" + toBase64(combined);
 }
 
 /**
@@ -110,7 +110,7 @@ export async function decryptLocal(
 
   let combined: Uint8Array;
   try {
-    combined = base64ToBytes(ciphertextBase64.substring(4));
+    combined = fromBase64(ciphertextBase64.substring(4));
   } catch {
     throw new LocalStoreDecryptError("Local entry is corrupted (invalid Base64).");
   }

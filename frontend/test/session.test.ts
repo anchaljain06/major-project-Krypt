@@ -3,9 +3,9 @@
  * plan, run for every ratchet suite.
  */
 import { describe, expect, it } from "vitest";
+import { sha256 } from "@krypt/shared";
 import type { EnvelopeV1 } from "../src/crypto/envelope";
 import { HandshakeError } from "../src/crypto/errors";
-import { sha256 } from "../src/crypto/kdf";
 import type { KemSuite } from "../src/crypto/pq";
 import { MAX_SKIP, SKIPPED_TTL_MS, createMutexLock } from "../src/crypto/session";
 import type { SessionState, SessionStore, PeerRecord } from "../src/crypto/session-store";

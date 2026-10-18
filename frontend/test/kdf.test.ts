@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sha256 } from "@krypt/shared";
 import { LABELS, lp, u32 } from "../src/crypto/encoding";
 import {
   aesGcmDecrypt,
@@ -10,7 +11,6 @@ import {
   kdfRoot,
   messageKeyAndIv,
   rootContext,
-  sha256,
 } from "../src/crypto/kdf";
 
 const h = (s: string) => new Uint8Array(Buffer.from(s.replace(/\s+/g, ""), "hex"));

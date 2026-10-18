@@ -5,9 +5,10 @@
  * The SessionManager does the lookups (prekeys, identities, replay memory)
  * and commits state only after the first message decrypts.
  */
+import { sha256 } from "@krypt/shared";
 import { EMPTY, LABELS, lp, u32 } from "./encoding";
 import { DecryptError } from "./errors";
-import { kdfHandshake, sha256 } from "./kdf";
+import { kdfHandshake } from "./kdf";
 import { mldsaSign, mldsaVerify, prekeyKem, ratchetKem, type KemSuite } from "./pq";
 import type { PrekeyRecord, VerifiedBundle } from "./prekeys";
 
