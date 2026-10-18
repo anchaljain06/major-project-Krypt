@@ -139,10 +139,14 @@ export async function attachOwnerSig(body, ownerSig) {
  * SHA-256(signerPk) against that previous leaf's mldsaPkHash.
  */
 export async function verifyOwnerSig(leaf, ownerSig, signerPk, verify) {
+    return (await ownerSigProblem(leaf, ownerSig, signerPk, verify)) === null;
+}
+/** Same checks as verifyOwnerSig, but says which one failed (null if none). */
+export async function ownerSigProblem(leaf, ownerSig, signerPk, verify) {
     if (!bytesEqual(await sha256(ownerSig), leaf.ownerSigHash))
-        return false;
+        return "hash";
     if (ownerSigner(leaf.op) !== "previous-key" && !bytesEqual(await sha256(signerPk), leaf.mldsaPkHash)) {
-        return false;
+        return "signer";
     }
-    return verify(ownerSignedMessage(leaf), ownerSig, signerPk);
+    return (await verify(ownerSignedMessage(leaf), ownerSig, signerPk)) ? null : "signature";
 }
