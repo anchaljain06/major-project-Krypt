@@ -129,7 +129,6 @@ export const mlkem1024 = wrapKem("ML-KEM-1024", ml_kem1024 as unknown as NobleKe
  * stays on the wire and in the transcript so a future change is explicit.
  */
 export type KemSuite = "mlkem1024";
-export const KEM_SUITES: readonly KemSuite[] = ["mlkem1024"];
 
 export function isKemSuite(x: unknown): x is KemSuite {
   return x === "mlkem1024";

@@ -17,7 +17,6 @@ import { bytesToBase64, base64ToBytes } from "./utils";
  * has been removed: all messaging goes through the v1 SessionManager.
  */
 
-export { bytesToBase64, base64ToBytes };
 
 export interface UserIdentityKeys {
   kemPublicKey: Uint8Array;

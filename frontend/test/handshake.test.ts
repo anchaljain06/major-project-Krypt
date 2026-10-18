@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DecryptError } from "../src/crypto/errors";
 import { initiate, respond, transcript, type InitHeader, type TranscriptFields } from "../src/crypto/handshake";
-import { mldsaKeygen, KEM_SUITES, type KemSuite } from "../src/crypto/pq";
+import { mldsaKeygen, type KemSuite } from "../src/crypto/pq";
 import { MemoryPrekeyStore, createPrekeyUpload, verifyBundle } from "../src/crypto/prekeys";
 import { exportPublicIdentity } from "../src/crypto/mlkem";
 
@@ -25,7 +25,7 @@ async function setup(withOpk: boolean) {
   return { store, bundle };
 }
 
-async function bobResponds(store: MemoryPrekeyStore, init: InitHeader, suite: (typeof KEM_SUITES)[number], ik = alice.publicKey) {
+async function bobResponds(store: MemoryPrekeyStore, init: InitHeader, suite: KemSuite, ik = alice.publicKey) {
   return respond({
     self: { username: "bob", dsaPub: bob.publicKey },
     initiator: { username: "alice", dsaPub: ik },
@@ -37,20 +37,19 @@ async function bobResponds(store: MemoryPrekeyStore, init: InitHeader, suite: (t
 }
 
 describe("Krypt-X3K", () => {
-  for (const suite of KEM_SUITES) {
-    for (const withOpk of [true, false]) {
-      it(`${suite}, ${withOpk ? "with" : "without"} OPK: both sides derive RK0, CK0 and sessionId = H(T)`, async () => {
-        const { store, bundle } = await setup(withOpk);
-        const a = await initiate({ self: { username: "alice", dsaPub: alice.publicKey, dsaSec: alice.secretKey }, bundle, suite });
-        expect(a.init.opkId === null).toBe(!withOpk);
-        const b = await bobResponds(store, a.init, suite);
-        expect(b.sessionId).toEqual(a.sessionId);
-        expect(b.rk).toEqual(a.rk);
-        expect(b.ck).toEqual(a.ck);
-        expect(b.peerEk).toEqual(a.ourEk);
-        expect(a.rk).not.toEqual(a.ck);
-      });
-    }
+  const suite: KemSuite = "mlkem1024";
+  for (const withOpk of [true, false]) {
+    it(`${suite}, ${withOpk ? "with" : "without"} OPK: both sides derive RK0, CK0 and sessionId = H(T)`, async () => {
+      const { store, bundle } = await setup(withOpk);
+      const a = await initiate({ self: { username: "alice", dsaPub: alice.publicKey, dsaSec: alice.secretKey }, bundle, suite });
+      expect(a.init.opkId === null).toBe(!withOpk);
+      const b = await bobResponds(store, a.init, suite);
+      expect(b.sessionId).toEqual(a.sessionId);
+      expect(b.rk).toEqual(a.rk);
+      expect(b.ck).toEqual(a.ck);
+      expect(b.peerEk).toEqual(a.ourEk);
+      expect(a.rk).not.toEqual(a.ck);
+    });
   }
 
   it("rejects a forged or transplanted initiator signature", async () => {

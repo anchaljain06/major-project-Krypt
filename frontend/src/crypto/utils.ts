@@ -40,18 +40,6 @@ export function bytesToHex(bytes: Uint8Array): string {
 }
 
 /**
- * Converts a hexadecimal string back to Uint8Array.
- */
-export function hexToBytes(hex: string): Uint8Array {
-  const cleanHex = hex.trim();
-  const bytes = new Uint8Array(cleanHex.length / 2);
-  for (let i = 0; i < cleanHex.length; i += 2) {
-    bytes[i / 2] = parseInt(cleanHex.substring(i, i + 2), 16);
-  }
-  return bytes;
-}
-
-/**
  * Computes a NIST FIPS 180-4 SHA-256 hash of a string and returns a hex string.
  * Uses native Web Crypto API for constant-time, hardware-accelerated execution.
  */
@@ -70,17 +58,4 @@ export async function sha256Bytes(data: Uint8Array): Promise<Uint8Array> {
     data as unknown as BufferSource,
   );
   return new Uint8Array(hashBuffer);
-}
-
-/**
- * Performs a constant-time comparison of two byte arrays
- * to prevent timing side-channel attacks on cryptographic signatures/hashes.
- */
-export function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a[i] ^ b[i];
-  }
-  return diff === 0;
 }

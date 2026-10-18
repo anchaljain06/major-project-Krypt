@@ -178,10 +178,6 @@ export function startProtocol(username: string, keys: UserIdentityKeys): Promise
   return starting;
 }
 
-export function getProtocol(): Protocol | null {
-  return current;
-}
-
 /** Resolves once a Protocol is running (incoming messages wait on this). */
 export function protocolReady(): Promise<Protocol> {
   if (current) return Promise.resolve(current);

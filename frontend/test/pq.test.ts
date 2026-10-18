@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CryptoInputError,
-  KEM_SUITES,
   isKemSuite,
+  type KemSuite,
   MLDSA87,
   mldsaKeygen,
   mldsaSign,
@@ -15,7 +15,6 @@ import {
 describe("KEM wrappers", () => {
   it("prekeys and the ratchet are both ML-KEM-1024", () => {
     expect(prekeyKem).toBe(mlkem1024);
-    expect(KEM_SUITES).toEqual(["mlkem1024"]);
     expect(ratchetKem("mlkem1024")).toBe(mlkem1024);
     expect(mlkem1024.lengths).toEqual({ publicKey: 1568, secretKey: 3168, cipherText: 1568, sharedSecret: 32 });
   });
@@ -24,23 +23,22 @@ describe("KEM wrappers", () => {
     for (const s of ["mlkem768", "xwing", "mlkem512", "", "MLKEM1024", null, undefined]) expect(isKemSuite(s)).toBe(false);
   });
 
-  for (const suite of KEM_SUITES) {
-    it(`${suite}: round trip, implicit rejection, exact length checks`, () => {
-      const kem = ratchetKem(suite);
-      const { publicKey, secretKey } = kem.keygen();
-      const { cipherText, sharedSecret } = kem.encapsulate(publicKey);
-      expect(kem.decapsulate(cipherText, secretKey)).toEqual(sharedSecret);
+  const suite: KemSuite = "mlkem1024";
+  it(`${suite}: round trip, implicit rejection, exact length checks`, () => {
+    const kem = ratchetKem(suite);
+    const { publicKey, secretKey } = kem.keygen();
+    const { cipherText, sharedSecret } = kem.encapsulate(publicKey);
+    expect(kem.decapsulate(cipherText, secretKey)).toEqual(sharedSecret);
 
-      // A modified ciphertext decapsulates to a different (pseudorandom) secret.
-      const bad = cipherText.slice();
-      bad[0] ^= 1;
-      expect(kem.decapsulate(bad, secretKey)).not.toEqual(sharedSecret);
+    // A modified ciphertext decapsulates to a different (pseudorandom) secret.
+    const bad = cipherText.slice();
+    bad[0] ^= 1;
+    expect(kem.decapsulate(bad, secretKey)).not.toEqual(sharedSecret);
 
-      expect(() => kem.encapsulate(publicKey.subarray(1))).toThrow(CryptoInputError);
-      expect(() => kem.decapsulate(cipherText.subarray(1), secretKey)).toThrow(CryptoInputError);
-      expect(() => kem.decapsulate(cipherText, secretKey.subarray(1))).toThrow(CryptoInputError);
-    });
-  }
+    expect(() => kem.encapsulate(publicKey.subarray(1))).toThrow(CryptoInputError);
+    expect(() => kem.decapsulate(cipherText.subarray(1), secretKey)).toThrow(CryptoInputError);
+    expect(() => kem.decapsulate(cipherText, secretKey.subarray(1))).toThrow(CryptoInputError);
+  });
 });
 
 describe("ML-DSA-87 wrapper", () => {

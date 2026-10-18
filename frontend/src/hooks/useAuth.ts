@@ -83,9 +83,6 @@ export function useAuth() {
   // Auto-restore private identity keys on page refresh within the same tab.
   // Uses the non-extractable session key (services/sessionCache.ts); never a password.
   useEffect(() => {
-    // Migration: older builds kept the plaintext login password here.
-    sessionStorage.removeItem("sessionPassword");
-
     if (!user || myPrivateKey) return;
     let cancelled = false;
     const restoreKey = async () => {
