@@ -139,8 +139,12 @@ export class Protocol {
   }
 }
 
-/** Removes v0 ratchet keys (`session_<me>_<peer>`) left in localStorage by older builds. */
-export function deleteLegacySessionKeys() {
+/**
+ * Removes v0 ratchet root keys (`session_<me>_<peer>`), which v0 kept in
+ * localStorage as plain base64. Runs on every protocol start, so an upgraded
+ * browser drops them on its first v1 login.
+ */
+function deleteLegacySessionKeys() {
   try {
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {

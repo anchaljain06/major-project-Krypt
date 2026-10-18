@@ -17,7 +17,7 @@ import {
 import srp from "secure-remote-password/client";
 import toast from "react-hot-toast";
 import { db } from "../services/db";
-import { deleteLegacySessionKeys, deleteSessionDatabase, stopProtocol } from "../services/protocol";
+import { deleteSessionDatabase, stopProtocol } from "../services/protocol";
 import {
   encryptVaultData,
   decryptVaultData,
@@ -407,7 +407,6 @@ export function useAuth() {
       await db.contacts.clear();
       // Wipe Krypt v1 ratchet sessions on this device. Prekey private halves
       // are kept, so peers can still start new sessions with us.
-      deleteLegacySessionKeys();
       if (user) await deleteSessionDatabase(user);
 
       toast.success("Local cache completely wiped.");
