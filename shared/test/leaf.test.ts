@@ -13,6 +13,7 @@ import {
   ktLeafHash,
   normalizeUsername,
   ownerSignedMessage,
+  ownerSigProblem,
   ownerSigner,
   verifyOwnerSig,
   type KtLeaf,
@@ -212,5 +213,13 @@ describe("owner signatures with ML-DSA-87", () => {
     expect(await verifyOwnerSig(await attachOwnerSig(rotBody, forged), forged, k1.publicKey, nobleVerify)).toBe(false);
     // A signature that does not match the leaf's hash is rejected before verifying.
     expect(await verifyOwnerSig(rot, regSig, k1.publicKey, nobleVerify)).toBe(false);
+
+    // ownerSigProblem names which check failed.
+    expect(await ownerSigProblem(reg, regSig, k1.publicKey, nobleVerify)).toBeNull();
+    expect(await ownerSigProblem(rot, regSig, k1.publicKey, nobleVerify)).toBe("hash");
+    expect(await ownerSigProblem(reg, regSig, k2.publicKey, nobleVerify)).toBe("signer");
+    expect(
+      await ownerSigProblem(await attachOwnerSig(rotBody, forged), forged, k1.publicKey, nobleVerify),
+    ).toBe("signature");
   });
 });

@@ -205,9 +205,22 @@ export async function verifyOwnerSig(
   signerPk: Uint8Array,
   verify: VerifySigFn,
 ): Promise<boolean> {
-  if (!bytesEqual(await sha256(ownerSig), leaf.ownerSigHash)) return false;
+  return (await ownerSigProblem(leaf, ownerSig, signerPk, verify)) === null;
+}
+
+/** Which verifyOwnerSig check fails: the hash, the signer key, or the signature. */
+export type OwnerSigProblem = "hash" | "signer" | "signature";
+
+/** Same checks as verifyOwnerSig, but says which one failed (null if none). */
+export async function ownerSigProblem(
+  leaf: KtLeaf,
+  ownerSig: Uint8Array,
+  signerPk: Uint8Array,
+  verify: VerifySigFn,
+): Promise<OwnerSigProblem | null> {
+  if (!bytesEqual(await sha256(ownerSig), leaf.ownerSigHash)) return "hash";
   if (ownerSigner(leaf.op) !== "previous-key" && !bytesEqual(await sha256(signerPk), leaf.mldsaPkHash)) {
-    return false;
+    return "signer";
   }
-  return verify(ownerSignedMessage(leaf), ownerSig, signerPk);
+  return (await verify(ownerSignedMessage(leaf), ownerSig, signerPk)) ? null : "signature";
 }

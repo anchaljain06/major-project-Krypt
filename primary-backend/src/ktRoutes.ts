@@ -6,6 +6,7 @@ import {
   KtError,
   KtLog,
   checkSubmission,
+  fromBase64Exact,
   loadLogKey,
   parseIdentityKey,
   prismaKtStorage,
@@ -16,7 +17,6 @@ import {
   KT_LEAF_SIZE,
   bytesEqual,
   decodeLeaf,
-  fromBase64,
   hashUsername,
   hashesToJson,
   sthToJson,
@@ -96,12 +96,8 @@ const b64Bytes = (n: number) =>
     .string()
     .max(Math.ceil(n / 3) * 4)
     .transform((s, ctx) => {
-      try {
-        const b = fromBase64(s);
-        if (b.length === n) return b;
-      } catch {
-        // fall through
-      }
+      const b = fromBase64Exact(s, n);
+      if (b) return b;
       ctx.addIssue({ code: "custom", message: `Expected base64 of exactly ${n} bytes.` });
       return z.NEVER;
     });

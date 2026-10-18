@@ -84,6 +84,7 @@ ownerSigner(op): "new-key" | "previous-key" | "revoked-key"
 buildLeafBody(input): Promise<KtLeafBody>; attachOwnerSig(body, sig): Promise<KtLeaf>
 ktLeafHash(leaf): Promise<Hash>
 verifyOwnerSig(leaf, ownerSig, signerPk, verify): Promise<boolean>
+ownerSigProblem(leaf, ownerSig, signerPk, verify): Promise<"hash" | "signer" | "signature" | null>
 ```
 
 Leaf layout (big-endian):

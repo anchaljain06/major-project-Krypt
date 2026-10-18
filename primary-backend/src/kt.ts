@@ -9,13 +9,14 @@ import {
   fromBase64,
   hashLeaf,
   logIdFromPublicKey,
-  ownerSignedMessage,
+  ownerSigProblem,
   sha256,
   signTreeHead,
   toBase64,
   type Hash,
   type KtLeaf,
   type NodeStore,
+  type OwnerSigProblem,
   type SignedTreeHead,
 } from "./vendor/krypt-shared/index.js";
 import {
@@ -288,10 +289,11 @@ export interface IdentityPublicKeys {
   mlkemPk: Uint8Array;
 }
 
-function decodeStdBase64(s: unknown, bytes: number): Uint8Array | null {
+/** Standard padded base64 that decodes to exactly `bytes` bytes, or null. */
+export function fromBase64Exact(s: unknown, bytes: number): Uint8Array | null {
   if (typeof s !== "string") return null;
   try {
-    const b = fromBase64(s.trim());
+    const b = fromBase64(s);
     return b.length === bytes ? b : null;
   } catch {
     return null;
@@ -309,8 +311,8 @@ export function parseIdentityKey(raw: string | null | undefined): IdentityPublic
   }
   if (!parsed || typeof parsed !== "object") return null;
   const o = parsed as Record<string, unknown>;
-  const mlkemPk = decodeStdBase64(o.kem, ML_KEM_1024_PUBLIC_KEY_BYTES);
-  const mldsaPk = decodeStdBase64(o.dsa, ML_DSA_87_PUBLIC_KEY_BYTES);
+  const mlkemPk = fromBase64Exact(o.kem, ML_KEM_1024_PUBLIC_KEY_BYTES);
+  const mldsaPk = fromBase64Exact(o.dsa, ML_DSA_87_PUBLIC_KEY_BYTES);
   return mlkemPk && mldsaPk ? { mldsaPk, mlkemPk } : null;
 }
 
@@ -391,22 +393,21 @@ export async function checkSubmission(
       break;
   }
 
-  // Same check as shared's verifyOwnerSig, inlined so the signer rules above
-  // and the hash checks stay in one place.
-  if (!bytesEqual(await sha256(s.ownerSig), leaf.ownerSigHash)) {
-    throw new KtError(400, "ownerSig does not match the leaf's owner_sig hash.");
-  }
-  if (leaf.op !== KtOp.Rotate && !bytesEqual(await sha256(s.signerPk), leaf.mldsaPkHash)) {
-    throw new KtError(400, "Owner signature must be made by the key the leaf names.");
-  }
-  let ok = false;
-  try {
-    ok = ml_dsa87.verify(s.ownerSig, ownerSignedMessage(leaf), s.signerPk);
-  } catch {
-    ok = false;
-  }
-  if (!ok) throw new KtError(400, "Invalid owner signature.");
+  const problem = await ownerSigProblem(leaf, s.ownerSig, s.signerPk, (msg, sig, pk) => {
+    try {
+      return ml_dsa87.verify(sig, msg, pk);
+    } catch {
+      return false;
+    }
+  });
+  if (problem) throw new KtError(400, OWNER_SIG_ERRORS[problem]);
 }
+
+const OWNER_SIG_ERRORS: Record<OwnerSigProblem, string> = {
+  hash: "ownerSig does not match the leaf's owner_sig hash.",
+  signer: "Owner signature must be made by the key the leaf names.",
+  signature: "Invalid owner signature.",
+};
 
 // ---------------------------------------------------------------------------
 // Storage: Postgres
