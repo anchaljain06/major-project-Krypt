@@ -1,0 +1,11 @@
+bench,chunk_bytes,runs,ms_median,mib_per_s_median,retries_total,heap_growth_sender_bytes,heap_growth_receiver_bytes,buffer_growth_sender_bytes,buffer_growth_receiver_bytes,long_tasks_sender,long_tasks_receiver,longest_task_ms,bytes_match,completed,resume_ms_median,chunks_resent_median,retransmitted_bytes_median,one_counter_per_chunk,identical_resends,counter_reused,sender_paused,phase,up_bytes_median,down_bytes_median
+chunks,262144,5,1310.309,76.318,0,2574260,2825876,19868376,13543539,0,0,0,true,,,,,,,,,,,
+chunks,1048576,5,1326.099,75.409,0,1710996,1657676,41142182,22326258,0,0,0,true,,,,,,,,,,,
+chunks,4194304,5,1312.972,76.163,0,1109852,1056988,46192400,46419129,0,0,0,true,,,,,,,,,,,
+resume,1048576,5,,,,,,,,,,,,5,2793.839,8,8388736,true,true,false,0,,,
+session,,3,1006.348,,,,,,,,,,true,,,,,,,,,register,1707839,16942
+session,,3,1060.625,,,,,,,,,,true,,,,,,,,,befriend,2412,8678
+session,,3,54.083,,,,,,,,,,true,,,,,,,,,firstMessage,13693,41909
+session,,3,2829.977,,,,,,,,,,true,,,,,,,,,messages100,298208,305008
+session,,3,1642.711,,,,,,,,,,true,,,,,,,,,file,10511342,10511920
+session,,3,6635.229,,,,,,,,,,true,,,,,,,,,total,12533494,10884457

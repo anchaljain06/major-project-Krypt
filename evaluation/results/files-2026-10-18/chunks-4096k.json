@@ -1,0 +1,193 @@
+{
+ "bench": "chunks",
+ "env": {
+  "browser": "chromium",
+  "browserVersion": "156.0.8078.4",
+  "date": "2026-10-18T14:42:03.101Z",
+  "fileMiB": 100,
+  "runs": 5
+ },
+ "runs": [
+  {
+   "run": 1,
+   "ms": 1302.7169170000002,
+   "mibPerS": 76.76264788998667,
+   "chunkCount": 25,
+   "framesSent": 25,
+   "retries": 0,
+   "chunkPayloadBytes": 104858000,
+   "heap": {
+    "alice": {
+     "baseJs": 4982648,
+     "peakJs": 6092500,
+     "baseBuffers": 589846,
+     "peakBuffers": 46782246
+    },
+    "bob": {
+     "baseJs": 5262204,
+     "peakJs": 6015256,
+     "baseBuffers": 589782,
+     "peakBuffers": 46879923
+    }
+   },
+   "longTasks": {
+    "alice": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    },
+    "bob": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    }
+   },
+   "bytesMatch": true
+  },
+  {
+   "run": 2,
+   "ms": 1317.987916,
+   "mibPerS": 75.87322978156955,
+   "chunkCount": 25,
+   "framesSent": 25,
+   "retries": 0,
+   "chunkPayloadBytes": 104858000,
+   "heap": {
+    "alice": {
+     "baseJs": 4975484,
+     "peakJs": 6080052,
+     "baseBuffers": 589841,
+     "peakBuffers": 46779708
+    },
+    "bob": {
+     "baseJs": 5261688,
+     "peakJs": 5979724,
+     "baseBuffers": 589779,
+     "peakBuffers": 46877431
+    }
+   },
+   "longTasks": {
+    "alice": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    },
+    "bob": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    }
+   },
+   "bytesMatch": true
+  },
+  {
+   "run": 3,
+   "ms": 1312.9724159999969,
+   "mibPerS": 76.16306236246187,
+   "chunkCount": 25,
+   "framesSent": 25,
+   "retries": 0,
+   "chunkPayloadBytes": 104858000,
+   "heap": {
+    "alice": {
+     "baseJs": 4979904,
+     "peakJs": 6405092,
+     "baseBuffers": 589835,
+     "peakBuffers": 46782244
+    },
+    "bob": {
+     "baseJs": 5260052,
+     "peakJs": 6386112,
+     "baseBuffers": 589786,
+     "peakBuffers": 47008915
+    }
+   },
+   "longTasks": {
+    "alice": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    },
+    "bob": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    }
+   },
+   "bytesMatch": true
+  },
+  {
+   "run": 4,
+   "ms": 1297.2202499999985,
+   "mibPerS": 77.08791163258523,
+   "chunkCount": 25,
+   "framesSent": 25,
+   "retries": 0,
+   "chunkPayloadBytes": 104858000,
+   "heap": {
+    "alice": {
+     "baseJs": 4977856,
+     "peakJs": 6084236,
+     "baseBuffers": 589834,
+     "peakBuffers": 46782243
+    },
+    "bob": {
+     "baseJs": 5260088,
+     "peakJs": 6317076,
+     "baseBuffers": 589782,
+     "peakBuffers": 59528715
+    }
+   },
+   "longTasks": {
+    "alice": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    },
+    "bob": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    }
+   },
+   "bytesMatch": true
+  },
+  {
+   "run": 5,
+   "ms": 1346.9715829999986,
+   "mibPerS": 74.24061595811713,
+   "chunkCount": 25,
+   "framesSent": 25,
+   "retries": 0,
+   "chunkPayloadBytes": 104858000,
+   "heap": {
+    "alice": {
+     "baseJs": 5000256,
+     "peakJs": 6129616,
+     "baseBuffers": 589837,
+     "peakBuffers": 38433827
+    },
+    "bob": {
+     "baseJs": 5258744,
+     "peakJs": 6381428,
+     "baseBuffers": 589783,
+     "peakBuffers": 51076637
+    }
+   },
+   "longTasks": {
+    "alice": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    },
+    "bob": {
+     "count": 0,
+     "totalMs": 0,
+     "maxMs": 0
+    }
+   },
+   "bytesMatch": true
+  }
+ ],
+ "medianMs": 1312.9724159999969
+}

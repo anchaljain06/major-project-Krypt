@@ -20,3 +20,5 @@ results/e7-*-quick/
 !results/kem-768-vs-1024-*/
 results/kem-768-vs-1024-*/*.json
 results/kem-768-vs-1024-*/long.csv
+# Phase E file benchmarks (chunk sizes, resume, full session, E5 chunk frames): all committed
+!results/files-*/

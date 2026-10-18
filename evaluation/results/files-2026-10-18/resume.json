@@ -1,0 +1,93 @@
+{
+ "bench": "resume",
+ "env": {
+  "browser": "chromium",
+  "browserVersion": "156.0.8078.4",
+  "date": "2026-10-18T14:40:38.432Z",
+  "fileMiB": 64,
+  "runs": 5
+ },
+ "downMs": 2000,
+ "runs": [
+  {
+   "run": 1,
+   "chunkCount": 64,
+   "cutAfterChunksSent": 32,
+   "alicePausedDuringOutage": false,
+   "completed": true,
+   "bytesMatch": true,
+   "totalMs": 5374.9015,
+   "resumeMs": 2447.609042,
+   "framesSent": 72,
+   "chunksResent": 8,
+   "retransmittedBytes": 8388736,
+   "oneCounterPerChunk": true,
+   "identicalResends": true,
+   "counterReused": false
+  },
+  {
+   "run": 2,
+   "chunkCount": 64,
+   "cutAfterChunksSent": 32,
+   "alicePausedDuringOutage": false,
+   "completed": true,
+   "bytesMatch": true,
+   "totalMs": 4980.876834000002,
+   "resumeMs": 1993.5370000000003,
+   "framesSent": 72,
+   "chunksResent": 8,
+   "retransmittedBytes": 8388736,
+   "oneCounterPerChunk": true,
+   "identicalResends": true,
+   "counterReused": false
+  },
+  {
+   "run": 3,
+   "chunkCount": 64,
+   "cutAfterChunksSent": 32,
+   "alicePausedDuringOutage": false,
+   "completed": true,
+   "bytesMatch": true,
+   "totalMs": 6458.775041000001,
+   "resumeMs": 3507.2126659999994,
+   "framesSent": 72,
+   "chunksResent": 8,
+   "retransmittedBytes": 8388736,
+   "oneCounterPerChunk": true,
+   "identicalResends": true,
+   "counterReused": false
+  },
+  {
+   "run": 4,
+   "chunkCount": 64,
+   "cutAfterChunksSent": 32,
+   "alicePausedDuringOutage": false,
+   "completed": true,
+   "bytesMatch": true,
+   "totalMs": 5885.440583999996,
+   "resumeMs": 2912.846666999998,
+   "framesSent": 72,
+   "chunksResent": 8,
+   "retransmittedBytes": 8388736,
+   "oneCounterPerChunk": true,
+   "identicalResends": true,
+   "counterReused": false
+  },
+  {
+   "run": 5,
+   "chunkCount": 64,
+   "cutAfterChunksSent": 32,
+   "alicePausedDuringOutage": false,
+   "completed": true,
+   "bytesMatch": true,
+   "totalMs": 5724.47591600001,
+   "resumeMs": 2793.8385000000126,
+   "framesSent": 72,
+   "chunksResent": 8,
+   "retransmittedBytes": 8388736,
+   "oneCounterPerChunk": true,
+   "identicalResends": true,
+   "counterReused": false
+  }
+ ]
+}

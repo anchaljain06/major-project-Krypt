@@ -14,6 +14,8 @@ evaluation/
 ├─ scripts/run-bench.ts         Playwright: Chromium, Firefox, WebKit × N fresh launches
 ├─ scripts/run-node.ts          E10: node:crypto vs WebCrypto-in-Node vs noble vs liboqs
 ├─ scripts/e5-bytes.ts          E5 byte accounting (no timing)
+├─ scripts/e5-chunks.ts         E5 file-chunk frames: binary attachment vs base64 JSON (bytes, time, copies)
+├─ files-bench/run.mjs          file benchmarks in the real app: chunk sizes, resume, full session
 ├─ scripts/e7.ts                E7 runner: suite × K × traffic grid → results/e7-<date>/
 ├─ scripts/aggregate.ts         JSON → long.csv, summary.csv, env.csv, headline.md
 ├─ plots/plot.py                figures (PNG + SVG)
@@ -23,7 +25,8 @@ evaluation/
 ├─ results/attack-matrix-*/     per-attack JSON + screenshots, v0/ and v1/
 ├─ results/e7-2026-10-18/       E7 with ML-KEM-1024 at K = 1, 4, 8, 16: summary, per-snapshot results, figures
 ├─ results/e7-2026-10-17/       E7 from the earlier ML-KEM-768 / X-Wing build (comparison for spec §2.1)
-└─ results/kem-768-vs-1024-*/   E1 subset: ML-KEM-768 vs ML-KEM-1024, noble, Node and Chromium (summary only)
+├─ results/kem-768-vs-1024-*/   E1 subset: ML-KEM-768 vs ML-KEM-1024, noble, Node and Chromium (summary only)
+└─ results/files-2026-10-18/    file benchmarks and E5 chunk frames (plan E.4): raw JSON, summary.csv, headline.md, env.json
 ```
 
 ## Quick start (laptop)
@@ -267,6 +270,80 @@ Outputs in `results/e7-<date>/`:
 | `messages.csv` | one row per message (gitignored) |
 | `env.json` | the configuration |
 | `figures/` | `e7_bandwidth_vs_healing` (the key C1 figure: two stacked panels sharing K), `e7_bytes_vs_K`, `e7_heal_vs_K`, `e7_cpu_vs_K` |
+
+## File transfer (plan E.4, new-plan section 12)
+
+Four of the section 12 experiments, run on one Mac. Ratchet KEM and K are covered above (B.3, B.4). Main thread vs Worker waits on plan D.4, and real Safari and Android runs are the teammate's (`team-docs/04_FOR_TEAMMATE.md`).
+
+### Method
+
+- **Wire transport** (`scripts/e5-chunks.ts`, Node). One real encrypted chunk (from `frontend/src/crypto/fileTransfer.ts`) is encoded with the client's own `socket.io-parser`, as the app sends it (binary attachment) and with the chunk as a base64 string in the JSON. Base64 runs twice: with the app's helper (`@krypt/shared`) and with native `Uint8Array.toBase64` (the best case). Times use the batch timer above (full method, 30 batches).
+- **Chunk size, resume, entire experience** (`files-bench/run.mjs` + `frontend/e2e/bench-files.spec.ts`). The real relay and Postgres run locally. For each chunk size, the frontend is built once (`vite build` with `VITE_FILE_CHUNK_SIZE`; 1 MiB is the app default) and served by `vite preview`. Chromium drives two users through the UI, and every run uses a fresh pair of users. The browser counts bytes: WebSocket frame payloads plus HTTP headers and bodies to the API. Peak memory is V8's `Runtime.getHeapUsage` (JS heap and ArrayBuffer backing stores) every 50 ms after a forced GC; it includes garbage not yet collected, so it is an upper bound. Long tasks are `PerformanceObserver('longtask')` entries (> 50 ms).
+  - Resume: once Alice has sent half the chunks, Bob's socket is closed through a Playwright route and kept closed (WebSocket and polling) for 2 s.
+  - Entire experience: register both users, befriend and open the chat, first message (the handshake), 100 messages alternating, one 10 MiB file.
+
+### Results (`results/files-2026-10-18/`, Chromium 156, Apple M5, on battery)
+
+**Wire transport, per hop** (the relay re-sends each frame, so a transfer pays twice):
+
+| Chunk | Encoding | Wire bytes | Overhead | Encode, µs median (p95) | Decode, µs median (p95) | Payload-sized copies |
+|---:|---|---:|---:|---:|---:|---:|
+| 256 KiB | **binary** | 262,294 | 134 B | 0.3 (0.3) | 0.6 (0.6) | 266 B |
+| 256 KiB | base64, app helper | 349,653 | 87,493 B (33%) | 2,397 (2,570) | 4,108 (4,257) | 1.6 MB |
+| 256 KiB | base64, native | 349,653 | 87,493 B (33%) | 74 (86) | 137 (144) | 1.6 MB |
+| 1 MiB | **binary** | 1,048,726 | 134 B | 0.3 (0.3) | 0.6 (0.6) | 266 B |
+| 1 MiB | base64, app helper | 1,398,229 | 349,637 B (33%) | 13,016 (16,447) | 23,044 (30,652) | 6.6 MB |
+| 1 MiB | base64, native | 1,398,229 | 349,637 B (33%) | 265 (297) | 534 (542) | 6.6 MB |
+| 4 MiB | **binary** | 4,194,454 | 134 B | 0.4 (0.4) | 0.6 (0.6) | 266 B |
+| 4 MiB | base64, app helper | 5,592,533 | 1,398,213 B (33%) | 87,838 (114,037) | **fails**: stack overflow | 26.6 MB |
+| 4 MiB | base64, native | 5,592,533 | 1,398,213 B (33%) | 3,186 (3,547) | 2,168 (2,208) | 26.6 MB |
+
+**Chunk size** (100 MiB file, 5 runs each; median, range in brackets):
+
+| Chunk | Frames | Accept to done, ms | MiB/s | Retries | Peak heap growth, MiB (sender / receiver) | Peak buffer growth, MiB (sender / receiver) | Long tasks | Bytes match |
+|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 256 KiB | 400 | 1,310 (1,290-1,338) | 76.3 | 0 | 2.5 / 2.7 | 18.9 / 12.9 | 0 | 5/5 |
+| **1 MiB** | 100 | 1,326 (1,291-1,421) | 75.4 | 0 | 1.6 / 1.6 | 39.2 / 21.3 | 0 | 5/5 |
+| 4 MiB | 25 | 1,313 (1,297-1,347) | 76.2 | 0 | 1.1 / 1.0 | 44.1 / 44.3 | 0 | 5/5 |
+
+**Resume** (64 MiB, 1 MiB chunks, receiver offline 2 s after 32 chunks were sent, 5 runs):
+
+| Completed, bytes match | Reconnect to done, ms | Chunks re-sent | Re-sent bytes | One nonce counter per chunk | Re-sends byte-identical | Counter reused for another chunk |
+|---:|---:|---:|---:|---|---|---|
+| 5/5 | 2,794 (1,994-3,507) | 8 (8-8) | 8.0 MiB | yes | yes | no |
+
+**Entire experience** (3 runs, median; up and down are both users' traffic added together):
+
+| Phase | Time, ms | Up, KiB | Down, KiB |
+|---|---:|---:|---:|
+| Register both users | 1,006 | 1,668 | 17 |
+| Befriend, open the chat | 1,061 | 2 | 8 |
+| First message (handshake) | 54 | 13 | 41 |
+| 100 messages, alternating | 2,830 | 291 | 298 |
+| 10 MiB file | 1,643 | 10,265 | 10,266 |
+| **Total** | **6,635** | **12,240** | **10,629** |
+
+### Findings
+
+- **Binary frames are the right transport.** Base64 adds 33% on every hop, and even native base64 costs 0.5 ms of decode per MiB; the app's own helper costs 23 ms per MiB and cannot decode 4 MiB at all: its validating regex overflows the stack in V8, in Node and in Chromium. File chunks never use it, but stored image and audio messages do (open issue in the status doc). Binary frames add a 134 B header and no copy of the payload.
+- **Chunk size does not change speed here; it changes memory.** All three sizes move 100 MiB at about 76 MiB/s over localhost, with no retries and no long task on either page. Peak buffer memory grows with chunk size (the send window is 8 chunks). 1 MiB stays the default: 4x fewer frames than 256 KiB against the relay's 1,200 frames/minute limit, and about half the receiver memory of 4 MiB. Localhost hides network latency, so re-check on the device runs.
+- **Resume re-sends exactly the send window.** The 8 chunks in flight when Bob's socket closed are lost with it. Alice then has a full window and no acknowledgements, so she sends nothing more and never sees `OFFLINE` (her card stays "Sending"). Bob's `resume` on reconnect brings exactly the missing chunks, each with its original nonce counter and identical ciphertext (plan D.1). Most of the 2.8 s is socket.io's reconnect back-off, not transfer.
+- **Most first-session bytes are prekeys.** Registration uploads 100 one-time prekeys per user (ML-KEM-1024 key + ML-DSA-87 signature, base64 in JSON), about 830 KB each. The handshake message itself is 13 KiB up; a chat message is about 3 KB per message, matching E7 at K = 4.
+
+**Not covered.** One Mac, localhost, Chromium only, laptop on battery: network latency and loss are absent, so throughput is a CPU and IndexedDB bound. The sender-side disconnect is not measured.
+
+### Rerun
+
+```bash
+npm run e5:chunks -- --out results/files-<date>           # about 25 s
+docker run -d --name krypt-pg-bench -e POSTGRES_PASSWORD=pg -p 55435:5432 postgres:16
+export DATABASE_URL=postgresql://postgres:pg@localhost:55435/postgres DIRECT_URL=$DATABASE_URL
+(cd ../primary-backend && npx prisma migrate deploy && npx tsc)
+npm run bench:files                                       # about 5 min; --quick for a 1-run smoke test
+docker rm -f krypt-pg-bench
+```
+
+`bench:files` writes `chunks-<size>.json`, `resume.json`, `session.json`, `env.json` (machine and power state), `summary.csv` and `headline.md` to `results/files-<date>/` (`OUT_DIR` overrides). `node files-bench/run.mjs --summary-only` rebuilds the summary from the JSON.
 
 ## Attack matrix
 

@@ -1,0 +1,159 @@
+{
+ "bench": "session",
+ "env": {
+  "browser": "chromium",
+  "browserVersion": "156.0.8078.4",
+  "date": "2026-10-18T14:41:07.080Z",
+  "fileMiB": 10,
+  "runs": 3
+ },
+ "runs": [
+  {
+   "run": 1,
+   "phases": {
+    "register": {
+     "ms": 1025.781916,
+     "wsUp": 14,
+     "wsDown": 45,
+     "httpUp": 1707829,
+     "httpDown": 16897
+    },
+    "befriend": {
+     "ms": 1091.41,
+     "wsUp": 0,
+     "wsDown": 76,
+     "httpUp": 2412,
+     "httpDown": 8602
+    },
+    "firstMessage": {
+     "ms": 54.083084000000326,
+     "wsUp": 12936,
+     "wsDown": 18635,
+     "httpUp": 757,
+     "httpDown": 23274
+    },
+    "messages100": {
+     "ms": 2829.9765420000003,
+     "wsUp": 298208,
+     "wsDown": 305008,
+     "httpUp": 0,
+     "httpDown": 0
+    },
+    "file": {
+     "ms": 1633.9769589999996,
+     "wsUp": 10511342,
+     "wsDown": 10511920,
+     "httpUp": 0,
+     "httpDown": 0
+    }
+   },
+   "total": {
+    "ms": 6635.228501,
+    "wsUp": 10822500,
+    "wsDown": 10835684,
+    "httpUp": 1710998,
+    "httpDown": 48773
+   },
+   "bytesMatch": true,
+   "problems": []
+  },
+  {
+   "run": 2,
+   "phases": {
+    "register": {
+     "ms": 1003.3404580000006,
+     "wsUp": 14,
+     "wsDown": 45,
+     "httpUp": 1707287,
+     "httpDown": 16643
+    },
+    "befriend": {
+     "ms": 1058.681541,
+     "wsUp": 0,
+     "wsDown": 76,
+     "httpUp": 2412,
+     "httpDown": 8602
+    },
+    "firstMessage": {
+     "ms": 47.853415999999925,
+     "wsUp": 12936,
+     "wsDown": 18635,
+     "httpUp": 757,
+     "httpDown": 23274
+    },
+    "messages100": {
+     "ms": 2909.7986249999994,
+     "wsUp": 298208,
+     "wsDown": 305008,
+     "httpUp": 0,
+     "httpDown": 0
+    },
+    "file": {
+     "ms": 1642.7106660000009,
+     "wsUp": 10511342,
+     "wsDown": 10511920,
+     "httpUp": 0,
+     "httpDown": 0
+    }
+   },
+   "total": {
+    "ms": 6662.384706000001,
+    "wsUp": 10822500,
+    "wsDown": 10835684,
+    "httpUp": 1710456,
+    "httpDown": 48519
+   },
+   "bytesMatch": true,
+   "problems": []
+  },
+  {
+   "run": 3,
+   "phases": {
+    "register": {
+     "ms": 1006.3484170000011,
+     "wsUp": 14,
+     "wsDown": 45,
+     "httpUp": 1707825,
+     "httpDown": 16897
+    },
+    "befriend": {
+     "ms": 1060.6254999999983,
+     "wsUp": 0,
+     "wsDown": 76,
+     "httpUp": 2412,
+     "httpDown": 8602
+    },
+    "firstMessage": {
+     "ms": 60.48866700000144,
+     "wsUp": 12936,
+     "wsDown": 18635,
+     "httpUp": 757,
+     "httpDown": 23274
+    },
+    "messages100": {
+     "ms": 2605.156084000002,
+     "wsUp": 298208,
+     "wsDown": 305008,
+     "httpUp": 0,
+     "httpDown": 0
+    },
+    "file": {
+     "ms": 1645.2925829999986,
+     "wsUp": 10511342,
+     "wsDown": 10511920,
+     "httpUp": 0,
+     "httpDown": 0
+    }
+   },
+   "total": {
+    "ms": 6377.911251000001,
+    "wsUp": 10822500,
+    "wsDown": 10835684,
+    "httpUp": 1710994,
+    "httpDown": 48773
+   },
+   "bytesMatch": true,
+   "problems": []
+  }
+ ]
+}
