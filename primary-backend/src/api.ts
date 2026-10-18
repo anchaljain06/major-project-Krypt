@@ -55,6 +55,9 @@ async function findUserId(username: string): Promise<string | null> {
 
 const usernameOnly = { select: { username: true } } as const;
 
+// Unexpected errors (e.g. the database is down) are not caught per route: they
+// reach the error handler in app.ts, which logs them and answers a bare 500.
+
 // ===================== Public routes =====================
 
 // Register a new user
@@ -96,28 +99,21 @@ router.post("/login/challenge", async (req, res) => {
 
   cleanupExpiredChallenges();
 
-  try {
-    const user = await prisma.user.findUnique({ where: { username } });
-    if (!user || !user.srpSalt || !user.srpVerifier) {
-      return res
-        .status(404)
-        .json({ error: "User not found or missing SRP credentials." });
-    }
-
-    const serverEphemeral = srp.generateEphemeral(user.srpVerifier);
-    activeLoginChallenges.set(username, {
-      ephemeralSecret: serverEphemeral.secret,
-      createdAt: Date.now(),
-    });
-
-    res.status(200).json({
-      salt: user.srpSalt,
-      serverEphemeralPublic: serverEphemeral.public,
-    });
-  } catch (error) {
-    console.error("[SRP] Challenge Error:", error);
-    res.status(500).json({ error: "Internal server error during challenge." });
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user || !user.srpSalt || !user.srpVerifier) {
+    return res.status(404).json({ error: "User not found or missing SRP credentials." });
   }
+
+  const serverEphemeral = srp.generateEphemeral(user.srpVerifier);
+  activeLoginChallenges.set(username, {
+    ephemeralSecret: serverEphemeral.secret,
+    createdAt: Date.now(),
+  });
+
+  res.status(200).json({
+    salt: user.srpSalt,
+    serverEphemeralPublic: serverEphemeral.public,
+  });
 });
 
 // SRP login step 2: verify client proof
@@ -128,42 +124,41 @@ router.post("/login/verify", async (req, res) => {
 
   cleanupExpiredChallenges();
 
+  // Single use: consume the challenge before checking anything else.
+  const challengeData = activeLoginChallenges.get(username);
+  activeLoginChallenges.delete(username);
+  const user = await prisma.user.findUnique({ where: { username } });
+
+  if (!user || !challengeData) {
+    return res.status(400).json({ error: "Login session expired or invalid." });
+  }
+
+  if (Date.now() - challengeData.createdAt > CHALLENGE_TTL_MS) {
+    return res.status(400).json({ error: "Login challenge has expired. Please try again." });
+  }
+
+  // deriveSession throws if the client proof (M1) is wrong.
+  let serverProof: string;
   try {
-    // Single use: consume the challenge before checking anything else.
-    const challengeData = activeLoginChallenges.get(username);
-    activeLoginChallenges.delete(username);
-    const user = await prisma.user.findUnique({ where: { username } });
-
-    if (!user || !challengeData) {
-      return res
-        .status(400)
-        .json({ error: "Login session expired or invalid." });
-    }
-
-    if (Date.now() - challengeData.createdAt > CHALLENGE_TTL_MS) {
-      return res.status(400).json({ error: "Login challenge has expired. Please try again." });
-    }
-
-    const serverSession = srp.deriveSession(
+    serverProof = srp.deriveSession(
       challengeData.ephemeralSecret,
       clientEphemeralPublic,
       user.srpSalt,
       user.username,
       user.srpVerifier,
       clientSessionProof,
-    );
-
-    // deriveSession throws if the client proof (M1) is wrong, so reaching
-    // here means the password was verified. Return M2 and a session token.
-    res.status(200).json({
-      success: true,
-      serverProof: serverSession.proof,
-      token: issueToken({ userId: user.id, username: user.username }),
-    });
-  } catch (error) {
+    ).proof;
+  } catch {
     console.error("[SRP] Verification Failed.");
-    res.status(401).json({ error: "Invalid password." });
+    return res.status(401).json({ error: "Invalid password." });
   }
+
+  // The password was verified. Return M2 and a session token.
+  res.status(200).json({
+    success: true,
+    serverProof,
+    token: issueToken({ userId: user.id, username: user.username }),
+  });
 });
 
 // ===================== Authenticated routes =====================
@@ -202,365 +197,251 @@ async function searchUsers(req: Request, query: string) {
 }
 
 // Search users (excludes self and blocked users)
-router.get(
-  "/users/search",
-  async (req, res) => {
-    const query = parseOr400(searchQuery, req.query, res);
-    if (!query) return;
-    if (!query.q) return res.json([]);
-
-    try {
-      res.status(200).json(await searchUsers(req, query.q));
-    } catch (err) {
-      console.error("[API] Search error:", err);
-      res.status(500).json({ error: "Database error during search." });
-    }
-  },
-);
+router.get("/users/search", async (req, res) => {
+  const query = parseOr400(searchQuery, req.query, res);
+  if (!query) return;
+  if (!query.q) return res.json([]);
+  res.status(200).json(await searchUsers(req, query.q));
+});
 
 // Send a friend request
-router.post(
-  "/request/send",
-  async (req, res) => {
-    const body = parseOr400(sendOrRevokeBody, req.body, res);
-    if (!body) return;
-    const senderId = myId(req);
-    const { receiver } = body;
+router.post("/request/send", async (req, res) => {
+  const body = parseOr400(sendOrRevokeBody, req.body, res);
+  if (!body) return;
+  const senderId = myId(req);
+  const { receiver } = body;
 
-    if (sameUsername(me(req), receiver)) {
-      return res
-        .status(400)
-        .json({ error: "You cannot send a request to yourself!" });
+  if (sameUsername(me(req), receiver)) {
+    return res.status(400).json({ error: "You cannot send a request to yourself!" });
+  }
+
+  const receiverId = await findUserId(receiver);
+  if (!receiverId) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  // Check if either user has blocked the other
+  const blockExists = await prisma.blockedUser.findFirst({
+    where: {
+      OR: [
+        { blockerId: receiverId, blockedId: senderId },
+        { blockerId: senderId, blockedId: receiverId },
+      ],
+    },
+  });
+  if (blockExists) {
+    return res.status(400).json({ error: "Cannot send request to this user." });
+  }
+
+  // Check if a request already exists in either direction
+  const existingRequest = await prisma.friendRequest.findFirst({
+    where: {
+      OR: [
+        { senderId, receiverId },
+        { senderId: receiverId, receiverId: senderId },
+      ],
+    },
+  });
+
+  if (existingRequest) {
+    if (existingRequest.status === "accepted") {
+      return res.status(400).json({ error: "You are already friends!" });
     }
-
-    try {
-      const receiverId = await findUserId(receiver);
-      if (!receiverId) {
-        return res.status(404).json({ error: "User not found." });
-      }
-
-      // Check if either user has blocked the other
-      const blockExists = await prisma.blockedUser.findFirst({
-        where: {
-          OR: [
-            { blockerId: receiverId, blockedId: senderId },
-            { blockerId: senderId, blockedId: receiverId },
-          ],
-        },
-      });
-      if (blockExists) {
-        return res
-          .status(400)
-          .json({ error: "Cannot send request to this user." });
-      }
-
-      // Check if a request already exists in either direction
-      const existingRequest = await prisma.friendRequest.findFirst({
-        where: {
-          OR: [
-            { senderId, receiverId },
-            { senderId: receiverId, receiverId: senderId },
-          ],
-        },
-      });
-
-      if (existingRequest) {
-        if (existingRequest.status === "accepted") {
-          return res.status(400).json({ error: "You are already friends!" });
-        }
-        if (existingRequest.status === "pending") {
-          return res
-            .status(400)
-            .json({ error: "A request already exists between you two!" });
-        }
-        // If rejected, allow re-sending
-        if (existingRequest.status === "rejected") {
-          await prisma.friendRequest.update({
-            where: { id: existingRequest.id },
-            data: { senderId, receiverId, status: "pending" },
-          });
-          emitToUser(receiver, "receive_friend_request", me(req));
-          return res
-            .status(200)
-            .json({ success: true, message: "Request re-sent!" });
-        }
-      }
-
-      await prisma.friendRequest.create({
+    if (existingRequest.status === "pending") {
+      return res.status(400).json({ error: "A request already exists between you two!" });
+    }
+    // If rejected, allow re-sending
+    if (existingRequest.status === "rejected") {
+      await prisma.friendRequest.update({
+        where: { id: existingRequest.id },
         data: { senderId, receiverId, status: "pending" },
       });
       emitToUser(receiver, "receive_friend_request", me(req));
-
-      res.status(200).json({ success: true, message: "Request sent!" });
-    } catch (err) {
-      console.error("[API] Send request error:", err);
-      res.status(500).json({ error: "Database error." });
+      return res.status(200).json({ success: true, message: "Request re-sent!" });
     }
-  },
-);
+  }
+
+  await prisma.friendRequest.create({
+    data: { senderId, receiverId, status: "pending" },
+  });
+  emitToUser(receiver, "receive_friend_request", me(req));
+
+  res.status(200).json({ success: true, message: "Request sent!" });
+});
 
 // Get incoming pending requests
-router.get(
-  "/request/pending",
-  async (req, res) => {
-    try {
-      const pending = await prisma.friendRequest.findMany({
-        where: { receiverId: myId(req), status: "pending" },
-        select: { sender: usernameOnly },
-      });
-
-      res
-        .status(200)
-        .json({ requests: pending.map((r) => r.sender.username) });
-    } catch (err) {
-      console.error("[API] Get pending requests error:", err);
-      res.status(500).json({ error: "Database error." });
-    }
-  },
-);
+router.get("/request/pending", async (req, res) => {
+  const pending = await prisma.friendRequest.findMany({
+    where: { receiverId: myId(req), status: "pending" },
+    select: { sender: usernameOnly },
+  });
+  res.status(200).json({ requests: pending.map((r) => r.sender.username) });
+});
 
 // Get outgoing sent requests
-router.get(
-  "/request/sent",
-  async (req, res) => {
-    try {
-      const sent = await prisma.friendRequest.findMany({
-        where: { senderId: myId(req), status: "pending" },
-        select: { receiver: usernameOnly },
-      });
-
-      res.status(200).json({ requests: sent.map((r) => r.receiver.username) });
-    } catch (err) {
-      console.error("[API] Get sent requests error:", err);
-      res.status(500).json({ error: "Database error." });
-    }
-  },
-);
+router.get("/request/sent", async (req, res) => {
+  const sent = await prisma.friendRequest.findMany({
+    where: { senderId: myId(req), status: "pending" },
+    select: { receiver: usernameOnly },
+  });
+  res.status(200).json({ requests: sent.map((r) => r.receiver.username) });
+});
 
 // Revoke an outgoing friend request
-router.post(
-  "/request/revoke",
-  async (req, res) => {
-    const body = parseOr400(sendOrRevokeBody, req.body, res);
-    if (!body) return;
+router.post("/request/revoke", async (req, res) => {
+  const body = parseOr400(sendOrRevokeBody, req.body, res);
+  if (!body) return;
 
-    try {
-      const { count } = await prisma.friendRequest.deleteMany({
-        where: {
-          senderId: myId(req),
-          receiver: { username: body.receiver },
-          status: "pending",
-        },
-      });
-      if (count > 0) emitToUser(body.receiver, "request_revoked", me(req));
+  const { count } = await prisma.friendRequest.deleteMany({
+    where: {
+      senderId: myId(req),
+      receiver: { username: body.receiver },
+      status: "pending",
+    },
+  });
+  if (count > 0) emitToUser(body.receiver, "request_revoked", me(req));
 
-      res.status(200).json({ success: true, message: "Request revoked." });
-    } catch (err) {
-      console.error("[API] Revoke request error:", err);
-      res.status(500).json({ error: "Database error." });
-    }
-  },
-);
+  res.status(200).json({ success: true, message: "Request revoked." });
+});
 
 // Accept a friend request (the token user is the receiver)
-router.post(
-  "/request/accept",
-  async (req, res) => {
-    const body = parseOr400(acceptOrRejectBody, req.body, res);
-    if (!body) return;
-    const receiverId = myId(req);
+router.post("/request/accept", async (req, res) => {
+  const body = parseOr400(acceptOrRejectBody, req.body, res);
+  if (!body) return;
+  const receiverId = myId(req);
 
-    try {
-      const request = await prisma.friendRequest.findFirst({
-        where: {
-          sender: { username: body.sender },
-          receiverId,
-          status: "pending",
-        },
-      });
+  const request = await prisma.friendRequest.findFirst({
+    where: {
+      sender: { username: body.sender },
+      receiverId,
+      status: "pending",
+    },
+  });
 
-      if (!request) {
-        return res.status(400).json({
-          error: "Friend request no longer exists or has been revoked.",
-        });
-      }
-      const senderId = request.senderId;
+  if (!request) {
+    return res.status(400).json({
+      error: "Friend request no longer exists or has been revoked.",
+    });
+  }
+  const senderId = request.senderId;
 
-      await prisma.$transaction(async (tx) => {
-        await tx.friendRequest.update({
-          where: { id: request.id },
-          data: { status: "accepted" },
-        });
+  await prisma.$transaction(async (tx) => {
+    await tx.friendRequest.update({
+      where: { id: request.id },
+      data: { status: "accepted" },
+    });
 
-        // Create or update the reverse friendship record
-        await tx.friendRequest.upsert({
-          where: { senderId_receiverId: { senderId: receiverId, receiverId: senderId } },
-          create: { senderId: receiverId, receiverId: senderId, status: "accepted" },
-          update: { status: "accepted" },
-        });
-      });
-      invalidateRelationship(body.sender, me(req));
-      emitToUser(body.sender, "request_accepted", me(req));
+    // Create or update the reverse friendship record
+    await tx.friendRequest.upsert({
+      where: { senderId_receiverId: { senderId: receiverId, receiverId: senderId } },
+      create: { senderId: receiverId, receiverId: senderId, status: "accepted" },
+      update: { status: "accepted" },
+    });
+  });
+  invalidateRelationship(body.sender, me(req));
+  emitToUser(body.sender, "request_accepted", me(req));
 
-      res
-        .status(200)
-        .json({ success: true, message: "Friend request accepted!" });
-    } catch (err) {
-      console.error("[API] Accept request error:", err);
-      res.status(500).json({ error: "Database error." });
-    }
-  },
-);
+  res.status(200).json({ success: true, message: "Friend request accepted!" });
+});
 
 // Reject a friend request (the token user is the receiver)
-router.post(
-  "/request/reject",
-  async (req, res) => {
-    const body = parseOr400(acceptOrRejectBody, req.body, res);
-    if (!body) return;
+router.post("/request/reject", async (req, res) => {
+  const body = parseOr400(acceptOrRejectBody, req.body, res);
+  if (!body) return;
 
-    try {
-      const { count } = await prisma.friendRequest.updateMany({
-        where: {
-          sender: { username: body.sender },
-          receiverId: myId(req),
-          status: "pending",
-        },
-        data: { status: "rejected" },
-      });
-      if (count > 0) emitToUser(body.sender, "request_rejected", me(req));
+  const { count } = await prisma.friendRequest.updateMany({
+    where: {
+      sender: { username: body.sender },
+      receiverId: myId(req),
+      status: "pending",
+    },
+    data: { status: "rejected" },
+  });
+  if (count > 0) emitToUser(body.sender, "request_rejected", me(req));
 
-      res
-        .status(200)
-        .json({ success: true, message: "Friend request rejected." });
-    } catch (err) {
-      console.error("[API] Reject request error:", err);
-      res.status(500).json({ error: "Database error." });
-    }
-  },
-);
+  res.status(200).json({ success: true, message: "Friend request rejected." });
+});
 
-// Get all accepted friends for a user
-router.get(
-  "/friends",
-  async (req, res) => {
-    const userId = myId(req);
-    try {
-      const friends = await prisma.friendRequest.findMany({
-        where: {
-          status: "accepted",
-          OR: [{ senderId: userId }, { receiverId: userId }],
-        },
-        select: { senderId: true, sender: usernameOnly, receiver: usernameOnly },
-      });
+// Get all accepted friends of the token user
+router.get("/friends", async (req, res) => {
+  const userId = myId(req);
+  const friends = await prisma.friendRequest.findMany({
+    where: {
+      status: "accepted",
+      OR: [{ senderId: userId }, { receiverId: userId }],
+    },
+    select: { senderId: true, sender: usernameOnly, receiver: usernameOnly },
+  });
 
-      // Extract the other person's name, deduplicated
-      const friendNames = [
-        ...new Set(
-          friends.map((f) =>
-            f.senderId === userId ? f.receiver.username : f.sender.username,
-          ),
-        ),
-      ];
+  // Extract the other person's name, deduplicated
+  const friendNames = [
+    ...new Set(friends.map((f) => (f.senderId === userId ? f.receiver.username : f.sender.username))),
+  ];
 
-      res.status(200).json({ friends: friendNames });
-    } catch (err) {
-      console.error("[API] Get friends error:", err);
-      res.status(500).json({ error: "Failed to fetch friends." });
-    }
-  },
-);
+  res.status(200).json({ friends: friendNames });
+});
 
 // Block a user
-router.post(
-  "/block",
-  async (req, res) => {
-    const body = parseOr400(blockBody, req.body, res);
-    if (!body) return;
-    const blockerId = myId(req);
-    const { blocked } = body;
+router.post("/block", async (req, res) => {
+  const body = parseOr400(blockBody, req.body, res);
+  if (!body) return;
+  const blockerId = myId(req);
+  const { blocked } = body;
 
-    if (sameUsername(me(req), blocked)) {
-      return res.status(400).json({ error: "You cannot block yourself!" });
-    }
+  if (sameUsername(me(req), blocked)) {
+    return res.status(400).json({ error: "You cannot block yourself!" });
+  }
 
-    try {
-      const blockedId = await findUserId(blocked);
-      if (!blockedId) {
-        return res.status(404).json({ error: "User not found." });
-      }
+  const blockedId = await findUserId(blocked);
+  if (!blockedId) {
+    return res.status(404).json({ error: "User not found." });
+  }
 
-      const existing = await prisma.blockedUser.findFirst({
-        where: { blockerId, blockedId },
-      });
-      if (existing) {
-        return res.status(400).json({ error: "User is already blocked." });
-      }
+  const existing = await prisma.blockedUser.findFirst({
+    where: { blockerId, blockedId },
+  });
+  if (existing) {
+    return res.status(400).json({ error: "User is already blocked." });
+  }
 
-      await prisma.$transaction([
-        prisma.blockedUser.create({ data: { blockerId, blockedId } }),
-        // Remove any existing friendship between them
-        prisma.friendRequest.deleteMany({
-          where: {
-            OR: [
-              { senderId: blockerId, receiverId: blockedId },
-              { senderId: blockedId, receiverId: blockerId },
-            ],
-          },
-        }),
-      ]);
-      invalidateRelationship(me(req), blocked);
-      emitToUser(blocked, "user_blocked_you", me(req));
+  await prisma.$transaction([
+    prisma.blockedUser.create({ data: { blockerId, blockedId } }),
+    // Remove any existing friendship between them
+    prisma.friendRequest.deleteMany({
+      where: {
+        OR: [
+          { senderId: blockerId, receiverId: blockedId },
+          { senderId: blockedId, receiverId: blockerId },
+        ],
+      },
+    }),
+  ]);
+  invalidateRelationship(me(req), blocked);
+  emitToUser(blocked, "user_blocked_you", me(req));
 
-      res
-        .status(200)
-        .json({ success: true, message: `${blocked} has been blocked.` });
-    } catch (err) {
-      console.error("[API] Block error:", err);
-      res.status(500).json({ error: "Database error." });
-    }
-  },
-);
+  res.status(200).json({ success: true, message: `${blocked} has been blocked.` });
+});
 
 // Unblock a user
-router.post(
-  "/unblock",
-  async (req, res) => {
-    const body = parseOr400(blockBody, req.body, res);
-    if (!body) return;
+router.post("/unblock", async (req, res) => {
+  const body = parseOr400(blockBody, req.body, res);
+  if (!body) return;
 
-    try {
-      await prisma.blockedUser.deleteMany({
-        where: { blockerId: myId(req), blocked: { username: body.blocked } },
-      });
-      invalidateRelationship(me(req), body.blocked);
+  await prisma.blockedUser.deleteMany({
+    where: { blockerId: myId(req), blocked: { username: body.blocked } },
+  });
+  invalidateRelationship(me(req), body.blocked);
 
-      res
-        .status(200)
-        .json({ success: true, message: `${body.blocked} has been unblocked.` });
-    } catch (err) {
-      console.error("[API] Unblock error:", err);
-      res.status(500).json({ error: "Database error." });
-    }
-  },
-);
+  res.status(200).json({ success: true, message: `${body.blocked} has been unblocked.` });
+});
 
-// Get blocked users list
-router.get(
-  "/blocked",
-  async (req, res) => {
-    try {
-      const blocked = await prisma.blockedUser.findMany({
-        where: { blockerId: myId(req) },
-        select: { blocked: usernameOnly },
-      });
-
-      res.status(200).json({ blocked: blocked.map((b) => b.blocked.username) });
-    } catch (err) {
-      console.error("[API] Get blocked users error:", err);
-      res.status(500).json({ error: "Database error." });
-    }
-  },
-);
+// Get the token user's blocked list
+router.get("/blocked", async (req, res) => {
+  const blocked = await prisma.blockedUser.findMany({
+    where: { blockerId: myId(req) },
+    select: { blocked: usernameOnly },
+  });
+  res.status(200).json({ blocked: blocked.map((b) => b.blocked.username) });
+});
 
 export default router;

@@ -160,7 +160,7 @@ describe("DELETE /prekeys/one-time", () => {
     const res = await del({ keyIds: [1] });
     spy.mockRestore();
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "Database error." });
+    expect(await res.json()).toEqual({ error: "Internal server error." });
   });
 });
 

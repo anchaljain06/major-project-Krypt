@@ -4,7 +4,8 @@ import { SlidingWindowLimiter } from "./rateLimit.js";
 import { emitToUser } from "./realtime.js";
 import { deleteOneTimePrekeysBody, parseOr400, uploadPrekeysBody, usernameSchema } from "./schemas.js";
 
-// Prekey API (plan 1.20). Mounted behind requireAuth.
+// Prekey API (plan 1.20). Mounted behind requireAuth; unexpected errors reach
+// the error handler in app.ts.
 //   POST   /prekeys            upload a signed prekey and/or one-time prekeys
 //   DELETE /prekeys/one-time   delete the caller's OPKs ({ keyIds? }; all if omitted)
 //   GET    /prekeys/count      how many one-time prekeys the caller has left
@@ -118,39 +119,34 @@ router.post("/prekeys", async (req, res) => {
     return res.status(400).json({ error: "Nothing to upload." });
   }
 
-  try {
-    if (opks.length > 0) {
-      const stored = await prisma.oneTimePrekey.count({ where: { userId } });
-      if (stored + opks.length > MAX_STORED_OPKS) {
-        return res.status(400).json({
-          error: `Too many one-time prekeys stored (max ${MAX_STORED_OPKS}).`,
-        });
-      }
+  if (opks.length > 0) {
+    const stored = await prisma.oneTimePrekey.count({ where: { userId } });
+    if (stored + opks.length > MAX_STORED_OPKS) {
+      return res.status(400).json({
+        error: `Too many one-time prekeys stored (max ${MAX_STORED_OPKS}).`,
+      });
     }
-
-    await prisma.$transaction(async (tx) => {
-      if (body.signedPrekey) {
-        const { keyId, publicKey, signature } = body.signedPrekey;
-        await tx.signedPrekey.upsert({
-          where: { userId },
-          create: { userId, keyId, publicKey, signature },
-          update: { keyId, publicKey, signature, createdAt: new Date() },
-        });
-      }
-      if (opks.length > 0) {
-        // Re-uploading a keyId that is still stored is ignored, not an error.
-        await tx.oneTimePrekey.createMany({
-          data: opks.map((k) => ({ userId, ...k })),
-          skipDuplicates: true,
-        });
-      }
-    });
-
-    res.status(200).json({ success: true, ...(await prekeyStatus(userId)) });
-  } catch (err) {
-    console.error("[Prekeys] Upload error:", err);
-    res.status(500).json({ error: "Database error." });
   }
+
+  await prisma.$transaction(async (tx) => {
+    if (body.signedPrekey) {
+      const { keyId, publicKey, signature } = body.signedPrekey;
+      await tx.signedPrekey.upsert({
+        where: { userId },
+        create: { userId, keyId, publicKey, signature },
+        update: { keyId, publicKey, signature, createdAt: new Date() },
+      });
+    }
+    if (opks.length > 0) {
+      // Re-uploading a keyId that is still stored is ignored, not an error.
+      await tx.oneTimePrekey.createMany({
+        data: opks.map((k) => ({ userId, ...k })),
+        skipDuplicates: true,
+      });
+    }
+  });
+
+  res.status(200).json({ success: true, ...(await prekeyStatus(userId)) });
 });
 
 // Lets a client that lost its private halves (cleared storage) withdraw OPKs
@@ -159,46 +155,31 @@ router.delete("/prekeys/one-time", async (req, res) => {
   const body = parseOr400(deleteOneTimePrekeysBody, req.body, res);
   if (!body) return;
   const userId = req.auth!.userId;
-  try {
-    await prisma.oneTimePrekey.deleteMany({
-      where: body.keyIds ? { userId, keyId: { in: body.keyIds } } : { userId },
-    });
-    const oneTimeRemaining = await prisma.oneTimePrekey.count({ where: { userId } });
-    res.status(200).json({ success: true, oneTimeRemaining });
-  } catch (err) {
-    console.error("[Prekeys] Delete error:", err);
-    res.status(500).json({ error: "Database error." });
-  }
+  await prisma.oneTimePrekey.deleteMany({
+    where: body.keyIds ? { userId, keyId: { in: body.keyIds } } : { userId },
+  });
+  const oneTimeRemaining = await prisma.oneTimePrekey.count({ where: { userId } });
+  res.status(200).json({ success: true, oneTimeRemaining });
 });
 
 router.get("/prekeys/count", async (req, res) => {
-  try {
-    res.status(200).json(await prekeyStatus(req.auth!.userId));
-  } catch (err) {
-    console.error("[Prekeys] Count error:", err);
-    res.status(500).json({ error: "Database error." });
-  }
+  res.status(200).json(await prekeyStatus(req.auth!.userId));
 });
 
 router.get("/bundle/:username", async (req, res) => {
   const parsed = usernameSchema.safeParse(req.params.username);
   if (!parsed.success) return res.status(400).json({ error: "Invalid username." });
 
-  try {
-    const requester = req.auth!.userId;
-    const result = await fetchBundle(parsed.data, bundleKeySource(parsed.data), (ownerId) =>
-      opkClaimLimiter.take(`${requester}\u0000${ownerId}`),
-    );
-    if (!result) return res.status(404).json({ error: "User not found." });
-    res.status(200).json(result.bundle);
+  const requester = req.auth!.userId;
+  const result = await fetchBundle(parsed.data, bundleKeySource(parsed.data), (ownerId) =>
+    opkClaimLimiter.take(`${requester}\u0000${ownerId}`),
+  );
+  if (!result) return res.status(404).json({ error: "User not found." });
+  res.status(200).json(result.bundle);
 
-    warnIfLow(result.owner).catch((err) =>
-      console.error("[Prekeys] Low-watermark check failed:", err),
-    );
-  } catch (err) {
-    console.error("[Prekeys] Bundle error:", err);
-    res.status(500).json({ error: "Database error." });
-  }
+  warnIfLow(result.owner).catch((err) =>
+    console.error("[Prekeys] Low-watermark check failed:", err),
+  );
 });
 
 export default router;

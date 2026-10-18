@@ -1,4 +1,3 @@
-import express from "express";
 import type { AddressInfo } from "net";
 import type { Server } from "http";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,7 +25,7 @@ const emitToUser = vi.hoisted(() => vi.fn(() => true));
 vi.mock("../src/realtime.js", () => ({ emitToUser, onlineUsers: new Map(), setIo: vi.fn() }));
 
 process.env.AUTH_TOKEN_SECRET = "api-test-secret";
-const { default: api } = await import("../src/api.js");
+const { createApp } = await import("../src/app.js");
 const { issueToken } = await import("../src/auth.js");
 
 const aliceToken = issueToken({ userId: "u-alice", username: "alice" });
@@ -34,10 +33,8 @@ let server: Server;
 let base: string;
 
 beforeAll(async () => {
-  const app = express();
-  app.use(express.json());
-  app.use("/api", api);
-  server = app.listen(0);
+  // The full app, so unexpected errors go through its error handler.
+  server = createApp().listen(0);
   await new Promise((r) => server.once("listening", r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api`;
 });
@@ -96,11 +93,37 @@ describe("authenticated REST routes", () => {
     expect((await post("/request/send", { receiver: 5 }, aliceToken)).status).toBe(400);
 
     db.friendRequest.findMany.mockRejectedValue(new Error("secret table layout"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await get("/request/sent", aliceToken);
+    spy.mockRestore();
     expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(JSON.stringify(body)).not.toContain("secret");
-    expect(body.details).toBeUndefined();
+    expect(await res.json()).toEqual({ error: "Internal server error." });
+  });
+
+  it("answers 500 on every route when the database fails", async () => {
+    const down = () => Promise.reject(new Error("db down"));
+    db.friendRequest.findMany.mockImplementation(down);
+    db.friendRequest.deleteMany.mockImplementation(down);
+    db.blockedUser.findMany.mockImplementation(down);
+    db.user.findUnique.mockImplementation(down);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const responses = [
+      await get("/friends", aliceToken),
+      await get("/blocked", aliceToken),
+      await get("/request/pending", aliceToken),
+      await get("/users/search?q=a", aliceToken),
+      await post("/request/revoke", { receiver: "bob" }, aliceToken),
+      await post("/request/send", { receiver: "bob" }, aliceToken),
+      await post("/login/challenge", { username: "alice", clientEphemeralPublic: "ab" }),
+    ];
+    spy.mockRestore();
+    for (const fn of [db.friendRequest.findMany, db.friendRequest.deleteMany, db.blockedUser.findMany, db.user.findUnique]) {
+      fn.mockReset();
+    }
+    for (const res of responses) {
+      expect(res.status, res.url).toBe(500);
+      expect(await res.json()).toEqual({ error: "Internal server error." });
+    }
   });
 
   it("leaves register and login public", async () => {
