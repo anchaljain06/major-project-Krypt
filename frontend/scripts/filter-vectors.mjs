@@ -11,8 +11,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const raw = process.argv[2] ?? join(here, "../test/vectors/raw");
-const out = process.argv[3] ?? join(here, "../test/vectors");
+const raw = process.argv[2] || join(here, "../test/vectors/raw"); // "" (unset RAW) = default
+const out = process.argv[3] || join(here, "../test/vectors");
 mkdirSync(out, { recursive: true });
 
 const read = (p) => JSON.parse(readFileSync(join(raw, p), "utf8"));

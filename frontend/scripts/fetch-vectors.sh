@@ -3,7 +3,7 @@
 # given as $1 (default: test/vectors/raw, which is gitignored).
 # The committed, trimmed copies in test/vectors/ are produced from these by
 # scripts/filter-vectors.mjs. Run both to refresh the vectors:
-#   bash scripts/fetch-vectors.sh && node scripts/filter-vectors.mjs
+#   npm run vectors:fetch            (RAW=<dir> OUT=<dir> override both directories)
 set -euo pipefail
 OUT="${1:-$(dirname "$0")/../test/vectors/raw}"
 mkdir -p "$OUT/acvp" "$OUT/wycheproof"

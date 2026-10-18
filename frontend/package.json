@@ -12,7 +12,7 @@
     "test:kat": "vitest run --project kat",
     "test:e2e": "playwright test",
     "typecheck:test": "tsc -p test/tsconfig.json",
-    "vectors:fetch": "bash scripts/fetch-vectors.sh && node scripts/filter-vectors.mjs"
+    "vectors:fetch": "bash scripts/fetch-vectors.sh \"$RAW\" && node scripts/filter-vectors.mjs \"$RAW\" \"$OUT\""
   },
   "dependencies": {
     "@noble/post-quantum": "^0.7.1",
