@@ -186,3 +186,11 @@ writeFileSync(
   ) + "\n",
 );
 console.log(`[e7] wrote ${outDir}`);
+
+// Correctness, not just numbers: Eve's reads must match the spec 9 exposure rule, and no
+// message from before a compromise may open. CI relies on this exit code.
+const broken = summary.filter((r) => Number(r.predicate_mismatches) > 0 || Number(r.fs_opened) > 0);
+if (broken.length) {
+  for (const r of broken) console.error(`[e7] FAIL ${r.suite} K=${r.K} ${r.traffic}: mismatches ${r.predicate_mismatches}, fs opened ${r.fs_opened}`);
+  process.exit(1);
+}

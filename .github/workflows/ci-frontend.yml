@@ -5,11 +5,13 @@ on:
     paths:
       - "frontend/**"
       - "shared/**"
+      - "evaluation/**"
       - ".github/workflows/ci-frontend.yml"
   pull_request:
     paths:
       - "frontend/**"
       - "shared/**"
+      - "evaluation/**"
       - ".github/workflows/ci-frontend.yml"
 
 jobs:
@@ -60,7 +62,33 @@ jobs:
         # Filter into a scratch directory and copy only the large files, so the
         # committed vectors are what the tests check, not today's upstream.
         run: |
-          bash scripts/fetch-vectors.sh "$RUNNER_TEMP/kat-raw"
-          node scripts/filter-vectors.mjs "$RUNNER_TEMP/kat-raw" "$RUNNER_TEMP/kat-out"
+          RAW="$RUNNER_TEMP/kat-raw" OUT="$RUNNER_TEMP/kat-out" npm run vectors:fetch
           cp "$RUNNER_TEMP/kat-out/wycheproof-mlkem-1024.json" "$RUNNER_TEMP/kat-out/wycheproof-mldsa87-verify.json" test/vectors/
       - run: npm run test:kat
+
+  # evaluation/ imports frontend/src/crypto (E4, E5, E7) and frontend/test/helpers.ts,
+  # so a frontend change can break the benchmarks without touching evaluation/.
+  evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: evaluation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            evaluation/package-lock.json
+      - name: npm ci (frontend)
+        run: npm ci
+        working-directory: frontend
+      - run: npm ci
+      - run: npm run typecheck
+      - name: E5 byte accounting (real v1 handshake)
+        run: npm run bytes -- --out "$RUNNER_TEMP/e5"
+      - name: E7 quick grid (0 mismatches and 0 forward-secrecy breaks or it fails)
+        run: npm run e7 -- --quick --out "$RUNNER_TEMP/e7"

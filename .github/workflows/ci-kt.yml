@@ -1,0 +1,46 @@
+name: ci-kt
+
+# The key transparency library (shared/) and the witness that vendors it.
+# primary-backend vendors shared/ too; its own CI checks that copy (test/vendor.test.ts).
+on:
+  push:
+    paths:
+      - "shared/**"
+      - "witness/**"
+      - ".github/workflows/ci-kt.yml"
+  pull_request:
+    paths:
+      - "shared/**"
+      - "witness/**"
+      - ".github/workflows/ci-kt.yml"
+
+jobs:
+  shared-and-witness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            shared/package-lock.json
+            witness/package-lock.json
+
+      - name: npm ci (shared)
+        run: npm ci
+        working-directory: shared
+      - name: shared tests (typecheck + vitest)
+        run: npm test
+        working-directory: shared
+
+      - name: npm ci (witness)
+        run: npm ci
+        working-directory: witness
+      - name: witness tests
+        run: npm test
+        working-directory: witness
+      # Fails if witness/lib/krypt-shared no longer matches a fresh build of shared/.
+      - name: witness vendored copy is current
+        run: node witness/scripts/vendor-shared.mjs --check
