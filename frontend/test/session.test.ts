@@ -1,6 +1,6 @@
 /**
  * SessionManager tests: the "Tests P must write" table of the implementation
- * plan, run for both ratchet suites.
+ * plan, run for every ratchet suite.
  */
 import { describe, expect, it } from "vitest";
 import type { EnvelopeV1 } from "../src/crypto/envelope";
@@ -575,4 +575,37 @@ describe("skipped-key lifetime", () => {
     expect((await state(bob, "alice")).recvEpoch).toBe(4);
     await expectRejected(bob, lostA, "STALE_EPOCH");
   });
+});
+
+describe("saved sessions from removed suites", () => {
+  // Before v1 shipped, ratchets could run ML-KEM-768 or X-Wing. A record saved
+  // then must not crash ratchetKem(): it is closed on load and the next send
+  // runs a fresh ML-KEM-1024 handshake.
+  const ageSuite = async (p: Party, peer: string, suite: string) => {
+    const rec = (await p.store.load(peer))!;
+    await p.store.save(peer, { ...rec, session: { ...rec.session!, suite: suite as SessionState["suite"] } });
+  };
+
+  for (const old of ["mlkem768", "xwing"]) {
+    it(`a saved ${old} session is closed and replaced by an ML-KEM-1024 handshake`, async () => {
+      const { alice, bob } = await world();
+      await recv(bob, await send(alice, bob, "before"));
+      await recv(alice, await send(bob, alice, "reply"));
+      const oldSid = (await alice.sm.getStatus("bob"))!.sessionId;
+      const stale = await send(alice, bob, "in flight");
+      await ageSuite(alice, "bob", old);
+      await ageSuite(bob, "alice", old);
+
+      const env = await send(alice, bob, "after");
+      expect(env.init).toBeDefined();
+      expect(env.suite).toBe("mlkem1024");
+      expect(env.sessionId).not.toBe(oldSid);
+      expect(await recv(bob, env)).toBe("after");
+      expect(await recv(alice, await send(bob, alice, "ok"))).toBe("ok");
+
+      // The old session id is tombstoned, so its messages are refused.
+      expect((await alice.store.load("bob"))!.closed).toContain(oldSid);
+      await expectRejected(bob, stale, "SESSION_CLOSED");
+    });
+  }
 });

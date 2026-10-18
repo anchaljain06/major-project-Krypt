@@ -29,7 +29,7 @@ import {
 import { DecryptError, HandshakeError } from "./errors";
 import { initiate, respond } from "./handshake";
 import { aesGcmDecrypt, aesGcmEncrypt, kdfChain, kdfRoot, messageKeyAndIv, rootContext } from "./kdf";
-import { MLDSA87, ratchetKem, type KemSuite } from "./pq";
+import { MLDSA87, isKemSuite, ratchetKem, type KemSuite } from "./pq";
 import { parseIdentityKey, verifyBundle, type PrekeyBundleWire, type PrekeyStore } from "./prekeys";
 import {
   MAX_TOMBSTONES,
@@ -161,8 +161,17 @@ export class SessionManager {
     return `krypt-session:${this.self.username}:${peer}`;
   }
 
+  /**
+   * A session saved under a ratchet suite that no longer exists (ML-KEM-768 or
+   * X-Wing, removed before v1) is closed here, so the next send runs a fresh
+   * handshake instead of crashing in ratchetKem().
+   */
   private async loadRecord(peer: string): Promise<PeerRecord> {
-    return (await this.store.load(peer)) ?? { session: null, closed: [] };
+    const rec = (await this.store.load(peer)) ?? { session: null, closed: [] };
+    if (rec.session && !isKemSuite(rec.session.suite)) {
+      return { session: null, closed: tombstone(rec.closed, toBase64url(rec.session.sessionId)) };
+    }
+    return rec;
   }
 
   // -------------------------------------------------------------------------
