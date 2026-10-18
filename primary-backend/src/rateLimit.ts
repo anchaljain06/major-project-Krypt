@@ -10,7 +10,7 @@
 // each would allow its own quota, which is still a bound.
 
 export class SlidingWindowLimiter {
-  private readonly hits = new Map<string, number[]>();
+  private readonly hits = new Map<string, { t: number; cost: number }[]>();
   private calls = 0;
 
   constructor(
@@ -19,12 +19,16 @@ export class SlidingWindowLimiter {
     private readonly now: () => number = Date.now,
   ) {}
 
-  /** Records a hit for `key` and returns true if it is within the limit. Over the limit nothing is recorded. */
-  take(key: string): boolean {
+  /**
+   * Records a hit of `cost` (default 1, so `limit` counts hits; pass a byte
+   * count to limit bytes) and returns true if the window's total stays within
+   * the limit. Over the limit nothing is recorded.
+   */
+  take(key: string, cost = 1): boolean {
     const t = this.now();
-    const fresh = (this.hits.get(key) ?? []).filter((x) => t - x < this.windowMs);
-    const ok = fresh.length < this.limit;
-    if (ok) fresh.push(t);
+    const fresh = (this.hits.get(key) ?? []).filter((x) => t - x.t < this.windowMs);
+    const ok = fresh.reduce((sum, x) => sum + x.cost, 0) + cost <= this.limit;
+    if (ok) fresh.push({ t, cost });
     if (fresh.length) this.hits.set(key, fresh);
     else this.hits.delete(key);
     if (++this.calls % 1000 === 0) this.prune(t);
@@ -38,7 +42,7 @@ export class SlidingWindowLimiter {
 
   private prune(t: number) {
     for (const [k, v] of this.hits) {
-      if (v.every((x) => t - x >= this.windowMs)) this.hits.delete(k);
+      if (v.every((x) => t - x.t >= this.windowMs)) this.hits.delete(k);
     }
   }
 }

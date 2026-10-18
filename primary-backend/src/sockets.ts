@@ -3,6 +3,7 @@ import { prisma } from "./db.js";
 import { socketAuth } from "./auth.js";
 import { enqueue, flush, MAILBOX_TTL_MS, prismaMailboxStore } from "./mailbox.js";
 import type { EvilRelay } from "./evil.js";
+import { createFileChunkRelay } from "./fileRelay.js";
 import { PREKEYS_LOW_WATERMARK, identityKeyOf, prekeyStatus, setBundleKeySource } from "./prekeys.js";
 import { emitToUser, onlineUsers, setIo } from "./realtime.js";
 import { firstIssue, privateMessagePayload, socketUsernameArg } from "./schemas.js";
@@ -93,6 +94,7 @@ export function registerSocketHandlers(io: Server, evil: EvilRelay | null = null
   setIo(io);
   io.use(socketAuth);
   if (evil) setBundleKeySource(evil.keySource);
+  const relayFileChunk = createFileChunkRelay({ policy: messagePolicy, emitToUser });
 
   io.on("connection", (socket) => {
     const username: string = socket.data.username;
@@ -158,6 +160,11 @@ export function registerSocketHandlers(io: Server, evil: EvilRelay | null = null
       } else {
         ack({ success: false, reason: status });
       }
+    });
+
+    // Binary file chunks (spec 15.4): routed online only, never stored.
+    socket.on("file:chunk", async (raw: unknown, callback?: unknown) => {
+      asAck(callback)(await relayFileChunk({ userId, username }, raw));
     });
 
     // Fetch public key for a user

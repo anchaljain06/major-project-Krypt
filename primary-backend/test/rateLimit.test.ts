@@ -22,6 +22,14 @@ describe("SlidingWindowLimiter", () => {
     expect(l.take("k")).toBe(true);
   });
 
+  it("weights hits by cost, so the limit can count bytes", () => {
+    let t = 0;
+    const l = new SlidingWindowLimiter(100, 1000, () => t);
+    expect([l.take("k", 60), l.take("k", 41), l.take("k", 40)]).toEqual([true, false, true]);
+    t = 1000;
+    expect(l.take("k", 100)).toBe(true);
+  });
+
   it("forgets idle keys", () => {
     let t = 0;
     const l = new SlidingWindowLimiter(5, 10, () => t);
