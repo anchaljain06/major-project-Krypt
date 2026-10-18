@@ -11,27 +11,37 @@
  *   node evaluation/attacks/run-v1.mjs [attackId ...]
  * Env:
  *   DATABASE_URL, DIRECT_URL   throwaway Postgres (required)
- *   OUT_DIR                     results dir (required)
+ *   OUT_DIR                     results dir (default results/attack-matrix-dev/v1)
  *   BACKEND_PORT=3100 VITE_PORT=5199
  */
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { ATTACKS } from "./attacks.mjs";
-import { checkBola, checkImpersonation, spawnProc, waitForHttp, waitForPort, sleep } from "./lib.mjs";
+import {
+  FRONTEND,
+  FRONTEND_NM,
+  ROOT,
+  checkBola,
+  checkImpersonation,
+  namesFor,
+  resolveEnv,
+  runSpec,
+  sleep,
+  spawnProc,
+  splitPlain,
+  waitForHttp,
+  waitForPort,
+  writeFailure,
+} from "./lib.mjs";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, "..", "..");
 const BACKEND = join(ROOT, "primary-backend");
-const FRONTEND = join(ROOT, "frontend");
-const FRONTEND_NM = join(FRONTEND, "node_modules");
 
 const BACKEND_PORT = Number(process.env.BACKEND_PORT ?? 3100);
 const VITE_PORT = Number(process.env.VITE_PORT ?? 5199);
 const API_URL = `http://localhost:${BACKEND_PORT}`;
 const BASE_URL = `http://localhost:${VITE_PORT}`;
-const OUT_DIR = process.env.OUT_DIR ?? join(ROOT, "evaluation", "results", "attack-matrix-dev", "v1");
+const OUT_DIR = resolve(process.env.OUT_DIR ?? join(ROOT, "evaluation", "results", "attack-matrix-dev", "v1"));
 mkdirSync(OUT_DIR, { recursive: true });
 
 if (!process.env.DATABASE_URL || !process.env.DIRECT_URL) {
@@ -54,17 +64,9 @@ function ktKeys() {
   return KT;
 }
 
-function resolveEnv(env, names) {
-  const out = {};
-  for (const [k, v] of Object.entries(env)) {
-    out[k] = v === "__MALLORY__" ? names.mallory : v === "__BOB__" ? names.bob : v;
-  }
-  return out;
-}
-
 async function startServers(attack, names) {
   const kt = attack.kt;
-  const evilEnv = resolveEnv(attack.env ?? {}, names);
+  const evilEnv = resolveEnv(attack.env, names);
   const backendEnv = {
     PORT: String(BACKEND_PORT),
     FRONTEND_URL: BASE_URL,
@@ -102,25 +104,6 @@ async function startServers(attack, names) {
   return { stop };
 }
 
-function runPlaywright(attack, names) {
-  const r = spawnSync("npx", ["playwright", "test", "attacks.spec.ts", "--project", "chromium"], {
-    cwd: FRONTEND,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      ATTACK: attack.id,
-      OUT_DIR,
-      VITE_API_URL: API_URL,
-      E2E_BASE_URL: BASE_URL,
-      E2E_EXPECT_KT: attack.kt ? "1" : "0",
-      ALICE_NAME: names.alice,
-      BOB_NAME: names.bob,
-      MALLORY_NAME: names.mallory,
-    },
-  });
-  return r.status === 0;
-}
-
 async function runPlainChecks(ids) {
   // One honest backend for impersonation + bola.
   const backend = spawnProc("node", ["dist/server.js"], {
@@ -138,7 +121,7 @@ async function runPlainChecks(ids) {
   await sleep(800);
   try {
     if (ids.includes("impersonation")) {
-      const r = await checkImpersonation({ apiUrl: API_URL, flavor: "v1", victim: "victim" });
+      const r = await checkImpersonation({ apiUrl: API_URL });
       writeFileSync(
         join(OUT_DIR, "impersonation.json"),
         JSON.stringify({ attack: "impersonation", flavor: "v1", ...r, observed: r.observed, refused: !r.hijacked }, null, 2),
@@ -159,8 +142,7 @@ async function main() {
   const argv = process.argv.slice(2);
   const requested = argv.length ? argv : ATTACKS.map((a) => a.id);
 
-  const plain = requested.filter((id) => id === "impersonation" || id === "bola");
-  const browser = requested.filter((id) => id !== "impersonation" && id !== "bola");
+  const { plain, browser } = splitPlain(requested);
 
   process.env.KRYPT_FRONTEND_NM = FRONTEND_NM;
   if (plain.length) {
@@ -174,17 +156,18 @@ async function main() {
       console.error(`unknown attack ${id}`);
       continue;
     }
-    // Fresh, fixed usernames per attack, shared by the backend env and the spec,
-    // so EVIL_SWAP_WITH / EVIL_KT_VICTIM name the accounts the spec registers.
-    const suffix = `${id}_${Date.now().toString(36).slice(-5)}`.toLowerCase().replace(/[^a-z0-9_]/g, "");
-    const names = { alice: `alice_${suffix}`, bob: `bob_${suffix}`, mallory: `mallory_${suffix}` };
+    // EVIL_SWAP_WITH / EVIL_KT_VICTIM must name the accounts the spec registers.
+    const names = namesFor(id);
     console.log(`\n== v1 attack: ${id} (EVIL_MODE=${attack.env?.EVIL_MODE ?? "none"}${attack.kt ? ", KT on" : ""}) ==`);
     const srv = await startServers(attack, names);
     try {
-      const ok = runPlaywright(attack, names);
-      if (!ok && !existsSync(join(OUT_DIR, `${id}.json`))) {
-        writeFileSync(join(OUT_DIR, `${id}.json`), JSON.stringify({ attack: id, observed: "spec failed (no result)", error: true }, null, 2));
-      }
+      const ok = runSpec("attacks.spec.ts", attack, names, {
+        OUT_DIR,
+        VITE_API_URL: API_URL,
+        E2E_BASE_URL: BASE_URL,
+        E2E_EXPECT_KT: attack.kt ? "1" : "0",
+      });
+      if (!ok) writeFailure(OUT_DIR, id);
     } finally {
       await srv.stop();
       await sleep(500);

@@ -1,12 +1,61 @@
 /**
  * Shared helpers for the attack-matrix runners: spawn/stop servers, wait for a
- * port, and the two protocol-independent abuse checks (socket impersonation and
- * BOLA) that are the same idea against v0 and v1.
+ * port, run one attack spec, and the abuse checks done in Node (impersonation
+ * and BOLA) for v1 and v0.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+export const FRONTEND = join(ROOT, "frontend");
+export const FRONTEND_NM = join(FRONTEND, "node_modules");
+
+/** Attacks checked in Node against an honest server; the rest need two browsers. */
+const NODE_CHECKS = new Set(["impersonation", "bola"]);
+export const splitPlain = (ids) => ({
+  plain: ids.filter((id) => NODE_CHECKS.has(id)),
+  browser: ids.filter((id) => !NODE_CHECKS.has(id)),
+});
+
+/** Fresh usernames per attack, shared by the relay env and the spec. */
+export function namesFor(id) {
+  const suffix = `${id}_${Date.now().toString(36).slice(-5)}`.toLowerCase().replace(/[^a-z0-9_]/g, "");
+  return { alice: `alice_${suffix}`, bob: `bob_${suffix}`, mallory: `mallory_${suffix}` };
+}
+
+/** Replace the __MALLORY__ / __BOB__ placeholders in an attack's env with real usernames. */
+export function resolveEnv(env, names) {
+  const out = {};
+  for (const [k, v] of Object.entries(env ?? {})) out[k] = v === "__MALLORY__" ? names.mallory : v === "__BOB__" ? names.bob : v;
+  return out;
+}
+
+/** Run one Playwright spec in Chromium for one attack; true if it passed. */
+export function runSpec(spec, attack, names, env) {
+  const r = spawnSync("npx", ["playwright", "test", spec, "--project", "chromium"], {
+    cwd: FRONTEND,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      ATTACK: attack.id,
+      ALICE_NAME: names.alice,
+      BOB_NAME: names.bob,
+      MALLORY_NAME: names.mallory,
+      ...env,
+    },
+  });
+  return r.status === 0;
+}
+
+/** If a spec failed without writing its result, record that so the matrix shows it. */
+export function writeFailure(outDir, id, extra = {}) {
+  const file = join(outDir, `${id}.json`);
+  if (!existsSync(file)) writeFileSync(file, JSON.stringify({ attack: id, ...extra, observed: "spec failed (no result)", error: true }, null, 2));
+}
 
 // socket.io-client is not a dependency of evaluation/, so load it from the
 // frontend's node_modules (KRYPT_FRONTEND_NM, set by the runners).
@@ -79,15 +128,13 @@ export function spawnProc(cmd, args, { cwd, env, label }) {
 }
 
 /**
- * Impersonation: a socket that is not the victim tries to come online as them.
- *  - v1: connect with no auth token; the server must refuse (connect_error).
- *  - v0: connect, then emit register_socket("<victim>") and listen for any of
- *        the victim's messages / mailbox. If anything is received, the hijack worked.
+ * v1 impersonation: a socket with no auth token tries to come online. The
+ * server must refuse it (connect_error), because identity comes from the token.
+ * v0 is checked end to end by checkMailboxDrainV0 instead.
  */
-export async function checkImpersonation({ apiUrl, flavor, victim }) {
+export async function checkImpersonation({ apiUrl }) {
   const ioClient = loadIoClient();
   return await new Promise((resolve) => {
-    const got = [];
     let settled = false;
     const done = (observed, hijacked) => {
       if (settled) return;
@@ -101,24 +148,7 @@ export async function checkImpersonation({ apiUrl, flavor, victim }) {
     };
     const s = ioClient(apiUrl, { auth: {}, reconnection: false, transports: ["websocket", "polling"] });
     s.on("connect_error", (e) => done(`connect_error: ${e.message}`, false));
-    s.on("receive_message", (m) => got.push(m));
-    s.on("online_users", (u) => got.push({ online_users: u }));
-    s.on("connect", () => {
-      if (flavor === "v0") {
-        s.emit("register_socket", victim);
-        setTimeout(
-          () =>
-            done(
-              got.length ? `registered as ${victim}; received ${got.length} event(s) incl. mailbox/presence` : "connected, no events",
-              got.length > 0,
-            ),
-          4000,
-        );
-      } else {
-        // v1 should never reach here without a token.
-        done("connected_without_token (UNEXPECTED)", true);
-      }
-    });
+    s.on("connect", () => done("connected_without_token (UNEXPECTED)", true));
     setTimeout(() => done("timeout (no connect, no error)", false), 9000);
   });
 }
@@ -193,10 +223,9 @@ export async function checkBolaV0({ apiUrl, attacker, victim }) {
 }
 
 /**
- * BOLA: accept a friend request on someone else's behalf, no/!own token.
- *  - v0: POST /api/request/accept {sender, receiver} with no auth at all.
- *  - v1: same call with no Authorization header (expect 401) — and the route
- *        also requires the token user to be the receiver (403 otherwise).
+ * v1 BOLA: accept a friend request on someone else's behalf with no
+ * Authorization header. Expect 401 (403 if the token user is not the receiver).
+ * v0 is checked end to end by checkBolaV0 instead.
  */
 export async function checkBola({ apiUrl, sender, receiver }) {
   try {

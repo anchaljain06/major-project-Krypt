@@ -13,17 +13,26 @@
  * Usage: node evaluation/attacks/run-v0.mjs [attackId ...]
  * Env:   V0_DIR (scratch copy, required), DATABASE_URL/DIRECT_URL (v0 DB), OUT_DIR
  */
-import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ATTACKS } from "./attacks.mjs";
-import { checkBolaV0, checkMailboxDrainV0, spawnProc, waitForHttp, sleep } from "./lib.mjs";
+import {
+  FRONTEND_NM,
+  ROOT,
+  checkBolaV0,
+  checkMailboxDrainV0,
+  namesFor,
+  resolveEnv,
+  runSpec,
+  sleep,
+  spawnProc,
+  splitPlain,
+  waitForHttp,
+  writeFailure,
+} from "./lib.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, "..", "..");
-const FRONTEND = join(ROOT, "frontend");
-const FRONTEND_NM = join(FRONTEND, "node_modules");
 const BACKEND_NM = join(ROOT, "primary-backend", "node_modules");
 const EVIL_JS = join(ROOT, "primary-backend", "dist", "evil.js");
 const PROXY = join(HERE, "evil-proxy.mjs");
@@ -42,7 +51,7 @@ const V0_VITE_PORT = Number(process.env.V0_VITE_PORT ?? 5299);
 const PROXY_URL = `http://localhost:${PROXY_PORT}`;
 const V0_BACKEND_URL = `http://localhost:${V0_BACKEND_PORT}`;
 const BASE_URL = `http://localhost:${V0_VITE_PORT}`;
-const OUT_DIR = process.env.OUT_DIR ?? join(ROOT, "evaluation", "results", "attack-matrix-dev", "v0");
+const OUT_DIR = resolve(process.env.OUT_DIR ?? join(ROOT, "evaluation", "results", "attack-matrix-dev", "v0"));
 mkdirSync(OUT_DIR, { recursive: true });
 
 if (!process.env.DATABASE_URL || !process.env.DIRECT_URL) {
@@ -60,13 +69,10 @@ function startV0Backend() {
 }
 
 function startProxy(attack, names) {
-  const evilEnv = {};
-  for (const [k, v] of Object.entries(attack.env ?? {}))
-    evilEnv[k] = v === "__MALLORY__" ? names.mallory : v === "__BOB__" ? names.bob : v;
   return spawnProc("node", [PROXY], {
     cwd: HERE,
     env: {
-      ...evilEnv,
+      ...resolveEnv(attack.env, names),
       PROXY_PORT: String(PROXY_PORT),
       V0_BACKEND_URL,
       KRYPT_EVIL_JS: EVIL_JS,
@@ -85,24 +91,6 @@ function startV0Vite() {
   });
 }
 
-function runPlaywright(attack, names) {
-  const r = spawnSync("npx", ["playwright", "test", "attacks-v0.spec.ts", "--project", "chromium"], {
-    cwd: FRONTEND,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      ATTACK: attack.id,
-      OUT_DIR,
-      E2E_BASE_URL: BASE_URL,
-      PROXY_URL,
-      ALICE_NAME: names.alice,
-      BOB_NAME: names.bob,
-      MALLORY_NAME: names.mallory,
-    },
-  });
-  return r.status === 0;
-}
-
 async function main() {
   const argv = process.argv.slice(2);
   // v0 has no KT; skip kt_* attacks.
@@ -110,8 +98,7 @@ async function main() {
   const requested = (argv.length ? argv : applicable).filter((id) => applicable.includes(id));
   process.env.KRYPT_FRONTEND_NM = FRONTEND_NM;
 
-  const plain = requested.filter((id) => id === "impersonation" || id === "bola");
-  const browser = requested.filter((id) => id !== "impersonation" && id !== "bola");
+  const { plain, browser } = splitPlain(requested);
 
   if (plain.length) {
     console.log(`== v0 plain checks: ${plain.join(", ")} ==`);
@@ -142,8 +129,7 @@ async function main() {
 
   for (const id of browser) {
     const attack = ATTACKS.find((a) => a.id === id);
-    const suffix = `${id}_${Date.now().toString(36).slice(-5)}`.toLowerCase().replace(/[^a-z0-9_]/g, "");
-    const names = { alice: `alice_${suffix}`, bob: `bob_${suffix}`, mallory: `mallory_${suffix}` };
+    const names = namesFor(id);
     console.log(`\n== v0 attack: ${id} (EVIL_MODE=${attack.env?.EVIL_MODE ?? "none"}) ==`);
     const backend = startV0Backend();
     await waitForHttp(`${V0_BACKEND_URL}/api/users/search?q=x&current_user=x`).catch(() => sleep(2000));
@@ -153,9 +139,8 @@ async function main() {
     await waitForHttp(`${BASE_URL}/`);
     await sleep(1500);
     try {
-      const ok = runPlaywright(attack, names);
-      if (!ok && !existsSync(join(OUT_DIR, `${id}.json`)))
-        writeFileSync(join(OUT_DIR, `${id}.json`), JSON.stringify({ attack: id, flavor: "v0", observed: "spec failed (no result)", error: true }, null, 2));
+      const ok = runSpec("attacks-v0.spec.ts", attack, names, { OUT_DIR, E2E_BASE_URL: BASE_URL, PROXY_URL });
+      if (!ok) writeFailure(OUT_DIR, id, { flavor: "v0" });
     } finally {
       await vite.stop();
       await proxy.stop();

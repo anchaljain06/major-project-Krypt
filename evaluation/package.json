@@ -15,6 +15,9 @@
     "plot": ".venv/bin/python plots/plot.py",
     "e7": "tsx scripts/e7.ts",
     "plot:e7": ".venv/bin/python plots/e7_plot.py",
+    "attacks:v1": "node attacks/run-v1.mjs",
+    "attacks:v0": "node attacks/run-v0.mjs",
+    "attacks:matrix": "node attacks/build-matrix.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

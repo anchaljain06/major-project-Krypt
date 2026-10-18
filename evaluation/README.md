@@ -8,7 +8,8 @@ evaluation/
 ├─ bench/worker.ts              dedicated Web Worker that runs the suite
 ├─ src/e7-ratchet.ts            E7 driver: Alice/Bob over the real SessionManager, KEM op counters, attacker Eve
 ├─ src/harness.ts               batch timer (method rules below)
-├─ src/stats.ts                 median, p5/p95, IQR, bootstrap CI
+├─ src/stats.ts                 median, p5/p95, IQR, bootstrap CI, quantile, mean
+├─ src/csv.ts                   CSV writer shared by aggregate.ts and e7.ts
 ├─ src/experiments.ts           E1–E4 op definitions and self-checks
 ├─ scripts/run-bench.ts         Playwright: Chromium, Firefox, WebKit × N fresh launches
 ├─ scripts/run-node.ts          E10: node:crypto vs WebCrypto-in-Node vs noble vs liboqs
@@ -17,13 +18,16 @@ evaluation/
 ├─ scripts/aggregate.ts         JSON → long.csv, summary.csv, env.csv, headline.md
 ├─ plots/plot.py                figures (PNG + SVG)
 ├─ plots/e7_plot.py             E7 figures (same style and palette)
+├─ attacks/                     attack matrix: attack list, v1/v0 runners, v0 evil proxy, matrix builder
+├─ attack-matrix.md             generated v0 vs v1 attack table (do not edit by hand)
+├─ results/attack-matrix-*/     per-attack JSON + screenshots, v0/ and v1/
 └─ results/e7-2026-10-17/       E7 full grid: summary, per-snapshot results, figures
 ```
 
 ## Quick start (laptop)
 
 ```bash
-cd eval
+cd evaluation
 npm install
 npx playwright install chromium firefox webkit
 
@@ -36,7 +40,7 @@ npm run aggregate -- results/<date>         # → summary.csv, long.csv, env.csv
 python3 -m venv .venv && .venv/bin/pip install -r plots/requirements.txt
 npm run plot -- results/<date>              # → results/<date>/figures/*.png|svg
 
-npm --prefix ../frontend install            # E7 imports frontend/src/crypto and its @noble deps
+npm --prefix ../frontend install            # E4, E5 and E7 import frontend/src/crypto (and its deps)
 npm run e7                                  # E7 full grid (about 2 min) → results/e7-<date>/
 npm run plot:e7 -- results/e7-<date>        # → results/e7-<date>/figures/e7_*.png|svg
 ```
@@ -220,6 +224,39 @@ Outputs in `results/e7-<date>/`:
 | `messages.csv` | one row per message (gitignored) |
 | `env.json` | the configuration |
 | `figures/` | `e7_bandwidth_vs_healing` (the key C1 figure: two stacked panels sharing K), `e7_bytes_vs_K`, `e7_heal_vs_K`, `e7_cpu_vs_K` |
+
+## Attack matrix
+
+Every malicious-relay attack in `attacks/attacks.mjs` runs against v1 (this branch, the backend's own `EVIL_MODE`) and v0 (tag `protocol-v0` behind `attacks/evil-proxy.mjs`), with two real browsers driven by `frontend/e2e/attacks.spec.ts` and `attacks-v0.spec.ts`. Each run writes `<attack>.json` (+ a screenshot) per version; `npm run attacks:matrix` turns a results folder into [`attack-matrix.md`](attack-matrix.md). That file is generated: change `attacks/build-matrix.mjs`, not the Markdown.
+
+Prerequisites: Docker, Node, and the `protocol-v0` tag. Run from the repo root:
+
+```bash
+# 1. Throwaway Postgres
+docker run -d --name krypt-pg-matrix -e POSTGRES_PASSWORD=pg -p 55434:5432 postgres:16
+export DATABASE_URL=postgresql://postgres:pg@localhost:55434/postgres DIRECT_URL=postgresql://postgres:pg@localhost:55434/postgres
+
+# 2. v1 backend: install, migrate, build; frontend: install + Chromium
+(cd primary-backend && npm ci && npx prisma migrate deploy && npx tsc)
+(cd frontend && npm ci && npx playwright install chromium)
+
+# 3. v0 copy outside the repo, with its own database
+SCRATCH=$(mktemp -d) && git archive protocol-v0 | tar -x -C "$SCRATCH"
+V0_DB=postgresql://postgres:pg@localhost:55434/krypt_v0
+(cd "$SCRATCH/primary-backend" && npm ci && DATABASE_URL=$V0_DB DIRECT_URL=$V0_DB npx prisma db push && npx tsc)
+(cd "$SCRATCH/frontend" && npm ci)
+
+# 4. Run (one attack: append its id, e.g. `-- tamper`), then build the table
+OUT=results/attack-matrix-$(date +%F)
+OUT_DIR=$OUT/v1 npm --prefix evaluation run attacks:v1
+OUT_DIR=$OUT/v0 V0_DIR="$SCRATCH" DATABASE_URL=$V0_DB DIRECT_URL=$V0_DB npm --prefix evaluation run attacks:v0
+npm --prefix evaluation run attacks:matrix -- "$OUT"
+
+# 5. Clean up
+docker rm -f krypt-pg-matrix
+```
+
+`OUT_DIR` is resolved by the runners as given; without it, results go to `results/attack-matrix-dev/` (git-ignored). `npm --prefix` runs the scripts with `evaluation/` as the working directory, so `$OUT` above is relative to `evaluation/`.
 
 ## Running on real Safari (macOS / iOS)
 

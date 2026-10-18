@@ -7,11 +7,11 @@ __pycache__/
 .cache/
 playwright-report/
 test-results/
-# Raw results stay local; only curated samples are committed
+# Raw results stay local; only the dated runs below are committed
 results/*
-!results/sample-*/
 # Attack matrix: results + small screenshots are committed as viva evidence
 !results/attack-matrix-*/
+results/attack-matrix-dev/
 # E7 full runs: summaries and figures are committed, the per-message CSV (~12 MB) is not
 !results/e7-*/
 results/e7-*/messages.csv

@@ -126,4 +126,3 @@ export const ATTACKS = [
   },
 ];
 
-export const KT_ATTACK_IDS = ATTACKS.filter((a) => a.kt).map((a) => a.id);
