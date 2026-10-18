@@ -327,7 +327,8 @@ describe("file transfer", () => {
     const w = await world();
     w.net.chunkHook = (f) => (f.index >= 1 ? "OFFLINE" : f);
     const { id } = await sendAndAccept(w, 2 * MiB);
-    await until(() => w.bob.get(id)?.done === 1);
+    // Wait for Alice to pause too: her pause stamps updatedAt, and it must land before the clock moves.
+    await until(() => status(w.alice, id) === "paused" && w.bob.get(id)?.done === 1);
     w.clock.t += TRANSFER_TTL_MS + 1;
     await w.bob.expire();
     await w.alice.expire();
