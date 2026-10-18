@@ -277,6 +277,9 @@ def fig_aes(s: pd.DataFrame, out: Path, note: str) -> None:
     save(fig, out, "aes_throughput", note)
 
 
+SHORT_VERSION = {"v1-mlkem768": "768*", "v1-xwing": "XW*"}
+
+
 def fig_e5(e5: pd.DataFrame | None, out: Path) -> None:
     if e5 is None or e5.empty:
         print("  skip e5_bytes (no e5-bytes.csv)")
@@ -285,8 +288,8 @@ def fig_e5(e5: pd.DataFrame | None, out: Path) -> None:
     e5["component"] = e5.component.replace({"routing": "headers & routing", "header fields": "headers & routing"})
     hs = e5[e5.phase.isin(["bundle", "first-message"])].assign(phase="handshake")
     st = e5[e5.phase == "steady-message"]
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.4), gridspec_kw={"width_ratios": [1, 1]})
-    versions = ["v0", "v1", "v1-xwing"]
+    versions = [v for v in ["v0", "v1", "v1-mlkem768", "v1-xwing"] if v in set(e5.version)]
+    fig, axes = plt.subplots(1, 2, figsize=(3.4 * len(versions), 4.4), gridspec_kw={"width_ratios": [1, 1]})
     encs = ["raw", "binary", "json-base64"]
     for ax, data, title in [(axes[0], hs, "Per handshake (bundle fetch + first message)"),
                             (axes[1], st, "Per steady-state message (v1 at K = 1)")]:
@@ -296,7 +299,7 @@ def fig_e5(e5: pd.DataFrame | None, out: Path) -> None:
         for v in versions:
             for e in encs:
                 xs.append(pos)
-                labels.append(f"{v}\n{ {'raw': 'raw', 'binary': 'bin', 'json-base64': 'json'}[e]}")
+                labels.append(f"{SHORT_VERSION.get(v, v)}\n{ {'raw': 'raw', 'binary': 'bin', 'json-base64': 'json'}[e]}")
                 pos += 1
             pos += 0.6
         bottoms = np.zeros(len(xs))
@@ -317,7 +320,7 @@ def fig_e5(e5: pd.DataFrame | None, out: Path) -> None:
         ax.set_axisbelow(True)
     h, l = axes[0].get_legend_handles_labels()
     fig.legend(h, l, ncol=8, loc="upper left", bbox_to_anchor=(0.01, 1.07), fontsize=8)
-    save(fig, out, "e5_bytes", "E5 byte accounting from FIPS 203/204 sizes; json-base64 = Socket.io text frame; "
+    save(fig, out, "e5_bytes", "E5 byte accounting: v1 measured from the shipped encoder, v0 modelled; 768* / XW* = v1 resized to an ML-KEM-768 / X-Wing ratchet (comparison only); json = Socket.io text frame; "
                                "plaintext = 100 B; bin = length-prefixed binary frame.")
 
 

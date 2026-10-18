@@ -76,7 +76,7 @@ Every op checks itself before it is timed. Decaps must equal the encaps secret a
 | E2 | ML-DSA-44/65/87 keygen, sign, verify (64-byte message) | noble, liboqs-js, native WebCrypto |
 | E3 | X25519 keygen and derive; Ed25519 keygen, sign, verify | native WebCrypto, `@noble/curves` |
 | E4 | AES-256-GCM encrypt/decrypt at 64 B, 1 KB, 16 KB, 256 KB, 1 MB (MB/s); ratchet `chain-step` (`kdfChain` + `messageKeyAndIv`, spec 5.3); `root-step` (`kdfRoot`, spec 5.2); `seal` = chain step + `aesGcmEncrypt` of 1 KB with a 256 B AAD. All three call `frontend/src/crypto/kdf.ts` | native WebCrypto |
-| E5 | Bytes per handshake (bundle fetch + first message) and per steady-state message for v0, v1 (ML-KEM-768 ratchet) and v1-xwing (both earlier designs, kept as comparisons; Krypt now ships an ML-KEM-1024 ratchet only, spec §2.1), each as raw vs length-prefixed binary vs Socket.io JSON/base64 | none (pure accounting from FIPS 203/204 sizes, checked against noble) |
+| E5 | Bytes per handshake (bundle fetch + first message) and per steady-state message, each as raw vs binary vs Socket.io JSON/base64. v1 (ML-KEM-1024) is measured from a real handshake through the shipped `SessionManager`, `encodeBinaryEnvelope` and `buildWirePayload`. v1-mlkem768 and v1-xwing are the same real envelopes with the ratchet `ek`/`ct` resized (comparisons only, spec §2.1). v0 is hand-modelled, because its code exists only at tag `protocol-v0` | none (byte accounting; sizes checked against noble) |
 | E10 | The same suite in Node, plus a `node-crypto` backend (`generateKeyPairSync('ml-kem-768')`, `crypto.encapsulate/decapsulate`, `crypto.sign/verify`) | noble, liboqs, Node WebCrypto, node:crypto |
 | E7 | Sparse KEM ratchet interval K: bytes per message, KEM ops and CPU per message, messages-to-heal after a state compromise. See [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing) | the v1 `SessionManager` (noble ML-KEM-1024; results below are from the earlier ML-KEM-768 / X-Wing build), Node |
 
@@ -136,7 +136,7 @@ E7 measures the research knob of contribution C1: the sparse interval `ratchetEv
   - ratchet-KEM keygen, encaps and decaps on the sender and on the receiver. These are counted by wrapping the `mlkem1024` object's methods at runtime. Prekeys use the same object, so prekey operations are told apart by key fingerprint and counted separately;
   - encrypt and decrypt wall time, with the session-store time measured separately and subtracted. `cpu_*` is crypto plus state machine only.
 - **CPU timing is single-call wall time** inside a stateful transcript. The batch rule of the browser harness cannot apply to stateful ops. A 60-message warm-up per suite runs first. Look at the mean and the root-step vs chain-step split (`cpu_root_ms_median`, `cpu_chain_ms_median`). The median alone hides a bimodal distribution.
-- **Bytes** are reported excluding messages that carry the epoch-0 `init` header (`*_steady`). The all-message means are also in `summary.csv`. The binary frame here includes the `lp` length prefixes and the usernames, so K = 1 gives 2,516 B. E5's 2,345 B "raw" counts components only.
+- **Bytes** are reported excluding messages that carry the epoch-0 `init` header (`*_steady`). The all-message means are also in `summary.csv`. The binary frame here includes the `lp` length prefixes and the usernames, so K = 1 gives 2,516 B (ML-KEM-768). E5 derives its v1 rows from the same encoder, so its binary overhead plus the 100 B plaintext matches E7 exactly (3,381 / 2,516 / 2,577 B for ML-KEM-1024 / ML-KEM-768 / X-Wing).
 
 ### Threat model and attacker
 
@@ -265,4 +265,4 @@ ML-KEM-768 encaps, median:
 | WebKit | 414 µs | 22.0 µs | unsupported | – |
 | Node 25 | 252 µs | 19.4 µs | 23.8 µs | 16.4 µs |
 
-On bytes, v1 at K = 1 costs 2,345 B raw (3,260 B JSON/base64) per message, against 40 B for v0. A full v1 handshake is about 24 KB raw (32 KB JSON), against about 10 KB for v0.
+On bytes (E5 on the current code, ML-KEM-1024 ratchet), v1 at K = 1 costs 3,232 B raw (4,490 B JSON/base64) of overhead per message, against 40 B for v0. A full v1 handshake (bundle + first message) is about 26 KB raw (35 KB JSON), against about 10 KB for v0.
