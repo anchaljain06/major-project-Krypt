@@ -1,7 +1,7 @@
 // E7 runner: suites x K x traffic x seeds, 1,000 messages each, passive-attacker snapshots.
 //
 //   npm run e7                       # full grid -> results/e7-<date>/
-//   npm run e7 -- --quick            # 200 messages, K in {1, 10}, one seed (smoke test)
+//   npm run e7 -- --quick            # 200 messages, K in {1, 4}, one seed (smoke test)
 //   npm run e7 -- --out results/x --messages 1000 --ks 1,2,5 --traffic alternate
 //
 // Writes:
@@ -36,7 +36,7 @@ const quick = flag("quick");
 const date = new Date().toISOString().slice(0, 10);
 const outDir = path.resolve(opt("out", path.join(here, "..", "results", `e7-${date}${quick ? "-quick" : ""}`)));
 const messages = Number(opt("messages", quick ? "200" : "1000"));
-const Ks = opt("ks", quick ? "1,10" : "1,2,5,10,50,100").split(",").map(Number);
+const Ks = opt("ks", quick ? "1,4" : "1,4,8,16").split(",").map(Number);
 const suites = opt("suites", "mlkem1024").split(",") as KemSuite[];
 const traffics = opt("traffic", TRAFFIC.join(",")).split(",") as Traffic[];
 // Deterministic scripts need one seed; random ones get three.

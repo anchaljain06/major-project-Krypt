@@ -102,7 +102,7 @@ records the comparison instead.
 |---|---|---|---|---|
 | ML-KEM-768 | 3 | 1088 + 1184 = 2272 B | 2,516 | about 1.2 ms |
 | X-Wing | 3 + classical | 1120 + 1216 = 2336 B | 2,577 | about 3.2 ms |
-| **ML-KEM-1024 (chosen)** | **5** | **1568 + 1568 = 3136 B** | **3,381 (quick run)** | not yet measured |
+| **ML-KEM-1024 (chosen)** | **5** | **1568 + 1568 = 3136 B** | **3,381** | **about 1.6 ms** |
 
 Why ML-KEM-1024:
 
@@ -116,8 +116,10 @@ Why ML-KEM-1024:
    X25519, and the prekeys and handshake would still be ML-KEM-only.
 
 What we gave up: about 865 B per message at K = 1 compared with ML-KEM-768
-(sparse mode, section 5.6, recovers most of it), and the classical fallback that
-X-Wing offered if ML-KEM were broken.
+(the default K = 4, section 5.6, brings alternating chat down to 2,201 B), about
+1.5x the CPU per KEM operation (`evaluation/results/kem-768-vs-1024-2026-10-18`:
+252-349 µs against 172-238 µs in Node 25 and Chromium 156), and the classical
+fallback that X-Wing offered if ML-KEM were broken.
 
 The suite name stays in the transcript `T` (section 4.1) and in every header
 (section 8.1), so a future suite change is explicit and cannot be downgraded
@@ -426,25 +428,48 @@ Why there are no ratchet collisions: a root step fires only when a **new peer
 key** arrives, never because of arrival timing, and epochs alternate by parity,
 so both sides apply root updates in the same order.
 
-### 5.6 Sparse mode (`ratchetEveryK`, experiment E7)
+### 5.6 Ratchet threshold (`ratchetEveryK`, default `K = 4`)
 
-`K = 1` (default) is the alternating ratchet: every message of a new epoch
-carries `(ct, ek)`, and a party ratchets on its first send after receiving the
-peer's new key. With `K > 1` a party keeps sending on its current chain until it
-has sent `K` messages on it, and only then performs the send step. Once the peer
-has acknowledged the chain's ratchet data (`peerAcked`), headers stop carrying
-it, which is where the bandwidth saving comes from. Larger `K` means fewer
-ratchet steps and therefore slower healing (section 9).
+`K` is how many messages a party sends on its current chain before it adopts
+the peer's newer ratchet key. A party performs the send step (5.4 step 2) only
+when it holds a new peer key **and** has sent `K` messages on the current chain.
+`K` is a scheduling threshold: it is not a wire field, not a counter width and
+not a time interval. `n`, `pn` and `epoch` stay 32-bit; a send step that would
+need epoch 2³² fails before anything is saved.
 
-What sparse mode saves is mainly KEM work and epochs, not always header bytes:
-a chain's ratchet data is acknowledged only when the peer ratchets, which with
-strictly alternating traffic happens after the peer's own `K` sends, so about
-half of the headers still carry `(ct, ek)`. One-sided bursts benefit more.
-Experiment E7 should report both numbers.
+- `K = 1` ratchets on the first send after every new peer key (every message
+  of a new epoch carries `(ct, ek)`). It heals fastest.
+- `K = 4` is the default (`DEFAULT_RATCHET_EVERY_K` in `session.ts`). Any
+  `K ≥ 1` can be passed to `SessionManager`.
 
-With ML-KEM-1024 each header that carries ratchet data adds 3136 B
-(`ct` 1568 + `ek` 1568). The default stays `K = 1` until E7 is re-run with
-ML-KEM-1024 at `K` = 1, 4, 8 and 16 and a default is chosen from that data.
+Once the peer has acknowledged a chain's ratchet data (`peerAcked`), headers
+stop carrying it. A chain's data is acknowledged only when the peer ratchets, so
+with strictly alternating traffic some headers still carry `(ct, ek)`; the
+saving is mainly in KEM operations. Each header that carries ratchet data adds
+3136 B (`ct` 1568 + `ek` 1568).
+
+**Larger `K` is not more secure.** It trades healing speed for bytes and KEM
+work: after a state compromise, secrecy returns later (section 9).
+
+Experiment E7 (ML-KEM-1024, 1,000 messages per run, 100 B plaintext, Node 25 on
+an Apple-silicon Mac; `evaluation/results/e7-2026-10-18`):
+
+| `K` | B/msg, alternating | B/msg, Poisson | KEM ops/msg, alternating | Messages to heal, median (alternating / Poisson / 90-10 one-sided) |
+|---|---|---|---|---|
+| 1 | 3,381 | 3,381 | 3.0 | 0.5 / 4 / 8 |
+| **4** | **2,201** | **2,786** | **0.75** | **4 / 6 / 64** |
+| 8 | 2,006 | 2,388 | 0.38 | 7.5 / 15 / 128 |
+| 16 | 1,908 | 2,103 | 0.19 | 15.5 / 21 / 254 |
+
+Bytes are the binary frame after the first message (the init-carrying message
+is excluded), as in section 2.1. A root step costs about 1.6 ms of CPU at
+every `K`; `K` changes how often it happens.
+
+`K = 4` keeps most of the saving of larger `K` for two-way chat (35 % fewer
+bytes and 75 % fewer KEM operations than `K = 1` with alternating traffic)
+while median healing stays within a few messages. One-sided traffic heals
+slowly at every `K > 1`, because the quiet side ratchets rarely. All 16 grid cells
+had 0 exposure-rule mismatches and 0 forward-secrecy breaks.
 
 ## 6. Skipped keys and limits
 
@@ -524,12 +549,16 @@ numbers, out-of-range values, non-canonical base64url, and wrong byte lengths
 `binary = lp(header, body)`. It carries exactly the same information as the
 JSON form and is provided for the bandwidth experiment (E5).
 
-### 8.4 Sizes at K = 1 (suite `mlkem1024`)
+### 8.4 KEM material in headers (suite `mlkem1024`)
 
 | Message | KEM material in header |
 |---|---|
-| Alice, epoch 0 | init: 2 × 1568 (ct1, ct2) + 1568 (ek) + 4627 (sig) = 9331 B ≈ 9.3 KB |
-| Any later message | kem: 1568 (ct) + 1568 (ek) = 3136 B |
+| Alice, epoch 0, until Bob's first reply arrives | init: 2 × 1568 (ct1, ct2) + 1568 (ek) + 4627 (sig) = 9331 B ≈ 9.3 KB |
+| Any later message whose chain's ratchet data is not yet acknowledged | kem: 1568 (ct) + 1568 (ek) = 3136 B |
+| Any other message | none |
+
+At `K = 1` every message after the first reply carries `kem`. At the default
+`K = 4` fewer do; section 5.6 has the measured averages.
 
 ## 9. Security properties (claims, stated precisely)
 
@@ -542,8 +571,9 @@ JSON form and is provided for the bandwidth experiment (E5).
 | Ordering | Any delivery order inside MAX_SKIP decrypts; replays are rejected | Unbounded gaps |
 
 DH ratchets also need a round trip to heal both directions. What KEMs cost is
-bandwidth. With sparse mode (`K > 1`) P's "next ratchet step" happens only after
-P has sent `K` messages on its current chain, so healing is delayed accordingly.
+bandwidth. With `K > 1` (the default is 4, section 5.6) P's "next ratchet step"
+happens only after P has sent `K` messages on its current chain, so healing is
+delayed accordingly.
 
 Further limits that an examiner should hear from us first:
 
@@ -601,7 +631,7 @@ new SessionManager({
   fetchIdentity: (username: string) => Promise<string>,  // identityKey JSON (as in the bundle)
   trustIdentity?: (username: string, dsaPub: Uint8Array) => Promise<boolean>, // default: accept
   suite?: 'mlkem1024',                  // ratchet suite; the only value and the default
-  ratchetEveryK?: number,                // sparse mode, default 1
+  ratchetEveryK?: number,                // ratchet threshold K (5.6), default 4; must be >= 1
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>,
   now?: () => number,                    // ms clock, for TTL tests
 })
@@ -707,3 +737,6 @@ spec had to choose or tighten something:
 14. **One ratchet suite** (section 2.1). The strategy's ML-KEM-768 default and
     optional X-Wing hybrid (sections 4.5-4.6) are replaced by ML-KEM-1024 only,
     matching the prekeys.
+15. **Default ratchet threshold K = 4** (section 5.6). The strategy kept K = 1
+    and treated sparse mode as a research knob; E7 with ML-KEM-1024 showed
+    K = 4 cuts bytes and KEM work for two-way chat at a small healing cost.

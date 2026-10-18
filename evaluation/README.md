@@ -21,7 +21,9 @@ evaluation/
 ├─ attacks/                     attack matrix: attack list, v1/v0 runners, v0 evil proxy, matrix builder
 ├─ attack-matrix.md             generated v0 vs v1 attack table (do not edit by hand)
 ├─ results/attack-matrix-*/     per-attack JSON + screenshots, v0/ and v1/
-└─ results/e7-2026-10-17/       E7 full grid: summary, per-snapshot results, figures
+├─ results/e7-2026-10-18/       E7 with ML-KEM-1024 at K = 1, 4, 8, 16: summary, per-snapshot results, figures
+├─ results/e7-2026-10-17/       E7 from the earlier ML-KEM-768 / X-Wing build (comparison for spec §2.1)
+└─ results/kem-768-vs-1024-*/   E1 subset: ML-KEM-768 vs ML-KEM-1024, noble, Node and Chromium (summary only)
 ```
 
 ## Quick start (laptop)
@@ -41,7 +43,7 @@ python3 -m venv .venv && .venv/bin/pip install -r plots/requirements.txt
 npm run plot -- results/<date>              # → results/<date>/figures/*.png|svg
 
 npm --prefix ../frontend install            # E4, E5 and E7 import frontend/src/crypto (and its deps)
-npm run e7                                  # E7 full grid (about 2 min) → results/e7-<date>/
+npm run e7                                  # E7 full grid (about 35 s) → results/e7-<date>/
 npm run plot:e7 -- results/e7-<date>        # → results/e7-<date>/figures/e7_*.png|svg
 ```
 
@@ -52,7 +54,7 @@ tsx scripts/run-bench.ts --browsers chromium,webkit --runs 3 --mode main \
     --filter 'E1/ML-KEM-768' --batches 50 --headed --out results/my-run --no-build
 ```
 
-Raw results go to `results/<YYYY-MM-DD>/<browser>-<run>.json`, which is gitignored. Only `results/sample-*` is committed.
+Raw results go to `results/<YYYY-MM-DD>/<browser>-<run>.json`, which is gitignored. Only the dated folders listed in the tree above are committed.
 
 ## Method
 
@@ -82,7 +84,7 @@ Every op checks itself before it is timed. Decaps must equal the encaps secret a
 | E4 | AES-256-GCM encrypt/decrypt at 64 B, 1 KB, 16 KB, 256 KB, 1 MB (MB/s); ratchet `chain-step` (`kdfChain` + `messageKeyAndIv`, spec 5.3); `root-step` (`kdfRoot`, spec 5.2); `seal` = chain step + `aesGcmEncrypt` of 1 KB with a 256 B AAD. All three call `frontend/src/crypto/kdf.ts` | native WebCrypto |
 | E5 | Bytes per handshake (bundle fetch + first message) and per steady-state message, each as raw vs binary vs Socket.io JSON/base64. v1 (ML-KEM-1024) is measured from a real handshake through the shipped `SessionManager`, `encodeBinaryEnvelope` and `buildWirePayload`. v1-mlkem768 and v1-xwing are the same real envelopes with the ratchet `ek`/`ct` resized (comparisons only, spec §2.1). v0 is hand-modelled, because its code exists only at tag `protocol-v0` | none (byte accounting; sizes checked against noble) |
 | E10 | The same suite in Node, plus a `node-crypto` backend (`generateKeyPairSync('ml-kem-768')`, `crypto.encapsulate/decapsulate`, `crypto.sign/verify`) | noble, liboqs, Node WebCrypto, node:crypto |
-| E7 | Sparse KEM ratchet interval K: bytes per message, KEM ops and CPU per message, messages-to-heal after a state compromise. See [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing) | the v1 `SessionManager` (noble ML-KEM-1024; results below are from the earlier ML-KEM-768 / X-Wing build), Node |
+| E7 | Sparse KEM ratchet interval K: bytes per message, KEM ops and CPU per message, messages-to-heal after a state compromise. See [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing) | the v1 `SessionManager` (noble ML-KEM-1024), Node. The earlier ML-KEM-768 / X-Wing run is kept as a comparison |
 
 **Native WebCrypto detection.** The detection follows the WICG Modern Algorithms draft. The harness records what `SubtleCrypto.supports(op, alg)` reports, and whether `crypto.subtle.encapsulateBits` exists. It then makes a real `generateKey` call, because early implementations can disagree with `supports()`. The probes are stored under `env.nativeWebCrypto`.
 
@@ -113,7 +115,7 @@ Both sets passed a CVD and contrast palette validator (adjacent-pair ΔE ≥ 8).
 
 ## E7: sparse KEM ratchet, bandwidth vs healing
 
-E7 measures the research knob of contribution C1: the sparse interval `ratchetEveryK` (spec §5.6). Larger K means fewer KEM ratchet steps and smaller headers. It also means a stolen device state stays useful for longer.
+E7 measures the ratchet threshold `ratchetEveryK` (spec §5.6), the research knob of contribution C1. Larger K means fewer KEM ratchet steps and smaller headers. It also means a stolen device state stays useful for longer. Krypt's default, K = 4, was chosen from the 2026-10-18 results below.
 
 ### Method
 
@@ -121,8 +123,8 @@ E7 measures the research knob of contribution C1: the sparse interval `ratchetEv
 
 - **Code under test.** The driver imports `SessionManager` straight from `../frontend/src/crypto/session.ts`. Nothing is copied and nothing in `frontend/` is changed. Alice and Bob each have a `MemorySessionStore` and a `MemoryPrekeyStore`. They share an in-memory bundle directory, modelled on `frontend/test/helpers.ts`.
 - **Grid.**
-  - Suite: `mlkem1024`, the only ratchet suite since commit `4cab620`. The 2026-10-17 results below were run before that, with `mlkem768` and `xwing`.
-  - K ∈ {1, 2, 5, 10, 50, 100}.
+  - Suite: `mlkem1024`, the only ratchet suite. The 2026-10-17 results were run on the earlier build, with `mlkem768` and `xwing`.
+  - K ∈ {1, 4, 8, 16} (the 2026-10-17 run used {1, 2, 5, 10, 50, 100}).
   - Four traffic patterns, 1,000 messages each, with 100-byte plaintexts.
   - Message 0 is always Alice's handshake.
 
@@ -140,7 +142,7 @@ E7 measures the research knob of contribution C1: the sparse interval `ratchetEv
   - ratchet-KEM keygen, encaps and decaps on the sender and on the receiver. These are counted by wrapping the `mlkem1024` object's methods at runtime. Prekeys use the same object, so prekey operations are told apart by key fingerprint and counted separately;
   - encrypt and decrypt wall time, with the session-store time measured separately and subtracted. `cpu_*` is crypto plus state machine only.
 - **CPU timing is single-call wall time** inside a stateful transcript. The batch rule of the browser harness cannot apply to stateful ops. A 60-message warm-up per suite runs first. Look at the mean and the root-step vs chain-step split (`cpu_root_ms_median`, `cpu_chain_ms_median`). The median alone hides a bimodal distribution.
-- **Bytes** are reported excluding messages that carry the epoch-0 `init` header (`*_steady`). The all-message means are also in `summary.csv`. The binary frame here includes the `lp` length prefixes and the usernames, so K = 1 gives 2,516 B (ML-KEM-768). E5 derives its v1 rows from the same encoder, so its binary overhead plus the 100 B plaintext matches E7 exactly (3,381 / 2,516 / 2,577 B for ML-KEM-1024 / ML-KEM-768 / X-Wing).
+- **Bytes** are reported excluding messages that carry the epoch-0 `init` header (`*_steady`). The all-message means are also in `summary.csv`. The binary frame here includes the `lp` length prefixes and the usernames, so K = 1 gives 3,381 B with ML-KEM-1024 (2,516 B with ML-KEM-768). E5 derives its v1 rows from the same encoder, so its binary overhead plus the 100 B plaintext matches E7 exactly (3,381 / 2,516 / 2,577 B for ML-KEM-1024 / ML-KEM-768 / X-Wing).
 
 ### Threat model and attacker
 
@@ -169,9 +171,50 @@ There are 20 compromise points per run, k = 100 + 23j. They cover both turn pari
 
   `fs_opened` must be 0. Bob's messages still in flight at k belong to Alice's future, not her past. They are counted as `exposed_in_flight`.
 
+### Results (`results/e7-2026-10-18/`, ML-KEM-1024, Node 25.8.2, Apple M5)
+
+The full grid took 33 s. Bytes are the binary frame excluding the handshake message; "send p95" is the 95th percentile of `encrypt` time without the store; "root steps" counts send steps per 100 messages.
+
+| K | Traffic | bytes/msg (JSON) | headers with `(ct, ek)` | KEM ops/msg | send p95, ms | root steps / 100 msgs | messages to heal, median (min–max) |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | alternate | 3,381 (4,528) | 100% | 3.00 | 0.97 | 99.9 | 0.5 (0–1) |
+| 1 | Poisson | 3,381 (4,528) | 100% | 0.96 | 0.93 | 31.8 | 4 (0–12) |
+| 1 | 90/10 one-sided | 3,381 (4,528) | 100% | 0.53 | 0.92 | 17.7 | 8 (0–57) |
+| **4** | **alternate** | **2,201 (2,949)** | **62.5%** | **0.75** | **0.91** | **24.9** | **4 (0–7)** |
+| **4** | **Poisson** | **2,786 (3,731)** | **81.1%** | **0.60** | **0.92** | **20.0** | **6 (0–19)** |
+| **4** | **90/10 one-sided** | **3,151 (4,221)** | **92.7%** | **0.15** | **0.73** | **4.9** | **64 (18–134)** |
+| 8 | alternate | 2,006 (2,687) | 56.3% | 0.38 | 0.91 | 12.5 | 7.5 (0–15) |
+| 8 | Poisson | 2,388 (3,199) | 68.4% | 0.34 | 0.91 | 11.2 | 15 (1–30) |
+| 8 | 90/10 one-sided | 3,100 (4,152) | 91.0% | 0.07 | 0.10 | 2.5 | 128 (68–238) |
+| 16 | alternate | 1,908 (2,558) | 53.2% | 0.19 | 0.90 | 6.3 | 15.5 (0–31) |
+| 16 | Poisson | 2,103 (2,819) | 59.4% | 0.18 | 0.90 | 5.9 | 21 (1–57) |
+| 16 | 90/10 one-sided | 3,059 (4,098) | 89.7% | 0.04 | 0.09 | 1.3 | 254 (148–399) |
+
+Bursts of 5 (`burst5`) match K = 1 at K = 4, because every burst starts a new epoch; at K = 8 and 16 they match alternation.
+
+**Checks.** 0 exposure-rule mismatches and 0 forward-secrecy openings in all 16 cells and 640 snapshots. Every compromise point healed by message 1,000.
+
+**Findings.**
+- **K = 4 is the default.** Against K = 1 with alternating traffic it sends 35% fewer bytes and does 75% fewer KEM operations; median healing goes from 0.5 to 4 messages (Poisson: 4 to 6).
+- **Send p95 stays near one root step (about 0.9 ms)** whenever more than 5% of sends are root steps, so K mostly changes how *often* a send pays for a KEM step, not its worst case. A root step costs about 1.6 ms of CPU (encrypt plus decrypt) at every K.
+- **One-sided traffic heals slowly at any K > 1**, because the quiet side rarely sends K messages on one chain. Healing grows roughly linearly with K (64, 128, 254 at K = 4, 8, 16).
+- **Larger K is not more secure.** It is a cost trade-off; spec §5.6 states the policy.
+
+### ML-KEM-768 vs ML-KEM-1024 (`results/kem-768-vs-1024-2026-10-18/`, plan B.4)
+
+Benchmark only: the product uses ML-KEM-1024. noble 0.7.1, same batch method as E1, Node 25.8.2 (1 run) and Chromium 156 in a Web Worker (3 fresh launches), Apple M5. Median (p95), µs:
+
+| Op | Chromium, 768 | Chromium, 1024 | Node, 768 | Node, 1024 | 1024 ÷ 768 |
+|---|---:|---:|---:|---:|---:|
+| keygen | 171 (173) | 275 (282) | 188 (205) | 289 (293) | 1.5–1.6× |
+| encaps | 206 (209) | 303 (308) | 238 (240) | 349 (352) | 1.5× |
+| decaps | 174 (181) | 252 (261) | 196 (204) | 289 (296) | 1.5× |
+
+Rerun: `npx tsx scripts/run-node.ts --filter "E1/ML-KEM-(768|1024)/(keygen|encaps|decaps)/noble" --out results/<dir>`, the same filter with `scripts/run-bench.ts --browsers chromium --runs 3`, then `npm run aggregate -- results/<dir>`.
+
 ### Results (`results/e7-2026-10-17/`, Node 25.8.2, Apple-silicon MacBook)
 
-> These results are from the build before commit `4cab620`, which had the `mlkem768` and `xwing` suites. They stay as the comparison behind spec §2.1. A quick ML-KEM-1024 run gave 3,381 B/msg at K = 1 and 1,959 at K = 10. The full ML-KEM-1024 grid at K = 1, 4, 8, 16 is still to run.
+> These results are from the build before commit `4cab620`, which had the `mlkem768` and `xwing` suites. They stay as the comparison behind spec §2.1.
 
 Strict alternation:
 
@@ -209,8 +252,8 @@ A header without ratchet data costs 236 B (binary), so the floor for any K is 23
 
 ```bash
 npm --prefix ../frontend install && npm install
-npm run e7                                    # full grid, about 2 minutes on an M-series Mac
-npm run e7 -- --quick                         # 200 messages, K ∈ {1, 10}, 4 snapshots: smoke test
+npm run e7                                    # full grid, K ∈ {1, 4, 8, 16}, about 35 s on an M-series Mac
+npm run e7 -- --quick                         # 200 messages, K ∈ {1, 4}, 4 snapshots: smoke test
 npm run e7 -- --ks 1,4,8,16 --traffic alternate,poisson --seeds 1,2,3,4,5 --out results/my-e7
 npm run plot:e7 -- results/e7-<date>
 ```

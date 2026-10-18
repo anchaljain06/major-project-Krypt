@@ -70,7 +70,7 @@ In phase 1, after all sessions, every identity key and every SPK leaks. OPKs do 
 - Encodings are injective (`[data]`), which matches the length-prefixed encoding of §4.2.
 - Prekey ids are not modelled; a prekey is identified by its public key.
 - The ratchet is bounded: one session, 5 epochs, one or two messages per chain.
-- Not modelled: `pn`, skipped-key store, MAX_SKIP/TTL, sparse mode, state rollback, Bob-side state leak. The KEM is abstract, so the model covers the ML-KEM-1024 ratchet (the only suite) without change.
+- Not modelled: `pn`, skipped-key store, MAX_SKIP/TTL, the ratchet threshold K, state rollback, Bob-side state leak. The KEM is abstract, so the model covers the ML-KEM-1024 ratchet (the only suite) without change.
 
 ## Results (from `make check`, Apple M5, Docker, 2026-10-17)
 
