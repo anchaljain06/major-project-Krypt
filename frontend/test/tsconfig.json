@@ -1,0 +1,28 @@
+{
+  // Type-checks the tests and the crypto modules they import.
+  // Kept out of the app build (tsc -b) so test-only types never affect it.
+  // Run with: npm run typecheck:test
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    // vite/client: services/*.ts (imported by the service tests) read import.meta.env.
+    "types": ["node", "vite/client"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "paths": { "@krypt/shared": ["../../shared/src/index.ts"] },
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["./**/*.ts", "../src/crypto/encoding.ts", "../src/crypto/kdf.ts", "../src/crypto/pq.ts",
+              "../src/crypto/prekeys.ts", "../src/crypto/handshake.ts", "../src/crypto/envelope.ts",
+              "../src/crypto/session.ts", "../src/crypto/session-store.ts", "../src/crypto/errors.ts"]
+}
