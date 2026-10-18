@@ -38,7 +38,7 @@ const contentTypeArb = fc
 const suite: KemSuite = "mlkem1024";
 describe(`[${suite}] properties`, () => {
   it("decrypt(encrypt(m)) = m, in both directions", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world({ suite, ratchetEveryK: 1 });
     await fc.assert(
       fc.asyncProperty(fc.uint8Array({ maxLength: 2048 }), contentTypeArb, fc.boolean(), async (m, ct, aliceSends) => {
         const [from, to] = aliceSends ? [alice, bob] : [bob, alice];
@@ -54,7 +54,7 @@ describe(`[${suite}] properties`, () => {
 
   for (const kind of ["init (epoch 0)", "ratchet (epoch 2)"] as const) {
     it(`single-bit flips in the JSON text of a ${kind} message are rejected`, async () => {
-      const { alice, bob } = await world({ suite });
+      const { alice, bob } = await world({ suite, ratchetEveryK: 1 });
       let env: EnvelopeV1;
       if (kind === "init (epoch 0)") {
         env = await send(alice, bob, "target");
@@ -76,7 +76,7 @@ describe(`[${suite}] properties`, () => {
   }
 
   it("every bit of every structural JSON character (outside long base64 values) is checked exhaustively", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world({ suite, ratchetEveryK: 1 });
     await recv(bob, await send(alice, bob, "a0"));
     await recv(alice, await send(bob, alice, "b0"));
     const env = await send(alice, bob, "target");
@@ -99,7 +99,7 @@ describe(`[${suite}] properties`, () => {
   });
 
   it("single-bit flips anywhere in the binary envelope are rejected", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world({ suite, ratchetEveryK: 1 });
     await recv(bob, await send(alice, bob, "a0"));
     await recv(alice, await send(bob, alice, "b0"));
     const env = await send(alice, bob, "target");

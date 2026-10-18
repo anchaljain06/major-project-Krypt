@@ -94,15 +94,15 @@ describe("IndexedDbSessionStore", () => {
     const bob = await makeParty(dir, "bob");
     const aStore = new IndexedDbSessionStore({ key: await newKey(), dbName: dbName() });
     const bStore = new IndexedDbSessionStore({ key: await newKey(), dbName: dbName() });
-    alice.sm = managerFor(alice, dir, { store: aStore });
-    bob.sm = managerFor(bob, dir, { store: bStore });
+    alice.sm = managerFor(alice, dir, { store: aStore, ratchetEveryK: 1 });
+    bob.sm = managerFor(bob, dir, { store: bStore, ratchetEveryK: 1 });
     for (let i = 0; i < 5; i++) {
       expect(await recv(bob, await send(alice, bob, `a${i}`))).toBe(`a${i}`);
       expect(await recv(alice, await send(bob, alice, `b${i}`))).toBe(`b${i}`);
     }
     // "Reload the page": new managers over the same databases.
-    alice.sm = managerFor(alice, dir, { store: aStore });
-    bob.sm = managerFor(bob, dir, { store: bStore });
+    alice.sm = managerFor(alice, dir, { store: aStore, ratchetEveryK: 1 });
+    bob.sm = managerFor(bob, dir, { store: bStore, ratchetEveryK: 1 });
     expect(await recv(bob, await send(alice, bob, "after restart"))).toBe("after restart");
     expect((await alice.sm.getStatus("bob"))!.epoch).toBe(10);
     await aStore.close();

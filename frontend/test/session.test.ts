@@ -27,9 +27,11 @@ const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 const state = async (p: Party, peer: string): Promise<SessionState> => (await p.store.load(peer))!.session!;
 
 const suite: KemSuite = "mlkem1024";
+// These cases are written for K = 1 (a send step after every reply); ratchet-k.test.ts covers K = 1, 4, 8, 16.
+const K1 = { suite, ratchetEveryK: 1 };
 describe(`[${suite}] round trip`, () => {
   it("1,000 alternating messages", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     for (let i = 0; i < 500; i++) {
       expect(await recv(bob, await send(alice, bob, `a${i}`))).toBe(`a${i}`);
       expect(await recv(alice, await send(bob, alice, `b${i}`))).toBe(`b${i}`);
@@ -40,7 +42,7 @@ describe(`[${suite}] round trip`, () => {
   });
 
   it("1,000 messages in one direction", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     for (let i = 0; i < 1000; i++) expect(await recv(bob, await send(alice, bob, `m${i}`))).toBe(`m${i}`);
     const s = await state(bob, "alice");
     expect(s.recvEpoch).toBe(0);
@@ -49,7 +51,7 @@ describe(`[${suite}] round trip`, () => {
   });
 
   it("carries contentType inside the authenticated header", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const env = await alice.sm.encrypt("bob", new Uint8Array([1, 2, 3]), "image");
     const r = await bob.sm.decrypt(env);
     expect(r).toMatchObject({ peer: "alice", contentType: "image", epoch: 0, n: 0 });
@@ -59,7 +61,7 @@ describe(`[${suite}] round trip`, () => {
 
 describe(`[${suite}] ordering`, () => {
   it("decrypts any order within the window, across an epoch boundary", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const first = await send(alice, bob, "a0");
     const epoch0 = [first];
     for (let i = 1; i < 6; i++) epoch0.push(await send(alice, bob, `a${i}`));
@@ -75,7 +77,7 @@ describe(`[${suite}] ordering`, () => {
   });
 
   it(`accepts a gap of exactly MAX_SKIP and rejects MAX_SKIP + 1`, async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const envs: EnvelopeV1[] = [];
     for (let i = 0; i < MAX_SKIP + 3; i++) envs.push(await send(alice, bob, `m${i}`));
     await recv(bob, envs[0]); // nr = 1
@@ -85,7 +87,7 @@ describe(`[${suite}] ordering`, () => {
   });
 
   it("rejects a first message whose n is beyond MAX_SKIP", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const envs: EnvelopeV1[] = [];
     for (let i = 0; i < MAX_SKIP + 2; i++) envs.push(await send(alice, bob, "x"));
     await expectRejected(bob, envs[MAX_SKIP + 1], "TOO_MANY_SKIPPED");
@@ -93,7 +95,7 @@ describe(`[${suite}] ordering`, () => {
   });
 
   it("rejects duplicates, including a replay of a message decrypted from a skipped key", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const e0 = await send(alice, bob, "0");
     const e1 = await send(alice, bob, "1");
     const e2 = await send(alice, bob, "2");
@@ -106,7 +108,7 @@ describe(`[${suite}] ordering`, () => {
   });
 
   it("rejects an old-epoch message whose key was never cached", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const a0 = await send(alice, bob, "a0");
     await recv(bob, a0);
     const b0 = await send(bob, alice, "b0");
@@ -119,7 +121,7 @@ describe(`[${suite}] ordering`, () => {
   });
 
   it("simultaneous sends from both sides always converge", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     await recv(bob, await send(alice, bob, "hello"));
     const r = rng(42);
     for (let round = 0; round < 30; round++) {
@@ -140,7 +142,7 @@ describe(`[${suite}] ordering`, () => {
 
 describe(`[${suite}] tamper: rejected with state unchanged`, () => {
   async function liveSession() {
-    const w = await world({ suite });
+    const w = await world(K1);
     await recv(w.bob, await send(w.alice, w.bob, "a0"));
     await recv(w.alice, await send(w.bob, w.alice, "b0"));
     // A ratcheting message (epoch 2) carries kem {ct, ek}.
@@ -188,7 +190,7 @@ describe(`[${suite}] tamper: rejected with state unchanged`, () => {
   });
 
   it("bit flips in the init header", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const env = await send(alice, bob, "first");
     const i = env.init!;
     const variants: EnvelopeV1[] = [
@@ -209,7 +211,7 @@ describe(`[${suite}] tamper: rejected with state unchanged`, () => {
 
 describe(`[${suite}] handshake`, () => {
   it("rejects an init replay for a closed session", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const first = await send(alice, bob, "hi");
     await recv(bob, first);
     await bob.sm.closeSession("alice");
@@ -218,19 +220,19 @@ describe(`[${suite}] handshake`, () => {
 
   it("rejects an init replay for an old session even after its tombstone is gone (session-id memory)", async () => {
     for (const withOpk of [true, false]) {
-      const { dir, alice, bob } = await world({ suite, oneTimeCount: withOpk ? 3 : 0 });
+      const { dir, alice, bob } = await world({ ...K1, oneTimeCount: withOpk ? 3 : 0 });
       const first = await send(alice, bob, "hi");
       expect(first.init!.opkId === null).toBe(!withOpk);
       await recv(bob, first);
       // Bob loses his session store (or the 32-entry tombstone list rolled over).
       bob.store = new (bob.store.constructor as new () => typeof bob.store)();
-      bob.sm = managerFor(bob, dir, { suite });
+      bob.sm = managerFor(bob, dir, K1);
       await expectRejected(bob, first, "INIT_REPLAY");
     }
   });
 
   it("a repeated init header on a live session is the same session (no reset)", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const e0 = await send(alice, bob, "0");
     const e1 = await send(alice, bob, "1");
     const e2 = await send(alice, bob, "2");
@@ -251,7 +253,7 @@ describe(`[${suite}] handshake`, () => {
   });
 
   it("rejects a bundle with a swapped prekey signature", async () => {
-    const { dir, alice } = await world({ suite });
+    const { dir, alice } = await world(K1);
     dir.tamper = (b) => ({ ...b, signedPrekey: { ...b.signedPrekey!, signature: b.oneTimePrekey!.signature } });
     await expect(alice.sm.encrypt("bob", te.encode("x"), "text")).rejects.toThrow(HandshakeError);
     dir.tamper = (b) => ({ ...b, signedPrekey: b.oneTimePrekey }); // OPK passed off as SPK
@@ -260,7 +262,7 @@ describe(`[${suite}] handshake`, () => {
   });
 
   it("falls back to the signed prekey when the one-time pool is empty", async () => {
-    const { alice, bob } = await world({ suite, oneTimeCount: 0 });
+    const { alice, bob } = await world({ ...K1, oneTimeCount: 0 });
     const env = await send(alice, bob, "spk only");
     expect(env.init!.opkId).toBeNull();
     expect(env.init!.ct2).toBeNull();
@@ -269,7 +271,7 @@ describe(`[${suite}] handshake`, () => {
   });
 
   it("deletes the one-time prekey after use and remembers the session id", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const env = await send(alice, bob, "x");
     expect(await bob.prekeys.getOneTimePrekey(env.init!.opkId!)).toBeDefined();
     await recv(bob, env);
@@ -279,11 +281,11 @@ describe(`[${suite}] handshake`, () => {
 
   it("concurrent deliveries of one init are serialized: exactly one is accepted", async () => {
     for (const withOpk of [true, false]) {
-      const { dir, alice, bob } = await world({ suite, oneTimeCount: withOpk ? 3 : 0 });
+      const { dir, alice, bob } = await world({ ...K1, oneTimeCount: withOpk ? 3 : 0 });
       const env = await send(alice, bob, "once");
       // Two tabs of Bob, sharing his stores and one lock (navigator.locks in a browser).
       const lock = createMutexLock();
-      const tabs = [managerFor(bob, dir, { suite, lock }), managerFor(bob, dir, { suite, lock })];
+      const tabs = [managerFor(bob, dir, { ...K1, lock }), managerFor(bob, dir, { ...K1, lock })];
       const results = await Promise.allSettled([...tabs, ...tabs].map((t) => t.decrypt(copy(env))));
       const ok = results.filter((r) => r.status === "fulfilled");
       const codes = results.flatMap((r) => (r.status === "rejected" ? [(r.reason as { code: string }).code] : []));
@@ -294,7 +296,7 @@ describe(`[${suite}] handshake`, () => {
   });
 
   it("an init naming the SPK's keyId as an OPK finds nothing (separate keyId namespaces)", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const env = await send(alice, bob, "x");
     const forged = { ...copy(env), init: { ...env.init!, opkId: env.init!.spkId } };
     await expectRejected(bob, forged, "UNKNOWN_PREKEY");
@@ -302,7 +304,7 @@ describe(`[${suite}] handshake`, () => {
   });
 
   it("an OPK whose keyId equals the SPK's keyId does not shadow it", async () => {
-    const { alice, bob } = await world({ suite, oneTimeCount: 0 });
+    const { alice, bob } = await world({ ...K1, oneTimeCount: 0 });
     const spkId = (await bob.prekeys.listSignedPrekeyIds())[0];
     const spk = (await bob.prekeys.getSignedPrekey(spkId))!;
     const { mlkem1024 } = await import("../src/crypto/pq");
@@ -315,16 +317,16 @@ describe(`[${suite}] handshake`, () => {
   });
 
   it("rejects a replayed SPK-only handshake via the H(T) memory", async () => {
-    const { dir, alice, bob } = await world({ suite, oneTimeCount: 0 });
+    const { dir, alice, bob } = await world({ ...K1, oneTimeCount: 0 });
     const env = await send(alice, bob, "x");
     await recv(bob, env);
     bob.store = new (bob.store.constructor as new () => typeof bob.store)();
-    bob.sm = managerFor(bob, dir, { suite });
+    bob.sm = managerFor(bob, dir, K1);
     await expectRejected(bob, env, "INIT_REPLAY");
   });
 
   it("lost first message: the session starts from a later epoch-0 message", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const lost = await send(alice, bob, "0");
     const e1 = await send(alice, bob, "1");
     expect(await recv(bob, e1)).toBe("1");
@@ -333,7 +335,7 @@ describe(`[${suite}] handshake`, () => {
   });
 
   it("simultaneous initiation converges on the smaller session id", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     const fromA = await send(alice, bob, "hi from alice");
     const fromB = await send(bob, alice, "hi from bob");
     const winner = Buffer.from(fromA.sessionId, "base64url").compare(Buffer.from(fromB.sessionId, "base64url")) < 0 ? "A" : "B";
@@ -359,12 +361,12 @@ describe(`[${suite}] handshake`, () => {
   });
 
   it("a peer that lost its state can start over; the old session is tombstoned", async () => {
-    const { dir, alice, bob } = await world({ suite });
+    const { dir, alice, bob } = await world(K1);
     const old = await send(alice, bob, "old");
     await recv(bob, old);
     await recv(alice, await send(bob, alice, "ack"));
     alice.store = new (alice.store.constructor as new () => typeof alice.store)();
-    alice.sm = managerFor(alice, dir, { suite });
+    alice.sm = managerFor(alice, dir, K1);
     const fresh = await send(alice, bob, "new device");
     expect(await recv(bob, fresh)).toBe("new device");
     expect((await bob.sm.getStatus("alice"))!.sessionId).toBe(fresh.sessionId);
@@ -374,7 +376,7 @@ describe(`[${suite}] handshake`, () => {
 
 describe(`[${suite}] epochs`, () => {
   it("both sides derive identical root and chain keys for epochs 0-5", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     let [sender, receiver] = [alice, bob];
     for (let e = 0; e <= 5; e++) {
       const env = await send(sender, receiver, `e${e}`);
@@ -393,7 +395,7 @@ describe(`[${suite}] epochs`, () => {
 
 describe(`[${suite}] rollback safety`, () => {
   it("concurrent encrypts in one tab never reuse a chain key", async () => {
-    const { alice, bob } = await world({ suite });
+    const { alice, bob } = await world(K1);
     await recv(bob, await send(alice, bob, "start"));
     const envs = await Promise.all(Array.from({ length: 40 }, (_, i) => send(alice, bob, `c${i}`)));
     expect(new Set(envs.map((e) => `${e.epoch}/${e.n}`)).size).toBe(40);
@@ -401,11 +403,11 @@ describe(`[${suite}] rollback safety`, () => {
   });
 
   it("two tabs sharing one store and one lock never reuse a chain key", async () => {
-    const { dir, alice, bob } = await world({ suite });
+    const { dir, alice, bob } = await world(K1);
     await recv(bob, await send(alice, bob, "start"));
     const lock = createMutexLock(); // stands in for navigator.locks shared across tabs
-    const tab1 = managerFor(alice, dir, { suite, lock });
-    const tab2 = managerFor(alice, dir, { suite, lock });
+    const tab1 = managerFor(alice, dir, { ...K1, lock });
+    const tab2 = managerFor(alice, dir, { ...K1, lock });
     const envs = await Promise.all(
       Array.from({ length: 30 }, (_, i) => (i % 2 ? tab1 : tab2).encrypt("bob", te.encode(`t${i}`), "text")),
     );
@@ -414,7 +416,7 @@ describe(`[${suite}] rollback safety`, () => {
   });
 
   it("a failed persist means no envelope; the chain never reuses a key", async () => {
-    const { dir, alice, bob } = await world({ suite });
+    const { dir, alice, bob } = await world(K1);
     let failNext = false;
     const flaky: SessionStore = {
       load: (p) => alice.store.load(p),
@@ -426,7 +428,7 @@ describe(`[${suite}] rollback safety`, () => {
         return alice.store.save(p, rec);
       },
     };
-    const sm = managerFor(alice, dir, { suite, store: flaky });
+    const sm = managerFor(alice, dir, { ...K1, store: flaky });
     const seen = new Set<string>();
     for (let i = 0; i < 10; i++) {
       failNext = i % 3 === 1;
@@ -446,14 +448,14 @@ describe(`[${suite}] rollback safety`, () => {
 
 describe(`[${suite}] post-compromise recovery`, () => {
   it("a passive attacker with Alice's state at message k loses access at Alice's first message after Bob's reply", async () => {
-    const { dir, alice, bob } = await world({ suite });
+    const { dir, alice, bob } = await world(K1);
     await recv(bob, await send(alice, bob, "a0"));
     await recv(alice, await send(bob, alice, "b0"));
     await recv(bob, await send(alice, bob, "a1 (epoch 2)"));
 
     // Compromise: Eve copies Alice's whole device state at message k.
     const stolen = alice.store.clone();
-    const eve = managerFor({ ...alice, store: stolen }, dir, { suite });
+    const eve = managerFor({ ...alice, store: stolen }, dir, K1);
     const stolenState = (await stolen.load("bob"))!.session!;
     let eveCk = stolenState.cks!;
     let eveN = stolenState.ns;
@@ -561,7 +563,7 @@ describe("skipped-key lifetime", () => {
   });
 
   it("only the current and previous receiving epochs keep skipped keys", async () => {
-    const { alice, bob } = await world();
+    const { alice, bob } = await world(K1);
     await recv(bob, await send(alice, bob, "a0"));
     const lostA = await send(alice, bob, "a1 lost");
     const a2 = await send(alice, bob, "a2");

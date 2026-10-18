@@ -42,6 +42,12 @@ import {
 export const MAX_SKIP = 1000;
 export const MAX_SKIPPED_TOTAL = 2000;
 export const SKIPPED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Messages a side sends on one chain before it adopts the peer's newer
+ * ratchet key (spec 5.6). Chosen from experiment E7: fewer KEM steps and
+ * bytes than K = 1, at the cost of slower healing. Not a security gain.
+ */
+export const DEFAULT_RATCHET_EVERY_K = 4;
 const MAX_COUNTER = 0xffffffff;
 
 export type LockFn = <T>(name: string, fn: () => Promise<T>) => Promise<T>;
@@ -58,7 +64,7 @@ export interface SessionManagerOptions {
   trustIdentity?: (username: string, dsaPub: Uint8Array) => Promise<boolean>;
   /** Ratchet suite for sessions this side initiates. Default "mlkem1024". */
   suite?: KemSuite;
-  /** Sparse mode K (spec 5.6). Default 1. */
+  /** Ratchet threshold K (spec 5.6). Default DEFAULT_RATCHET_EVERY_K; 1 gives the fastest healing. */
   ratchetEveryK?: number;
   /** Cross-tab lock. Default: navigator.locks if present, else an in-process mutex. */
   lock?: LockFn;
@@ -143,7 +149,7 @@ export class SessionManager {
     if (opts.self.identity.dsaPub.length !== MLDSA87.publicKey || opts.self.identity.dsaSec.length !== MLDSA87.secretKey) {
       throw new Error("identity must be an ML-DSA-87 key pair");
     }
-    const K = opts.ratchetEveryK ?? 1;
+    const K = opts.ratchetEveryK ?? DEFAULT_RATCHET_EVERY_K;
     if (!Number.isInteger(K) || K < 1) throw new Error("ratchetEveryK must be a positive integer");
     this.self = opts.self;
     this.store = opts.store;
