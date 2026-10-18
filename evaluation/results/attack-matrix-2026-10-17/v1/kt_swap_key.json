@@ -1,0 +1,22 @@
+{
+  "attack": "kt_swap_key",
+  "ktEnabled": true,
+  "at": "2026-10-17T11:05:43.396Z",
+  "aliceToasts": [
+    "KryptSRP-6a Password Login (Augmented PAKE)UsernamePasswordIdentity Vault FileOptional. Only required if logging in from a new device.Vault Password (required with a vault file)Secure LoginNew here? Establish identity.Clear Browser Cache & Storage",
+    "Back up your identity vaultWelcome, alice_kt_swap_key_aj0r6. Your private identity key exists only in this browser. Download an encrypted vault file now: you need it to log in on another device or after clearing this browser. Nobody, including the server, can recover it for you.Download Encrypted Vault"
+  ],
+  "bobToasts": [
+    "KryptSRP-6a Password Login (Augmented PAKE)UsernamePasswordIdentity Vault FileOptional. Only required if logging in from a new device.Vault Password (required with a vault file)Secure LoginNew here? Establish identity.Clear Browser Cache & Storage",
+    "Back up your identity vaultWelcome, bob_kt_swap_key_aj0r6. Your private identity key exists only in this browser. Download an encrypted vault file now: you need it to log in on another device or after clearing this browser. Nobody, including the server, can recover it for you.Download Encrypted Vault",
+    "Incoming Requestsalice_kt_swap_key_aj0r6AcceptReject"
+  ],
+  "aliceProblems": [],
+  "bobProblems": [],
+  "bobReceivedPlaintext": false,
+  "identityDialog": 0,
+  "ktBadgeAlice": "KT VERIFIED",
+  "ktAlert": false,
+  "aliceSendCompleted": false,
+  "observed": "send did not complete (nothing left Alice's client, relay saw no message); no visible warning; no plaintext exposed"
+}

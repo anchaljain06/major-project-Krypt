@@ -1,0 +1,15 @@
+{
+  "attack": "flip_type",
+  "flavor": "v0",
+  "at": "2026-10-17T11:06:51.619Z",
+  "trackingPixelHits": 1,
+  "trackingPixelUrls": [
+    "/__track.gif?reader=bob_flip_type_akgiq"
+  ],
+  "sentTexts": 6,
+  "bobTextsReceived": 0,
+  "bobImgElements": 7,
+  "bobToasts": [],
+  "textRenderedAsImage": 7,
+  "observed": "text rendered as <img> (7); Bob's browser fetched the attacker URL 1x (tracking pixel, no AAD)"
+}

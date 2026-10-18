@@ -1,0 +1,33 @@
+{
+  "attack": "flip_content_type",
+  "ktEnabled": false,
+  "at": "2026-10-17T10:55:22.131Z",
+  "sentTexts": 6,
+  "bobTextsReceived": 0,
+  "bobImagesReceived": 0,
+  "bobTotalFromAlice": 0,
+  "bobCodes": [
+    "AUTH_FAILED",
+    "AUTH_FAILED",
+    "AUTH_FAILED",
+    "AUTH_FAILED",
+    "AUTH_FAILED",
+    "AUTH_FAILED",
+    "AUTH_FAILED"
+  ],
+  "bobToasts": [
+    "Incoming Requestsalice_flip_content_type_a5pthAcceptReject",
+    "A message from alice_flip_content_type_a5pth failed authentication and was dropped (tampered or corrupted)."
+  ],
+  "bobProblems": [
+    "warning: [Krypt] decrypt from alice_flip_content_type_a5pth failed: AUTH_FAILED",
+    "warning: [Krypt] decrypt from alice_flip_content_type_a5pth failed: AUTH_FAILED",
+    "warning: [Krypt] decrypt from alice_flip_content_type_a5pth failed: AUTH_FAILED",
+    "warning: [Krypt] decrypt from alice_flip_content_type_a5pth failed: AUTH_FAILED",
+    "warning: [Krypt] decrypt from alice_flip_content_type_a5pth failed: AUTH_FAILED",
+    "warning: [Krypt] decrypt from alice_flip_content_type_a5pth failed: AUTH_FAILED",
+    "warning: [Krypt] decrypt from alice_flip_content_type_a5pth failed: AUTH_FAILED"
+  ],
+  "imagesFromText": 0,
+  "observed": "content-type flip dropped (AUTH_FAILED,AUTH_FAILED,AUTH_FAILED,AUTH_FAILED,AUTH_FAILED,AUTH_FAILED,AUTH_FAILED); 0/6 intact"
+}

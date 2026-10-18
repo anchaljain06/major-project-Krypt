@@ -1,0 +1,7 @@
+{
+  "attack": "bola",
+  "flavor": "v0",
+  "observed": "POST /api/request/accept on bob_bola_akdsm's behalf (no token) -> HTTP 200; mallory_bola_akdsm IS in bob_bola_akdsm's friend list",
+  "refused": false,
+  "status": 200
+}

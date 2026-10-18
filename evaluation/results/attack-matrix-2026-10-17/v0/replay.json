@@ -1,0 +1,13 @@
+{
+  "attack": "replay",
+  "flavor": "v0",
+  "at": "2026-10-17T11:07:22.117Z",
+  "sentTexts": 6,
+  "bobTextsReceived": 5,
+  "bobImgElements": 0,
+  "bobToasts": [
+    "Decryption failed: Unknown error"
+  ],
+  "textRenderedAsImage": 0,
+  "observed": "received 5/6; v0 has no replay/duplicate protection"
+}

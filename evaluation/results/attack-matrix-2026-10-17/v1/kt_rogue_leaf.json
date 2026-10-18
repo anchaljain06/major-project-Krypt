@@ -1,0 +1,21 @@
+{
+  "attack": "kt_rogue_leaf",
+  "ktEnabled": true,
+  "at": "2026-10-17T10:57:39.121Z",
+  "ktBadgeBob": "KT ALERT",
+  "ktBadgeAlice": "KT ALERT",
+  "bobToasts": [],
+  "aliceToasts": [],
+  "bobProblems": [
+    "error: [KT] ALERT: self-monitoring: leaf 6 publishes key version 2 for your name, which you did not create",
+    "error: [KT] ALERT: self-monitoring: leaf 6 publishes key version 2 for your name, which you did not create",
+    "error: [KT] ALERT: self-monitoring: leaf 6 publishes key version 2 for your name, which you did not create",
+    "error: [KT] ALERT: self-monitoring: leaf 6 publishes key version 2 for your name, which you did not create"
+  ],
+  "aliceProblems": [
+    "error: [KT] ALERT: bob_kt_rogue_leaf_a8niy's key failed the transparency check: ML-DSA key does not match the logged key",
+    "error: [KT] ALERT: bob_kt_rogue_leaf_a8niy's key failed the transparency check: ML-DSA key does not match the logged key"
+  ],
+  "ktAlert": true,
+  "observed": "KT ALERT raised"
+}

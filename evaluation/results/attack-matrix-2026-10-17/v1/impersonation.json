@@ -1,0 +1,7 @@
+{
+  "attack": "impersonation",
+  "flavor": "v1",
+  "observed": "connect_error: unauthorized",
+  "hijacked": false,
+  "refused": true
+}

@@ -1,0 +1,7 @@
+{
+  "attack": "bola",
+  "flavor": "v1",
+  "observed": "HTTP 401 {\"error\":\"Authentication required.\"}",
+  "refused": true,
+  "status": 401
+}

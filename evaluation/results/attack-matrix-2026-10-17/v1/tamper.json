@@ -1,0 +1,35 @@
+{
+  "attack": "tamper",
+  "ktEnabled": false,
+  "at": "2026-10-17T10:54:59.159Z",
+  "sentTexts": 6,
+  "bobTextsReceived": 0,
+  "bobImagesReceived": 0,
+  "bobTotalFromAlice": 0,
+  "bobCodes": [
+    "BAD_SIGNATURE",
+    "AUTH_FAILED",
+    "BAD_SIGNATURE",
+    "BAD_SIGNATURE",
+    "BAD_SIGNATURE"
+  ],
+  "bobToasts": [
+    "New friend request from alice_tamper_a5839!",
+    "Incoming Requestsalice_tamper_a5839AcceptReject",
+    "You are now friends with alice_tamper_a5839!",
+    "Secure ChannelsAalice_tamper_a5839Encrypted Link Active",
+    "Aalice_tamper_a5839Online • Krypt v1 PQ ratchet",
+    "Dropped a malformed message from alice_tamper_a5839.",
+    "Rejected a handshake from alice_tamper_a5839: the signature is invalid.",
+    "A message from alice_tamper_a5839 failed authentication and was dropped (tampered or corrupted)."
+  ],
+  "bobProblems": [
+    "warning: [Krypt] decrypt from alice_tamper_a5839 failed: BAD_SIGNATURE: initiator signature does not verify",
+    "warning: [Krypt] decrypt from alice_tamper_a5839 failed: AUTH_FAILED",
+    "warning: [Krypt] decrypt from alice_tamper_a5839 failed: BAD_SIGNATURE: initiator signature does not verify",
+    "warning: [Krypt] decrypt from alice_tamper_a5839 failed: BAD_SIGNATURE: initiator signature does not verify",
+    "warning: [Krypt] decrypt from alice_tamper_a5839 failed: BAD_SIGNATURE: initiator signature does not verify"
+  ],
+  "imagesFromText": 0,
+  "observed": "tampered dropped (BAD_SIGNATURE,AUTH_FAILED,BAD_SIGNATURE,BAD_SIGNATURE,BAD_SIGNATURE); 0/6 intact"
+}

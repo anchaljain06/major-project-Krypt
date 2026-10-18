@@ -1,0 +1,21 @@
+{
+  "attack": "kt_fork",
+  "ktEnabled": true,
+  "at": "2026-10-17T10:59:28.681Z",
+  "ktBadgeBob": "KT ALERT",
+  "ktBadgeAlice": "KT VERIFIED",
+  "bobToasts": [
+    "KryptSRP-6a Password Login (Augmented PAKE)UsernamePasswordIdentity Vault FileOptional. Only required if logging in from a new device.Vault Password (required with a vault file)Secure LoginNew here? Establish identity.Clear Browser Cache & Storage"
+  ],
+  "aliceToasts": [
+    "KryptSRP-6a Password Login (Augmented PAKE)UsernamePasswordIdentity Vault FileOptional. Only required if logging in from a new device.Vault Password (required with a vault file)Secure LoginNew here? Establish identity.Clear Browser Cache & Storage",
+    "Back up your identity vaultWelcome, alice_kt_fork_ab00e. Your private identity key exists only in this browser. Download an encrypted vault file now: you need it to log in on another device or after clearing this browser. Nobody, including the server, can recover it for you.Download Encrypted Vault"
+  ],
+  "bobProblems": [
+    "error: [KT] ALERT: self-monitoring: leaf 9 publishes key version 2 for your name, which you did not create",
+    "error: [KT] ALERT: self-monitoring: leaf 9 publishes key version 2 for your name, which you did not create"
+  ],
+  "aliceProblems": [],
+  "ktAlert": true,
+  "observed": "KT ALERT raised"
+}

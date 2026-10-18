@@ -1,0 +1,20 @@
+{
+  "attack": "drop",
+  "ktEnabled": false,
+  "at": "2026-10-17T10:54:36.217Z",
+  "sentTexts": 6,
+  "bobTextsReceived": 4,
+  "bobImagesReceived": 1,
+  "bobTotalFromAlice": 5,
+  "bobCodes": [],
+  "bobToasts": [
+    "New friend request from alice_drop_a4qed!",
+    "Incoming Requestsalice_drop_a4qedAcceptReject",
+    "You are now friends with alice_drop_a4qed!",
+    "Secure ChannelsAalice_drop_a4qedEncrypted Link Active",
+    "Aalice_drop_a4qedOnline • Krypt v1 PQ ratchet"
+  ],
+  "bobProblems": [],
+  "imagesFromText": 0,
+  "observed": "delivered 4/6 texts (drops expected, no forgery)"
+}
