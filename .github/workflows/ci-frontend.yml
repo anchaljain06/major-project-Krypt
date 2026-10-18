@@ -81,8 +81,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
+            shared/package-lock.json
             frontend/package-lock.json
             evaluation/package-lock.json
+      # frontend/src/crypto imports ../shared/src (the @krypt/shared alias).
+      - name: npm ci (shared)
+        run: npm ci
+        working-directory: shared
       - name: npm ci (frontend)
         run: npm ci
         working-directory: frontend

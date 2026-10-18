@@ -48,12 +48,20 @@ function liboqsStaticImport(): Plugin {
 
 export default defineConfig({
   plugins: [liboqsStaticImport()],
+  // frontend/src/crypto imports the byte helpers from shared/ (same alias as frontend/vite.config.ts).
+  resolve: { alias: { '@krypt/shared': resolve(import.meta.dirname, '../shared/src/index.ts') } },
   root: resolve(import.meta.dirname, 'bench'),
   base: './',
-  // The E4 ratchet ops import the shipped key schedule from ../frontend/src/crypto.
+  // The E4 ratchet ops import the shipped key schedule from ../frontend/src/crypto (and it ../shared/src).
   server: {
     headers: isolation, host: true, port: 5174, strictPort: false,
-    fs: { allow: [import.meta.dirname, resolve(import.meta.dirname, '../frontend/src/crypto')] },
+    fs: {
+      allow: [
+        import.meta.dirname,
+        resolve(import.meta.dirname, '../frontend/src/crypto'),
+        resolve(import.meta.dirname, '../shared/src'),
+      ],
+    },
   },
   preview: { headers: isolation, host: true, port: 4174, strictPort: false },
   // Worker bundles do not inherit top-level plugins.
