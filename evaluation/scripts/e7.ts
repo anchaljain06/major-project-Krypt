@@ -126,6 +126,8 @@ for (const suite of suites) {
         cpu_chain_ms_median: q(timed.filter((m) => m.kind === "chain").map(cpu), 0.5),
         share_root_msgs: timed.filter((m) => m.kind === "root").length / timed.length,
         enc_ms_median: q(timed.map((m) => m.encMs - m.encStoreMs), 0.5),
+        enc_ms_p95: q(timed.map((m) => m.encMs - m.encStoreMs), 0.95),
+        root_steps_per_100: (100 * cellMsgs.filter((m) => m.encKem.encaps > 0).length) / cellMsgs.length,
         dec_ms_median: q(timed.map((m) => m.decMs - m.decStoreMs), 0.5),
         store_ms_mean: mean(timed.map((m) => m.encStoreMs + m.decStoreMs)),
         handshake_cpu_ms: mean(cellMsgs.filter((m) => m.kind === "handshake").map(cpu)),
