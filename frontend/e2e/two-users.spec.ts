@@ -10,21 +10,15 @@
  *
  * Run: see e2e/README.md.
  */
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { PASSWORD, PNG, befriend, newUser, openChat, register, sendText, watch, type User } from "./helpers";
 
 const run = Date.now().toString(36).slice(-5);
 const ALICE = `alice_${run}`;
 const BOB = `bob_${run}`;
-const PASSWORD = "correct horse battery staple";
-const VAULT_PASSWORD = "vault-password-123";
 /** Set E2E_EXPECT_KT=1 when the frontend was built with VITE_KT_LOG_PUBKEY and the backend serves /kt/*. */
 const EXPECT_KT = process.env.E2E_EXPECT_KT === "1";
-
-// 1x1 PNG (decodable by the browser; the app re-encodes it as JPEG).
-const PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
-  "base64",
-);
+const KT_BADGE = EXPECT_KT ? "KT verified" : "KT disabled";
 
 /** A short silent 8 kHz mono WAV. */
 function wav(samples = 8000): Buffer {
@@ -48,46 +42,6 @@ function wav(samples = 8000): Buffer {
 const ERROR_PATTERN =
   /Could not decrypt|Dropped a|failed authentication|Legacy v0|not trusted|ALERT|attachment from .* was dropped|Secure messaging could not start|Could not publish your prekeys/;
 
-interface User {
-  name: string;
-  context: BrowserContext;
-  page: Page;
-  problems: string[];
-}
-
-function watch(page: Page, problems: string[]) {
-  page.on("console", (msg) => {
-    const t = msg.text();
-    if (/\[Krypt\]|\[KT\] ALERT/.test(t) && msg.type() !== "log") problems.push(`${msg.type()}: ${t}`);
-  });
-  page.on("pageerror", (err) => problems.push(`pageerror: ${err.message}`));
-}
-
-async function newUser(browser: Browser, name: string): Promise<User> {
-  const context = await browser.newContext({ acceptDownloads: true });
-  const page = await context.newPage();
-  const problems: string[] = [];
-  watch(page, problems);
-  return { name, context, page, problems };
-}
-
-async function register(u: User) {
-  const { page } = u;
-  await page.goto("/");
-  await page.getByRole("button", { name: "New here? Establish identity." }).click();
-  await page.getByPlaceholder("Enter your alias").fill(u.name);
-  await page.getByPlaceholder("Enter your secure password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Generate Proofs & Register" }).click();
-  // Vault backup gate after registration.
-  await page.getByPlaceholder(/Vault password \(min/).fill(VAULT_PASSWORD);
-  await page.getByPlaceholder("Confirm vault password").fill(VAULT_PASSWORD);
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download Encrypted Vault" }).click();
-  await download;
-  await page.getByRole("button", { name: "I saved it, continue" }).click();
-  await expect(page.getByTestId("kt-badge")).toHaveText(EXPECT_KT ? "KT verified" : "KT disabled");
-}
-
 /** Login on a device that already holds the password-encrypted identity (no vault file). */
 async function login(u: User) {
   const { page } = u;
@@ -96,25 +50,6 @@ async function login(u: User) {
   await page.getByPlaceholder("Enter your secure password").fill(PASSWORD);
   await page.getByRole("button", { name: "Secure Login" }).click();
   await expect(page.getByTestId("kt-badge")).toBeVisible();
-}
-
-async function openChat(u: User, peer: string) {
-  await u.page.getByRole("button", { name: "Active Link" }).click();
-  try {
-    await u.page.getByRole("button", { name: new RegExp(`^${peer.charAt(0).toUpperCase()}\\s*${peer}`) }).click({ timeout: 30_000 });
-  } catch (e) {
-    await u.page.screenshot({ path: `test-results/debug-${u.name}.png` });
-    throw e;
-  }
-  await expect(u.page.getByRole("heading", { name: peer })).toBeVisible();
-}
-
-async function sendText(u: User, text: string) {
-  const input = u.page.getByPlaceholder(/Secure message to/);
-  await expect(input).toBeEnabled();
-  await input.fill(text);
-  await input.press("Enter");
-  await expect(u.page.getByTestId("message").filter({ hasText: text })).toHaveCount(1);
 }
 
 async function expectReceived(u: User, from: string, text: string) {
@@ -141,18 +76,11 @@ test("two users chat over Krypt v1 through the relay", async ({ browser }) => {
   const bob = await newUser(browser, BOB);
 
   await test.step("register both users", async () => {
-    await register(alice);
-    await register(bob);
+    await register(alice, KT_BADGE);
+    await register(bob, KT_BADGE);
   });
 
-  await test.step("befriend", async () => {
-    await alice.page.getByRole("button", { name: /^Requests/ }).click();
-    await alice.page.getByPlaceholder("Search global network...").fill(BOB);
-    await alice.page.getByRole("button", { name: "Invite" }).click();
-    await bob.page.getByRole("button", { name: /^Requests/ }).click();
-    await bob.page.getByRole("button", { name: "Accept" }).first().click();
-    await expect(alice.page.getByText(`${BOB} accepted your friend request!`)).toBeVisible();
-  });
+  await test.step("befriend", () => befriend(alice, bob));
 
   await test.step("10 text messages in each direction", async () => {
     await openChat(alice, BOB);
@@ -191,7 +119,7 @@ test("two users chat over Krypt v1 through the relay", async ({ browser }) => {
     for (let i = 0; i < 3; i++) await sendText(alice, `while you were away #${i}`);
     await expect(alice.page.getByText(`queued for ${BOB} (offline)`).first()).toBeVisible();
     bob.page = await bob.context.newPage();
-    watch(bob.page, bob.problems);
+    watch(bob);
     await login(bob);
     await openChat(bob, ALICE);
     for (let i = 0; i < 3; i++) await expectReceived(bob, ALICE, `while you were away #${i}`);

@@ -11,9 +11,10 @@
  * Results are written to $OUT_DIR/<attack>.json and a screenshot to
  * $OUT_DIR/<attack>.png so the runner can collect them.
  */
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { PNG, befriend, newUser as newWatchedUser, openChat, register, sendText, toasts as recorded, type User } from "./helpers";
 
 const ATTACK = process.env.ATTACK ?? "replay";
 const OUT_DIR = process.env.OUT_DIR ?? "test-results/attacks";
@@ -24,111 +25,16 @@ const run = Date.now().toString(36).slice(-5);
 const ALICE = process.env.ALICE_NAME ?? `alice_${run}`;
 const BOB = process.env.BOB_NAME ?? `bob_${run}`;
 const MALLORY = process.env.MALLORY_NAME ?? `mallory_${run}`;
-const PASSWORD = "correct horse battery staple";
-const VAULT_PASSWORD = "vault-password-123";
 
 mkdirSync(OUT_DIR, { recursive: true });
 
-const PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
-  "base64",
-);
-
-const DECRYPT_CODE = /\[Krypt\] decrypt from \S+ failed:\s*([A-Z_]+)/;
-
-interface User {
-  name: string;
-  context: BrowserContext;
-  page: Page;
-  problems: string[];
-  codes: string[];
-}
-
-function watch(u: User) {
-  u.page.on("console", (msg) => {
-    const t = msg.text();
-    const m = DECRYPT_CODE.exec(t);
-    if (m) u.codes.push(m[1]!);
-    if (/\[Krypt\]|\[KT\]/.test(t) && msg.type() !== "log") u.problems.push(`${msg.type()}: ${t}`);
-  });
-  u.page.on("pageerror", (err) => u.problems.push(`pageerror: ${err.message}`));
-}
-
-async function newUser(browser: Browser, name: string, userAgent?: string): Promise<User> {
-  const context = await browser.newContext({ acceptDownloads: true, ...(userAgent ? { userAgent } : {}) });
-  const page = await context.newPage();
-  // Record toast text as it appears (toasts auto-dismiss, so capture live).
-  await page.addInitScript(() => {
-    (window as unknown as { __toasts: string[] }).__toasts = [];
-    const push = (el: Element) => {
-      const t = (el.textContent ?? "").trim();
-      // Toasts are short; skip large app-container blobs.
-      if (t && t.length <= 400) (window as unknown as { __toasts: string[] }).__toasts.push(t);
-    };
-    const start = () => {
-      const obs = new MutationObserver((muts) => {
-        for (const mu of muts)
-          mu.addedNodes.forEach((n) => {
-            if (n.nodeType === 1) push(n as Element);
-          });
-      });
-      obs.observe(document.body, { childList: true, subtree: true });
-    };
-    if (document.body) start();
-    else window.addEventListener("DOMContentLoaded", start);
-  });
-  const u: User = { name, context, page, problems: [], codes: [] };
-  watch(u);
-  return u;
-}
+/** Every user records toasts and counts any non-log [Krypt] / [KT] console line as a problem. */
+const newUser = (browser: Browser, name: string, userAgent?: string) =>
+  newWatchedUser(browser, name, { userAgent, recordToasts: true, problem: /\[Krypt\]|\[KT\]/ });
 
 const TOAST_RE =
   /fail|error|alert|reject|drop|duplicat|replac|supersed|queued|could not|not trusted|invalid|tamper|re-?sen|identity|verified it/i;
-async function toasts(u: User): Promise<string[]> {
-  const raw = await u.page.evaluate(() => (window as unknown as { __toasts?: string[] }).__toasts ?? []);
-  return Array.from(new Set(raw.filter((t) => TOAST_RE.test(t))));
-}
-
-async function register(u: User) {
-  const { page } = u;
-  await page.goto("/");
-  await page.getByRole("button", { name: "New here? Establish identity." }).click();
-  await page.getByPlaceholder("Enter your alias").fill(u.name);
-  await page.getByPlaceholder("Enter your secure password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Generate Proofs & Register" }).click();
-  await page.getByPlaceholder(/Vault password \(min/).fill(VAULT_PASSWORD);
-  await page.getByPlaceholder("Confirm vault password").fill(VAULT_PASSWORD);
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download Encrypted Vault" }).click();
-  await download;
-  await page.getByRole("button", { name: "I saved it, continue" }).click();
-  await expect(page.getByTestId("kt-badge")).toBeVisible();
-}
-
-async function befriend(a: User, b: User) {
-  await a.page.getByRole("button", { name: /^Requests/ }).click();
-  await a.page.getByPlaceholder("Search global network...").fill(b.name);
-  await a.page.getByRole("button", { name: "Invite" }).click();
-  await b.page.getByRole("button", { name: /^Requests/ }).click();
-  await b.page.getByRole("button", { name: "Accept" }).first().click();
-  await expect(a.page.getByText(`${b.name} accepted your friend request!`)).toBeVisible();
-}
-
-async function openChat(u: User, peer: string) {
-  await u.page.getByRole("button", { name: "Active Link" }).click();
-  await u.page
-    .getByRole("button", { name: new RegExp(`^${peer.charAt(0).toUpperCase()}\\s*${peer}`) })
-    .click({ timeout: 30_000 });
-  await expect(u.page.getByRole("heading", { name: peer })).toBeVisible();
-}
-
-async function sendText(u: User, text: string) {
-  const input = u.page.getByPlaceholder(/Secure message to/);
-  await expect(input).toBeEnabled();
-  await input.fill(text);
-  await input.press("Enter");
-  await expect(u.page.getByTestId("message").filter({ hasText: text })).toHaveCount(1);
-}
+const toasts = (u: User) => recorded(u, TOAST_RE);
 
 function countFrom(u: User, from: string) {
   return u.page.locator(`[data-testid="message"][data-from="${from}"]`).count();

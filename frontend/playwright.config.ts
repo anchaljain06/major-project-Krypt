@@ -4,6 +4,8 @@ import { defineConfig, devices } from "@playwright/test";
 // See e2e/README.md for how to start them.
 export default defineConfig({
   testDir: "./e2e",
+  // The attack specs need a relay in EVIL_MODE; the runners in evaluation/attacks set ATTACK.
+  testIgnore: process.env.ATTACK ? undefined : /attacks.*\.spec\.ts$/,
   timeout: 300_000,
   expect: { timeout: 30_000 },
   workers: 1,

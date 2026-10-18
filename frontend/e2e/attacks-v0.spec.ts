@@ -10,49 +10,20 @@
  * v0 has no data-testid attributes, so messages are matched by their text and by
  * the <img alt="Secure shared"> element (the flip_type rendering vector).
  */
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { PASSWORD, newUser as newWatchedUser, toasts as recorded, type User } from "./helpers";
 
 const ATTACK = process.env.ATTACK ?? "flip_type";
 const OUT_DIR = process.env.OUT_DIR ?? "test-results/attacks-v0";
 const ALICE = process.env.ALICE_NAME ?? "alice_v0";
 const BOB = process.env.BOB_NAME ?? "bob_v0";
 const MALLORY = process.env.MALLORY_NAME ?? "mallory_v0";
-const PASSWORD = "correct horse battery staple";
 mkdirSync(OUT_DIR, { recursive: true });
 
-interface User {
-  name: string;
-  context: BrowserContext;
-  page: Page;
-}
-
-async function newUser(browser: Browser, name: string): Promise<User> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    (window as unknown as { __toasts: string[] }).__toasts = [];
-    const push = (el: Element) => {
-      const t = (el.textContent ?? "").trim();
-      if (t && t.length <= 400) (window as unknown as { __toasts: string[] }).__toasts.push(t);
-    };
-    const start = () => {
-      const obs = new MutationObserver((muts) => {
-        for (const mu of muts) mu.addedNodes.forEach((n) => n.nodeType === 1 && push(n as Element));
-      });
-      obs.observe(document.body, { childList: true, subtree: true });
-    };
-    if (document.body) start();
-    else window.addEventListener("DOMContentLoaded", start);
-  });
-  return { name, context, page };
-}
-
-async function toasts(u: User): Promise<string[]> {
-  const raw = await u.page.evaluate(() => (window as unknown as { __toasts?: string[] }).__toasts ?? []);
-  return Array.from(new Set(raw.filter((t) => /fail|error|alert|queued|decrypt|mitm|security/i.test(t))));
-}
+const newUser = (browser: Browser, name: string) => newWatchedUser(browser, name, { recordToasts: true });
+const toasts = (u: User) => recorded(u, /fail|error|alert|queued|decrypt|mitm|security/i);
 
 async function register(u: User) {
   const { page } = u;
