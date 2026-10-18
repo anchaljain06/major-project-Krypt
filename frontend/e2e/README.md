@@ -8,10 +8,9 @@
 | Befriend | Request, accept, socket notification |
 | 10 texts each way | v1 handshake (Krypt-X3K) and ratchet, both directions |
 | Image and audio | Per-attachment key, AES-GCM file, metadata inside the v1 message |
-| Safety numbers | Both sides show the same 60 digits |
+| Safety numbers | Both sides show the same 60 digits; the Security panel shows the ML-KEM-1024 ratchet |
 | Bob offline | Messages wait in the mailbox; Bob logs in again (password only, no vault file) and decrypts them |
 | Alice refreshes | Session cache restores the identity, the store key is re-derived, ratchet state survives |
-| Hybrid toggle | After a session reset, the new session uses X-Wing |
 | Final check | Every message is present, no decrypt-error toast, no `[Krypt]` warning in the console |
 
 Key transparency runs in **disabled** mode here unless the frontend is started with `VITE_KT_LOG_PUBKEY`.

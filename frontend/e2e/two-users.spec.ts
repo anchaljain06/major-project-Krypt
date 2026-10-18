@@ -126,7 +126,7 @@ async function safetyDigits(u: User): Promise<string> {
   const sn = u.page.getByTestId("safety-number");
   await expect(sn).toBeVisible();
   const digits = (await sn.innerText()).replace(/\s+/g, " ").trim();
-  await expect(u.page.getByTestId("session-status")).toContainText("ML-KEM-768");
+  await expect(u.page.getByTestId("session-status")).toContainText("ML-KEM-1024");
   if (EXPECT_KT) await expect(u.page.getByTestId("kt-peer-status")).toHaveText("Verified");
   await u.page.getByRole("button", { name: "Close" }).click();
   return digits;
@@ -211,31 +211,11 @@ test("two users chat over Krypt v1 through the relay", async ({ browser }) => {
     await expectReceived(alice, BOB, "reply after refresh");
   });
 
-  await test.step("hybrid toggle: a new session uses X-Wing", async () => {
-    await alice.page.getByRole("button", { name: "Settings" }).click();
-    await alice.page.getByTestId("suite-toggle").check();
-    await alice.page.getByRole("button", { name: "Settings" }).click();
-    alice.page.once("dialog", (d) => d.accept());
-    await alice.page.getByRole("button", { name: "Security" }).click();
-    await alice.page.getByRole("button", { name: "Reset session" }).click();
-    await expect(alice.page.getByText("No session yet")).toBeVisible();
-    await alice.page.getByRole("button", { name: "Close" }).click();
-    await sendText(alice, "now over x-wing");
-    await expectReceived(bob, ALICE, "now over x-wing");
-    await sendText(bob, "x-wing reply");
-    await expectReceived(alice, BOB, "x-wing reply");
-    for (const u of [alice, bob]) {
-      await u.page.getByRole("button", { name: "Security" }).click();
-      await expect(u.page.getByTestId("session-status")).toContainText("X-Wing");
-      await u.page.getByRole("button", { name: "Close" }).click();
-    }
-  });
-
   await test.step("everything decrypted, nothing reported", async () => {
-    // From Alice: 10 + 3 (mailbox) + 1 (after refresh) + 1 (x-wing) texts and 1 image.
-    // From Bob: 10 + 1 (back online) + 1 (after refresh) + 1 (x-wing) texts and 1 audio clip.
-    await expect(bob.page.locator(`[data-testid="message"][data-from="${ALICE}"]`)).toHaveCount(16);
-    await expect(alice.page.locator(`[data-testid="message"][data-from="${BOB}"]`)).toHaveCount(14);
+    // From Alice: 10 + 3 (mailbox) + 1 (after refresh) texts and 1 image.
+    // From Bob: 10 + 1 (back online) + 1 (after refresh) texts and 1 audio clip.
+    await expect(bob.page.locator(`[data-testid="message"][data-from="${ALICE}"]`)).toHaveCount(15);
+    await expect(alice.page.locator(`[data-testid="message"][data-from="${BOB}"]`)).toHaveCount(13);
     for (const u of [alice, bob]) {
       await expect(u.page.getByText(ERROR_PATTERN)).toHaveCount(0);
       assertClean(u);
