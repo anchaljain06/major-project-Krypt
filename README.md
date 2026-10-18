@@ -4,7 +4,29 @@
 
 It features **augmented PAKE login (SRP-6a)**, **Physical Vault Identities**, **Post-Quantum Key Encapsulation (ML-KEM-1024)** with **ML-DSA-87** signatures, a **symmetric hash ratchet (v0)**, and **AES-256-GCM** symmetric encryption via the browser's native Web Crypto API.
 
-> **Status:** this README describes protocol **v0**. v0 does not provide forward secrecy against compromise of a long-term identity key, and its handshake is not yet replay-protected. These are being addressed in v1; see the [Roadmap (v1)](#-roadmap-v1).
+> **Status:** from "System Architecture" on, this README describes protocol **v0**. v0 does not provide forward secrecy against compromise of a long-term identity key, and its handshake is not replay-protected. Branch `v1` replaces it: the next section gives v1's suite, limits and what the server can see, and the full protocol is [`docs/protocol/krypt-v1.md`](docs/protocol/krypt-v1.md).
+
+## 🔎 v1 at a glance: limits and what the server sees
+
+| | v1 |
+|---|---|
+| Key exchange and ratchet | **ML-KEM-1024** (FIPS 203) only, for prekeys, the handshake and the ratchet, with ML-DSA-87 (FIPS 204) signatures. No hybrid with a classical KEM (spec §2.1 says why). |
+| Ratchet step | **K = 4**: a sender moves to a fresh ML-KEM-1024 key once it has sent 4 messages on its current chain and holds a newer key from the peer. A larger K saves bytes and CPU but heals more slowly after a device compromise; it is never more secure (spec §5.6; measurements in `evaluation/README.md`, E7). |
+| Text, images, audio | An image or audio message is at most 11.95 MiB and travels in one socket frame. If the recipient is offline, the server keeps the ciphertext in a mailbox until delivery: at most 7 days, 500 messages and 50 MB per recipient. |
+| Files | **Max 256 MiB per file**, sent as 1 MiB AES-256-GCM chunks under a random per-file key that travels inside an encrypted message. **Online only**: both people must be online. The server forwards each chunk from memory and **never stores file data** (no database row, no disk). If the recipient drops, the transfer stops and resumes when they are back. At most 4 transfers each way at a time. |
+| On the receiving device | Chunks stay encrypted in IndexedDB until you press Download (at most 512 MiB in total). A transfer with no progress for 24 hours is cancelled and its data deleted. |
+
+### What "blind relay" means
+
+The server forwards, and for offline text and media briefly stores, ciphertext it cannot read. It never holds a private key, a message key or a file key, so it cannot read or forge content. In the attack matrix (`evaluation/attack-matrix.md`) a relay that replays, reorders, duplicates or tampers with messages is caught by the clients; a changed file chunk fails AES-GCM (unit tests).
+
+It is **not** blind to metadata. The server sees:
+
+- who talks to whom and when (every frame names its sender and recipient), and who is friends with whom;
+- sizes and timing: message lengths, file sizes and chunk counts;
+- public keys: identity keys, prekeys and the key-transparency log.
+
+It can also drop or delay traffic. A relay that serves another user's keys in place of a contact's is refused, with key transparency on or off. Without key transparency, keys are trusted on first use, so a key forged for a contact at first contact would not be noticed; with it (`VITE_KT_LOG_PUBKEY` set), forged log entries, split views and rewritten history raise an alert. v1 does not yet show the user a warning when it refuses a key (plan O.1).
 
 ## 🗺️ System Architecture
 
