@@ -60,8 +60,6 @@ import type { UserIdentityKeys } from "../crypto/mlkem";
 import { mldsaSign, mldsaVerify } from "../crypto/pq";
 import { apiFetch, apiPostJson } from "./api";
 
-const API_URL: string = import.meta.env.VITE_API_URL ?? "";
-
 function envKey(name: string): Uint8Array | null {
   const v = (import.meta.env as Record<string, string | undefined>)[name]?.trim();
   if (!v) return null;
@@ -147,7 +145,7 @@ class HttpError extends Error {
 }
 
 async function getJson(path: string): Promise<unknown> {
-  const res = await fetch(`${API_URL}${path}`, { cache: "no-store" });
+  const res = await apiFetch(path, { cache: "no-store" });
   if (!res.ok) throw new HttpError(res.status, path);
   return res.json();
 }
