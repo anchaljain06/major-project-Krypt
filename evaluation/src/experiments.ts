@@ -10,6 +10,7 @@ import { ml_kem512, ml_kem768, ml_kem1024 } from '@noble/post-quantum/ml-kem.js'
 import { ml_dsa44, ml_dsa65, ml_dsa87 } from '@noble/post-quantum/ml-dsa.js';
 import { ml_kem768_x25519 } from '@noble/post-quantum/hybrid.js';
 import { x25519, ed25519 } from '@noble/curves/ed25519.js';
+import { aesGcmEncrypt, kdfChain, kdfRoot, messageKeyAndIv, rootContext } from '../../frontend/src/crypto/kdf.ts';
 import { measure, type BenchConfig, type Measurement, type OpFn } from './harness.ts';
 
 export type Exp = 'E1' | 'E2' | 'E3' | 'E4';
@@ -459,24 +460,16 @@ function symmetricOps(): OpSpec[] {
     });
   }
 
-  // Ratchet chain step, exactly as strategy section 4.4:
-  //   mk = HMAC(CK, 0x01); CK' = HMAC(CK, 0x02); key||iv = HKDF(0, mk, "Krypt-MK", 44)
-  const zeros = new Uint8Array(32);
-  const info = enc.encode('Krypt-MK');
-  const one = new Uint8Array([1]);
-  const two = new Uint8Array([2]);
-  async function chainStep(ck: Bytes): Promise<{ ck: Bytes; key: Bytes; iv: Bytes }> {
-    const s = subtle();
-    const ckKey = await s.importKey('raw', ck, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const [mk, next] = await Promise.all([s.sign('HMAC', ckKey, one), s.sign('HMAC', ckKey, two)]);
-    const mkKey = await s.importKey('raw', mk, 'HKDF', false, ['deriveBits']);
-    const kiv = new Uint8Array(await s.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: zeros, info }, mkKey, 44 * 8));
-    return { ck: new Uint8Array(next), key: kiv.slice(0, 32), iv: kiv.slice(32) };
+  // The ratchet ops below call the shipped key schedule in frontend/src/crypto/kdf.ts
+  // (spec 5.2, 5.3), so the numbers describe the code the app runs.
+  async function chainStep(ck: Uint8Array) {
+    const { mk, ck: next } = await kdfChain(ck);
+    return { ck: next, ...(await messageKeyAndIv(mk)) };
   }
   ops.push({
     ...kdf, op: 'chain-step',
     setup: async () => {
-      let ck = rand(32);
+      let ck: Uint8Array = rand(32);
       return async () => {
         const r = await chainStep(ck);
         ck = r.ck;
@@ -484,30 +477,29 @@ function symmetricOps(): OpSpec[] {
       };
     },
   });
-  // Root step: KDF_RK(RK, ss, ctx) = HKDF(salt=RK, ikm=ss, info="Krypt-RK"||ctx, 64)
+  // Root step: KDF_RK(RK, ss, ctx) with ctx = rootContext(e, ek, ct) for ML-KEM-1024 sizes.
+  // rootContext's two hashes run once in setup; the timed op is the KDF itself.
   ops.push({
     ...kdf, op: 'root-step',
     setup: async () => {
       const rk = rand(32);
       const ss = rand(32);
-      const ctxInfo = new Uint8Array([...enc.encode('Krypt-RK'), ...rand(4 + 32 + 32)]);
-      return async () => {
-        const k = await subtle().importKey('raw', ss, 'HKDF', false, ['deriveBits']);
-        return subtle().deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: rk, info: ctxInfo }, k, 512);
-      };
+      const ctx = await rootContext(1, rand(1568), rand(1568));
+      return () => kdfRoot(rk, ss, ctx);
     },
   });
   // Full per-message symmetric cost: chain step + AES-GCM seal of a 1 KB message.
+  // The app's AAD is the encoded header; 256 B stands in for a header without a ratchet key.
   ops.push({
     ...kdf, alg: 'chain-step+AES-256-GCM', op: 'seal', bytes: 1024,
     setup: async () => {
-      let ck = rand(32);
+      let ck: Uint8Array = rand(32);
       const pt = rand(1024);
+      const aad = rand(256);
       return async () => {
         const r = await chainStep(ck);
         ck = r.ck;
-        const k = await subtle().importKey('raw', r.key, { name: 'AES-GCM' }, false, ['encrypt']);
-        return subtle().encrypt({ name: 'AES-GCM', iv: r.iv }, k, pt);
+        return aesGcmEncrypt(r.key, r.iv, pt, aad);
       };
     },
   });

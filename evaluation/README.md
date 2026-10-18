@@ -1,6 +1,6 @@
 # Krypt evaluation harness (C3)
 
-This package measures the cost of Krypt's cryptography in real browsers and in Node. It covers experiments E1–E5, E7 and E10 from strategy section 6.1. The browser and E1–E5/E10 code is standalone and does not import from `frontend/` or `primary-backend/`. E7 is the one exception: it drives the shipped `SessionManager` from `frontend/src/crypto/` in Node (see [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing)).
+This package measures the cost of Krypt's cryptography in real browsers and in Node. It covers experiments E1–E5, E7 and E10 from strategy section 6.1. Where an experiment measures Krypt's own protocol code, it imports that code from `frontend/src/crypto/` instead of copying it: the E4 ratchet ops use `kdf.ts`, and E7 drives the shipped `SessionManager` in Node (see [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing)). The library benchmarks (E1–E3) call the libraries directly. Nothing imports from `primary-backend/`.
 
 ```
 evaluation/
@@ -75,7 +75,7 @@ Every op checks itself before it is timed. Decaps must equal the encaps secret a
 | E1 | ML-KEM-512/768/1024 keygen, encaps, decaps; X-Wing (`ml_kem768_x25519`) keygen, encaps, decaps, as a comparison only (not a Krypt suite, spec §2.1) | noble 0.7.1, `@oqs/liboqs-js` 0.15.1 (WASM), native WebCrypto |
 | E2 | ML-DSA-44/65/87 keygen, sign, verify (64-byte message) | noble, liboqs-js, native WebCrypto |
 | E3 | X25519 keygen and derive; Ed25519 keygen, sign, verify | native WebCrypto, `@noble/curves` |
-| E4 | AES-256-GCM encrypt/decrypt at 64 B, 1 KB, 16 KB, 256 KB, 1 MB (MB/s); ratchet `chain-step` (HMAC×2 + HKDF 44 B, strategy 4.4); `root-step` (HKDF 64 B); `seal` = chain step + AES-GCM of 1 KB | native WebCrypto |
+| E4 | AES-256-GCM encrypt/decrypt at 64 B, 1 KB, 16 KB, 256 KB, 1 MB (MB/s); ratchet `chain-step` (`kdfChain` + `messageKeyAndIv`, spec 5.3); `root-step` (`kdfRoot`, spec 5.2); `seal` = chain step + `aesGcmEncrypt` of 1 KB with a 256 B AAD. All three call `frontend/src/crypto/kdf.ts` | native WebCrypto |
 | E5 | Bytes per handshake (bundle fetch + first message) and per steady-state message for v0, v1 (ML-KEM-768 ratchet) and v1-xwing (both earlier designs, kept as comparisons; Krypt now ships an ML-KEM-1024 ratchet only, spec §2.1), each as raw vs length-prefixed binary vs Socket.io JSON/base64 | none (pure accounting from FIPS 203/204 sizes, checked against noble) |
 | E10 | The same suite in Node, plus a `node-crypto` backend (`generateKeyPairSync('ml-kem-768')`, `crypto.encapsulate/decapsulate`, `crypto.sign/verify`) | noble, liboqs, Node WebCrypto, node:crypto |
 | E7 | Sparse KEM ratchet interval K: bytes per message, KEM ops and CPU per message, messages-to-heal after a state compromise. See [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing) | the v1 `SessionManager` (noble ML-KEM-1024; results below are from the earlier ML-KEM-768 / X-Wing build), Node |

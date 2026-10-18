@@ -50,7 +50,11 @@ export default defineConfig({
   plugins: [liboqsStaticImport()],
   root: resolve(import.meta.dirname, 'bench'),
   base: './',
-  server: { headers: isolation, host: true, port: 5174, strictPort: false },
+  // The E4 ratchet ops import the shipped key schedule from ../frontend/src/crypto.
+  server: {
+    headers: isolation, host: true, port: 5174, strictPort: false,
+    fs: { allow: [import.meta.dirname, resolve(import.meta.dirname, '../frontend/src/crypto')] },
+  },
   preview: { headers: isolation, host: true, port: 4174, strictPort: false },
   // Worker bundles do not inherit top-level plugins.
   worker: { format: 'es', plugins: () => [liboqsStaticImport()] },
