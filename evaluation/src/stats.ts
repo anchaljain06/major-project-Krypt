@@ -29,6 +29,16 @@ export function quantile(sorted: ArrayLike<number>, q: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
+/** Quantile of unsorted values (sorts a copy). NaN for an empty list. */
+export function quantileOf(values: readonly number[], q: number): number {
+  return quantile(Float64Array.from(values).sort(), q);
+}
+
+/** Arithmetic mean. NaN for an empty list. */
+export function mean(values: readonly number[]): number {
+  return values.length ? values.reduce((s, x) => s + x, 0) / values.length : NaN;
+}
+
 /** Small, seedable PRNG (mulberry32) so bootstrap CIs are reproducible. */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;

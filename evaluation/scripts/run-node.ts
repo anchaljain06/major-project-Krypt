@@ -16,7 +16,7 @@ import { resolve, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import os from 'node:os';
 import { runSuite } from '../src/run.ts';
-import { Unsupported, type OpSpec } from '../src/experiments.ts';
+import { MSG, Unsupported, type OpSpec } from '../src/experiments.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const { values: args } = parseArgs({
@@ -28,7 +28,6 @@ const { values: args } = parseArgs({
   },
 });
 
-const MSG = Buffer.from('Krypt-init benchmark transcript hash placeholder 0123456789abcdef');
 const c = nodeCrypto as typeof nodeCrypto & {
   encapsulate?: (key: nodeCrypto.KeyObject) => { sharedKey: Buffer; ciphertext: Buffer };
   decapsulate?: (key: nodeCrypto.KeyObject, ct: Buffer) => Buffer;

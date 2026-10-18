@@ -48,7 +48,8 @@ export const opId = (o: Pick<OpSpec, 'exp' | 'alg' | 'op' | 'backend'> & { bytes
   `${o.exp}/${o.alg}/${o.op}${o.bytes !== undefined ? `@${o.bytes}` : ''}/${o.backend}`;
 
 const enc = new TextEncoder();
-const MSG = enc.encode('Krypt-init benchmark transcript hash placeholder 0123456789abcdef'); // 64 B
+/** 64-byte message signed by every signature benchmark (E2, E3, E10). */
+export const MSG = enc.encode('Krypt-init benchmark transcript hash placeholder 0123456789abcdef');
 type Bytes = Uint8Array<ArrayBuffer>;
 const u8 = (x: ArrayBuffer | Uint8Array): Uint8Array => (x instanceof Uint8Array ? x : new Uint8Array(x));
 const eq = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);

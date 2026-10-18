@@ -12,6 +12,7 @@
 import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import { summarize, quantile } from '../src/stats.ts';
+import { toCsv } from '../src/csv.ts';
 import type { ResultsDoc } from '../src/run.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -29,17 +30,6 @@ async function newestDir(): Promise<string> {
   if (!dirs.length) throw new Error('no results directories');
   return dirs.sort((a, b) => b.t - a.t)[0].p;
 }
-
-const csvCell = (v: unknown) => {
-  if (v === undefined || v === null || (typeof v === 'number' && !Number.isFinite(v))) return '';
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-const toCsv = (rows: Record<string, unknown>[]) => {
-  if (!rows.length) return '';
-  const cols = Object.keys(rows[0]);
-  return [cols.join(','), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(','))].join('\n') + '\n';
-};
 
 async function main() {
   const dir = process.argv[2] ? resolve(process.cwd(), process.argv[2]) : await newestDir();

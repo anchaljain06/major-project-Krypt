@@ -22,6 +22,8 @@ import {
   type Traffic,
 } from "../src/e7-ratchet.ts";
 import type { KemSuite } from "../../frontend/src/crypto/pq.ts";
+import { toCsv } from "../src/csv.ts";
+import { mean, quantileOf } from "../src/stats.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -47,25 +49,9 @@ const snapshotsAt = Array.from({ length: quick ? 4 : 20 }, (_, j) => Math.floor(
 
 mkdirSync(outDir, { recursive: true });
 
-const q = (xs: number[], p: number) => {
-  if (!xs.length) return NaN;
-  const a = [...xs].sort((x, y) => x - y);
-  const h = (a.length - 1) * p;
-  const lo = Math.floor(h);
-  return a[lo] + (a[Math.min(lo + 1, a.length - 1)] - a[lo]) * (h - lo);
-};
-const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : NaN);
+const q = quantileOf;
 const r3 = (x: number) => (Number.isFinite(x) ? Math.round(x * 1000) / 1000 : x);
-
-function csv(rows: Record<string, unknown>[]): string {
-  if (!rows.length) return "";
-  const cols = Object.keys(rows[0]);
-  const cell = (v: unknown) => {
-    const s = typeof v === "number" ? String(r3(v)) : String(v ?? "");
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return [cols.join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n") + "\n";
-}
+const csv = (rows: readonly object[]) => toCsv(rows as Record<string, unknown>[], 3);
 
 // Warm-up: JIT the KEMs, HKDF and AES paths before anything is timed.
 for (const suite of suites) {
@@ -170,7 +156,7 @@ for (const suite of suites) {
 }
 
 writeFileSync(path.join(outDir, "messages.csv"), csv(msgRows));
-writeFileSync(path.join(outDir, "snapshots.csv"), csv(snapRows as unknown as Record<string, unknown>[]));
+writeFileSync(path.join(outDir, "snapshots.csv"), csv(snapRows));
 writeFileSync(path.join(outDir, "summary.csv"), csv(summary));
 writeFileSync(path.join(outDir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
 writeFileSync(
