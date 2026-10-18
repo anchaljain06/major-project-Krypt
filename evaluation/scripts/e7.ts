@@ -20,7 +20,7 @@ import {
   type MsgRecord,
   type SnapshotResult,
   type Traffic,
-} from "../bench/e7-ratchet.ts";
+} from "../src/e7-ratchet.ts";
 import type { KemSuite } from "../../frontend/src/crypto/pq.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));

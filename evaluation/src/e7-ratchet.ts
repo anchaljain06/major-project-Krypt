@@ -2,10 +2,10 @@
 //
 // Runs in Node (tsx), not in the browser page: it drives the shipped v1 SessionManager from
 // frontend/src/crypto/ directly (no copy) with in-memory stores, so the numbers describe the
-// real state machine. bench.ts and worker.ts do not import this file.
+// real state machine. The test world (directory, parties, rng) is frontend/test/helpers.ts.
 //
 // For one (suite, K, traffic, seed) cell, runConversation():
-//   1. builds Alice and Bob over an in-memory bundle directory (modelled on frontend/test/helpers.ts);
+//   1. builds Alice and Bob over the in-memory bundle directory of frontend/test/helpers.ts;
 //   2. plays a scripted 1,000-message conversation and records, per message, the exact header,
 //      body, binary-frame and JSON-frame bytes, whether ratchet data rode on the header, the KEM
 //      operations it caused (counted by wrapping the suite objects at runtime) and the
@@ -14,15 +14,15 @@
 // analyseSnapshot() then replays the recorded transcript against each snapshot and checks,
 // message by message, what Eve can read against the exposure rule of spec section 9.
 
-import { exportPublicIdentity } from "../../frontend/src/crypto/mlkem.ts";
-import { mldsaKeygen, mlkem1024, type KemSuite } from "../../frontend/src/crypto/pq.ts";
 import {
-  MemoryPrekeyStore,
-  createPrekeyUpload,
-  type PrekeyBundleWire,
-  type PrekeyWire,
-} from "../../frontend/src/crypto/prekeys.ts";
-import { SessionManager, createMutexLock } from "../../frontend/src/crypto/session.ts";
+  Directory,
+  makeParty as makeTestParty,
+  managerFor,
+  rng,
+  type Party as TestParty,
+} from "../../frontend/test/helpers.ts";
+import { mlkem1024, type KemSuite } from "../../frontend/src/crypto/pq.ts";
+import type { SessionManager } from "../../frontend/src/crypto/session.ts";
 import {
   MemorySessionStore,
   type PeerRecord,
@@ -94,25 +94,6 @@ const total = (c: Counts) => c.keygen + c.encaps + c.decaps;
 // ---------------------------------------------------------------------------
 // World: directory, timed store, parties
 
-class Directory {
-  entries = new Map<string, { identityKey: string; signedPrekey: PrekeyWire; oneTimePrekeys: PrekeyWire[] }>();
-  async fetchBundle(username: string): Promise<PrekeyBundleWire> {
-    const e = this.entries.get(username);
-    if (!e) throw new Error(`no such user ${username}`);
-    return {
-      username,
-      identityKey: e.identityKey,
-      signedPrekey: e.signedPrekey,
-      oneTimePrekey: e.oneTimePrekeys.shift() ?? null,
-    };
-  }
-  async fetchIdentity(username: string): Promise<string> {
-    const e = this.entries.get(username);
-    if (!e) throw new Error(`no such user ${username}`);
-    return e.identityKey;
-  }
-}
-
 /** MemorySessionStore plus a stopwatch, so storage time can be reported apart from crypto time. */
 class TimedStore implements SessionStore {
   ms = 0;
@@ -135,12 +116,9 @@ class TimedStore implements SessionStore {
   }
 }
 
-interface Party {
-  name: "alice" | "bob";
-  identity: { dsaPub: Uint8Array; dsaSec: Uint8Array };
-  prekeys: MemoryPrekeyStore;
-  store: TimedStore;
-  sm: SessionManager;
+/** A test party whose SessionManager writes through a TimedStore; `store` is the store behind it. */
+interface Party extends TestParty {
+  timed: TimedStore;
 }
 
 interface ManagerOpts {
@@ -149,35 +127,20 @@ interface ManagerOpts {
   now: () => number;
 }
 
-function manager(p: Omit<Party, "sm">, dir: Directory, store: SessionStore, o: ManagerOpts): SessionManager {
-  return new SessionManager({
-    self: { username: p.name, identity: p.identity },
-    store,
-    prekeys: p.prekeys,
-    fetchBundle: (u) => dir.fetchBundle(u),
-    fetchIdentity: (u) => dir.fetchIdentity(u),
-    suite: o.suite,
-    ratchetEveryK: o.K,
-    now: o.now,
-    lock: createMutexLock(),
-  });
+const partyOpts = (o: ManagerOpts, store?: SessionStore) => ({ suite: o.suite, ratchetEveryK: o.K, now: o.now, store });
+
+/** A second SessionManager over a party's keys and the given store (Eve's stolen copy). */
+function manager(p: Party, dir: Directory, store: SessionStore, o: ManagerOpts): SessionManager {
+  return managerFor(p, dir, partyOpts(o, store));
 }
 
 async function makeParty(dir: Directory, name: "alice" | "bob", o: ManagerOpts): Promise<Party> {
-  const kp = mldsaKeygen();
-  const identity = { dsaPub: kp.publicKey, dsaSec: kp.secretKey };
-  const prekeys = new MemoryPrekeyStore();
-  const upload = await createPrekeyUpload(identity.dsaSec, prekeys, 3);
-  registerPrekey((await prekeys.getSignedPrekey(upload.signedPrekey.keyId))!);
-  for (const o of upload.oneTimePrekeys) registerPrekey((await prekeys.getOneTimePrekey(o.keyId))!);
-  dir.entries.set(name, {
-    identityKey: exportPublicIdentity({ kemPublicKey: new Uint8Array(1568), dsaPublicKey: identity.dsaPub }),
-    signedPrekey: upload.signedPrekey,
-    oneTimePrekeys: upload.oneTimePrekeys,
-  });
-  const store = new TimedStore(new MemorySessionStore());
-  const base = { name, identity, prekeys, store };
-  return { ...base, sm: manager(base, dir, store, o) };
+  const timed = new TimedStore(new MemorySessionStore());
+  const p = await makeTestParty(dir, name, partyOpts(o, timed));
+  const entry = dir.entries.get(name)!;
+  registerPrekey((await p.prekeys.getSignedPrekey(entry.signedPrekey.keyId))!);
+  for (const k of entry.oneTimePrekeys) registerPrekey((await p.prekeys.getOneTimePrekey(k.keyId))!);
+  return { ...p, store: timed.inner, timed };
 }
 
 // ---------------------------------------------------------------------------
@@ -185,19 +148,6 @@ async function makeParty(dir: Directory, name: "alice" | "bob", o: ManagerOpts):
 
 export type Traffic = "alternate" | "burst5" | "oneSided90" | "poisson";
 export const TRAFFIC: readonly Traffic[] = ["alternate", "burst5", "oneSided90", "poisson"];
-
-/** xorshift32, same as frontend/test/helpers.ts rng(). */
-export function rng(seed: number): () => number {
-  let x = seed >>> 0 || 1;
-  return () => {
-    x ^= x << 13;
-    x >>>= 0;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    x >>>= 0;
-    return x / 0x100000000;
-  };
-}
 
 interface Slot {
   from: "alice" | "bob";
@@ -333,14 +283,14 @@ export async function runConversation(o: ConversationOpts): Promise<Conversation
   const lastAt = { alice: -Infinity, bob: -Infinity };
   let deliverSeq = 0;
 
-  const skippedOf = async (p: Party, peer: string) => (await p.store.inner.load(peer))?.session?.skipped.length ?? 0;
+  const skippedOf = async (p: Party, peer: string) => (await p.store.load(peer))?.session?.skipped.length ?? 0;
 
   async function deliverOne(to: "alice" | "bob"): Promise<void> {
     const { at, idx } = queues[to].shift()!;
     simT = Math.max(simT, at);
     const p = party[to];
     const before = readCounters();
-    const s0 = p.store.ms;
+    const s0 = p.timed.ms;
     const t0 = performance.now();
     const res = await p.sm.decrypt(envs[idx]);
     const dt = performance.now() - t0;
@@ -348,7 +298,7 @@ export async function runConversation(o: ConversationOpts): Promise<Conversation
     if (td.decode(res.plaintext) !== td.decode(plaintext(idx))) throw new Error(`plaintext mismatch at ${idx}`);
     const m = msgs[idx];
     m.decMs = dt;
-    m.decStoreMs = p.store.ms - s0;
+    m.decStoreMs = p.timed.ms - s0;
     m.decKem = diff(after.ratchet, before.ratchet);
     m.prekeyKemOps += total(diff(after.prekey, before.prekey));
     m.deliverT = at;
@@ -373,7 +323,7 @@ export async function runConversation(o: ConversationOpts): Promise<Conversation
     await deliverUntil(slot.t);
     simT = Math.max(simT, slot.t);
     if (snapAt.has(i)) {
-      const store = alice.store.inner.clone();
+      const store = alice.store.clone();
       snapshots.push({
         k: i,
         t: slot.t,
@@ -385,7 +335,7 @@ export async function runConversation(o: ConversationOpts): Promise<Conversation
     const p = party[slot.from];
     const to = slot.from === "alice" ? "bob" : "alice";
     const before = readCounters();
-    const s0 = p.store.ms;
+    const s0 = p.timed.ms;
     const t0 = performance.now();
     const env = await p.sm.encrypt(to, plaintext(i), "text");
     const dt = performance.now() - t0;
@@ -412,7 +362,7 @@ export async function runConversation(o: ConversationOpts): Promise<Conversation
       decKem: zero(),
       prekeyKemOps: total(diff(after.prekey, before.prekey)),
       encMs: dt,
-      encStoreMs: p.store.ms - s0,
+      encStoreMs: p.timed.ms - s0,
       decMs: NaN,
       decStoreMs: NaN,
       skippedAlice: 0,

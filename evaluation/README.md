@@ -6,7 +6,7 @@ This package measures the cost of Krypt's cryptography in real browsers and in N
 evaluation/
 ├─ bench/index.html, bench.ts   page controller: worker or main thread, results on window.__results
 ├─ bench/worker.ts              dedicated Web Worker that runs the suite
-├─ bench/e7-ratchet.ts          E7 driver: Alice/Bob over the real SessionManager, KEM op counters, attacker Eve
+├─ src/e7-ratchet.ts            E7 driver: Alice/Bob over the real SessionManager, KEM op counters, attacker Eve
 ├─ src/harness.ts               batch timer (method rules below)
 ├─ src/stats.ts                 median, p5/p95, IQR, bootstrap CI
 ├─ src/experiments.ts           E1–E4 op definitions and self-checks
@@ -113,7 +113,7 @@ E7 measures the research knob of contribution C1: the sparse interval `ratchetEv
 
 ### Method
 
-`scripts/e7.ts` runs the grid and `bench/e7-ratchet.ts` holds the driver. The run uses Node and `tsx`, not the browser page.
+`scripts/e7.ts` runs the grid and `src/e7-ratchet.ts` holds the driver. The run uses Node and `tsx`, not the browser page.
 
 - **Code under test.** The driver imports `SessionManager` straight from `../frontend/src/crypto/session.ts`. Nothing is copied and nothing in `frontend/` is changed. Alice and Bob each have a `MemorySessionStore` and a `MemoryPrekeyStore`. They share an in-memory bundle directory, modelled on `frontend/test/helpers.ts`.
 - **Grid.**
