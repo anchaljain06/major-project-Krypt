@@ -1,0 +1,96 @@
+# Krypt KT witness. Lives at the root of the krypt-witness repository.
+#
+# Repository settings it needs (see README.md):
+#   secrets.WITNESS_SK          base64 32-byte ML-DSA-44 seed (scripts/keygen.mjs)
+#   vars.KRYPT_LOG_URL          e.g. https://krypt-api.onrender.com
+#   vars.KRYPT_LOG_PUBKEY       base64 ML-DSA-87 public key of the log
+#   vars.KRYPT_WITNESS_NAME     optional, default "krypt-witness"
+#   Settings > Pages > Source:  GitHub Actions
+
+name: witness
+
+on:
+  schedule:
+    # GitHub may delay or skip scheduled runs under load; 15 min is best effort.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write # commit state/ and public/
+  pages: write
+  id-token: write
+
+# Never run two witnesses at once: both would read the same state/last.json.
+concurrency:
+  group: witness
+  cancel-in-progress: false
+
+jobs:
+  witness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --omit=dev
+
+      - name: Check and cosign the log head
+        id: run
+        env:
+          KRYPT_LOG_URL: ${{ vars.KRYPT_LOG_URL }}
+          KRYPT_LOG_PUBKEY: ${{ vars.KRYPT_LOG_PUBKEY }}
+          KRYPT_WITNESS_NAME: ${{ vars.KRYPT_WITNESS_NAME }}
+          WITNESS_SK: ${{ secrets.WITNESS_SK }}
+        run: |
+          set +e
+          node witness.mjs
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = 2 ]; then
+            echo "::warning::witness refused this run (log unreachable, bad signature or stale head); see log above"
+          fi
+          exit 0
+
+      # Commit even after an alert: state/ALERT.json is the evidence and must
+      # be kept in history where the log operator cannot touch it.
+      - name: Commit state
+        id: commit
+        run: |
+          git config user.name "krypt-witness[bot]"
+          git config user.email "krypt-witness[bot]@users.noreply.github.com"
+          mkdir -p state public # a refused first run creates neither
+          git add state public
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "witness: $(jq -r '"size \(.sth.treeSize)"' public/latest.json 2>/dev/null || echo update) (exit ${{ steps.run.outputs.code }})"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload Pages artifact
+        if: steps.run.outputs.code == '0' && steps.commit.outputs.changed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        if: steps.run.outputs.code == '0' && steps.commit.outputs.changed == 'true'
+        uses: actions/deploy-pages@v4
+
+      # A fork alert fails the job so GitHub emails the repository owner.
+      - name: Fail on alert
+        if: steps.run.outputs.code == '1'
+        run: |
+          echo "::error::KT log inconsistency detected. Evidence: state/ALERT.json"
+          cat state/ALERT.json || true
+          exit 1
