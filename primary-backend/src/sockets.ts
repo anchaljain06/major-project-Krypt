@@ -111,13 +111,6 @@ export function registerSocketHandlers(io: Server, evil: EvilRelay | null = null
 
     // Handlers are attached before the async flush so nothing sent meanwhile is lost.
 
-    // Compatibility no-op: identity comes from the token, the argument is ignored.
-    socket.on("register_socket", () => {
-      if (onlineUsers.get(username) === socket.id) {
-        socket.emit("online_users", Array.from(onlineUsers.keys()));
-      }
-    });
-
     socket.on("disconnect", () => {
       if (onlineUsers.get(username) === socket.id) {
         onlineUsers.delete(username);

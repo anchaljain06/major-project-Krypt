@@ -66,11 +66,6 @@ export function ktLog(): KtLog {
   return instance;
 }
 
-/** Tests inject a log over memory storage. */
-export function setKtLog(log: KtLog | null) {
-  instance = log;
-}
-
 // Hooks for the evil relay's KT attacks (evil.ts); null in normal operation.
 export interface KtEvilHooks {
   /** kt_fork / kt_rewrite: the view to serve this request. */

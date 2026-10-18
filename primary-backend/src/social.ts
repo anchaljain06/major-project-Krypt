@@ -18,10 +18,6 @@ export function invalidateRelationship(a: string, b: string) {
   cache.delete(pairKey(b, a));
 }
 
-export function clearRelationshipCache() {
-  cache.clear();
-}
-
 /** Can `from` (the authenticated user) send a private message to username `to`? */
 export async function messagePolicy(
   from: { userId: string; username: string },

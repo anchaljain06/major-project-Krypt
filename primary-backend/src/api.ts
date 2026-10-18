@@ -13,7 +13,6 @@ import {
   registerBody,
   searchQuery,
   sendOrRevokeBody,
-  usernameSchema,
 } from "./schemas.js";
 import { invalidateRelationship } from "./social.js";
 const router = Router();
@@ -157,7 +156,6 @@ router.post("/login/verify", async (req, res) => {
     // here means the password was verified. Return M2 and a session token.
     res.status(200).json({
       success: true,
-      serverSessionProof: serverSession.proof,
       serverProof: serverSession.proof,
       token: issueToken({ userId: user.id, username: user.username }),
     });
@@ -179,7 +177,9 @@ router.use(prekeys);
 // POST /kt/register, GET /kt/status (key transparency, plan 2.21)
 router.use("/kt", ktApiRouter());
 
-async function searchUsers(req: Request, query: string, take: number) {
+const SEARCH_LIMIT = 10;
+
+async function searchUsers(req: Request, query: string) {
   const current = myId(req);
   const blocks = await prisma.blockedUser.findMany({
     where: { OR: [{ blockerId: current }, { blockedId: current }] },
@@ -196,7 +196,7 @@ async function searchUsers(req: Request, query: string, take: number) {
       id: { notIn: [...excluded] },
     },
     select: { username: true, identityKeyPub: true },
-    take,
+    take: SEARCH_LIMIT,
   });
 }
 
@@ -210,7 +210,7 @@ router.get(
     if (!query.q) return res.json([]);
 
     try {
-      res.status(200).json(await searchUsers(req, query.q, 10));
+      res.status(200).json(await searchUsers(req, query.q));
     } catch (err) {
       console.error("[API] Search error:", err);
       res.status(500).json({ error: "Database error during search." });
@@ -437,23 +437,6 @@ router.post(
     } catch (err) {
       console.error("[API] Reject request error:", err);
       res.status(500).json({ error: "Database error." });
-    }
-  },
-);
-
-// Search users by path param (excludes self + blocked)
-router.get(
-  "/users/search/:query",
-  requireSelf((req) => req.query.current_user),
-  async (req, res) => {
-    const parsed = usernameSchema.safeParse(req.params.query);
-    if (!parsed.success) return res.status(200).json({ users: [] });
-
-    try {
-      res.status(200).json({ users: await searchUsers(req, parsed.data, 5) });
-    } catch (err) {
-      console.error("Search API error:", err);
-      res.status(500).json({ error: "Search failed." });
     }
   },
 );
