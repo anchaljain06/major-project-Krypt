@@ -73,17 +73,17 @@ Every op checks itself before it is timed. Decaps must equal the encaps secret a
 
 | Exp | Ops | Backends |
 |---|---|---|
-| E1 | ML-KEM-512/768/1024 keygen, encaps, decaps; X-Wing (`ml_kem768_x25519`) keygen, encaps, decaps | noble 0.7.1, `@oqs/liboqs-js` 0.15.1 (WASM), native WebCrypto |
+| E1 | ML-KEM-512/768/1024 keygen, encaps, decaps; X-Wing (`ml_kem768_x25519`) keygen, encaps, decaps, as a comparison only (not a Krypt suite, spec §2.1) | noble 0.7.1, `@oqs/liboqs-js` 0.15.1 (WASM), native WebCrypto |
 | E2 | ML-DSA-44/65/87 keygen, sign, verify (64-byte message) | noble, liboqs-js, native WebCrypto |
 | E3 | X25519 keygen and derive; Ed25519 keygen, sign, verify | native WebCrypto, `@noble/curves` |
 | E4 | AES-256-GCM encrypt/decrypt at 64 B, 1 KB, 16 KB, 256 KB, 1 MB (MB/s); ratchet `chain-step` (HMAC×2 + HKDF 44 B, strategy 4.4); `root-step` (HKDF 64 B); `seal` = chain step + AES-GCM of 1 KB | native WebCrypto |
-| E5 | Bytes per handshake (bundle fetch + first message) and per steady-state message for v0, v1 (ML-KEM-768 ratchet) and v1-xwing, each as raw vs length-prefixed binary vs Socket.io JSON/base64 | none (pure accounting from FIPS 203/204 sizes, checked against noble) |
+| E5 | Bytes per handshake (bundle fetch + first message) and per steady-state message for v0, v1 (ML-KEM-768 ratchet) and v1-xwing (both earlier designs, kept as comparisons; Krypt now ships an ML-KEM-1024 ratchet only, spec §2.1), each as raw vs length-prefixed binary vs Socket.io JSON/base64 | none (pure accounting from FIPS 203/204 sizes, checked against noble) |
 | E10 | The same suite in Node, plus a `node-crypto` backend (`generateKeyPairSync('ml-kem-768')`, `crypto.encapsulate/decapsulate`, `crypto.sign/verify`) | noble, liboqs, Node WebCrypto, node:crypto |
-| E7 | Sparse KEM ratchet interval K: bytes per message, KEM ops and CPU per message, messages-to-heal after a state compromise. See [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing) | the v1 `SessionManager` (noble ML-KEM-768 / X-Wing), Node |
+| E7 | Sparse KEM ratchet interval K: bytes per message, KEM ops and CPU per message, messages-to-heal after a state compromise. See [E7](#e7-sparse-kem-ratchet-bandwidth-vs-healing) | the v1 `SessionManager` (noble ML-KEM-1024; results below are from the earlier ML-KEM-768 / X-Wing build), Node |
 
 **Native WebCrypto detection.** The detection follows the WICG Modern Algorithms draft. The harness records what `SubtleCrypto.supports(op, alg)` reports, and whether `crypto.subtle.encapsulateBits` exists. It then makes a real `generateKey` call, because early implementations can disagree with `supports()`. The probes are stored under `env.nativeWebCrypto`.
 
-**PQ ÷ classical** (`pq_vs_classical`) compares noble ML-KEM-768 and ML-DSA-65, which is what Krypt ships, against X25519 and Ed25519. The classical side uses native WebCrypto where the runtime supports it. The pairings are:
+**PQ ÷ classical** (`pq_vs_classical`) compares noble ML-KEM-768 and ML-DSA-65 against X25519 and Ed25519. Krypt itself now uses ML-KEM-1024 and ML-DSA-87 (spec §2); their E1/E2 numbers are slower. The classical side uses native WebCrypto where the runtime supports it. The pairings are:
 
 - KEM keygen vs X25519 keygen
 - encaps and decaps vs one X25519 derive
@@ -118,7 +118,7 @@ E7 measures the research knob of contribution C1: the sparse interval `ratchetEv
 
 - **Code under test.** The driver imports `SessionManager` straight from `../frontend/src/crypto/session.ts`. Nothing is copied and nothing in `frontend/` is changed. Alice and Bob each have a `MemorySessionStore` and a `MemoryPrekeyStore`. They share an in-memory bundle directory, modelled on `frontend/test/helpers.ts`.
 - **Grid.**
-  - Suites: `mlkem768`, `xwing`.
+  - Suite: `mlkem1024`, the only ratchet suite since commit `4cab620`. The 2026-10-17 results below were run before that, with `mlkem768` and `xwing`.
   - K ∈ {1, 2, 5, 10, 50, 100}.
   - Four traffic patterns, 1,000 messages each, with 100-byte plaintexts.
   - Message 0 is always Alice's handshake.
@@ -134,7 +134,7 @@ E7 measures the research knob of contribution C1: the sparse interval `ratchetEv
 - **Per message** (`messages.csv`, kept local because it is about 12 MB):
   - exact canonical header bytes, body bytes, binary frame `lp(header, body)` and JSON wire bytes;
   - whether `kem` or `init` rode on the header;
-  - ratchet-KEM keygen, encaps and decaps on the sender and on the receiver. These are counted by wrapping the `mlkem768`, `xwing` and `mlkem1024` objects' methods at runtime;
+  - ratchet-KEM keygen, encaps and decaps on the sender and on the receiver. These are counted by wrapping the `mlkem1024` object's methods at runtime. Prekeys use the same object, so prekey operations are told apart by key fingerprint and counted separately;
   - encrypt and decrypt wall time, with the session-store time measured separately and subtracted. `cpu_*` is crypto plus state machine only.
 - **CPU timing is single-call wall time** inside a stateful transcript. The batch rule of the browser harness cannot apply to stateful ops. A 60-message warm-up per suite runs first. Look at the mean and the root-step vs chain-step split (`cpu_root_ms_median`, `cpu_chain_ms_median`). The median alone hides a bimodal distribution.
 - **Bytes** are reported excluding messages that carry the epoch-0 `init` header (`*_steady`). The all-message means are also in `summary.csv`. The binary frame here includes the `lp` length prefixes and the usernames, so K = 1 gives 2,516 B. E5's 2,345 B "raw" counts components only.
@@ -167,6 +167,8 @@ There are 20 compromise points per run, k = 100 + 23j. They cover both turn pari
   `fs_opened` must be 0. Bob's messages still in flight at k belong to Alice's future, not her past. They are counted as `exposed_in_flight`.
 
 ### Results (`results/e7-2026-10-17/`, Node 25.8.2, Apple-silicon MacBook)
+
+> These results are from the build before commit `4cab620`, which had the `mlkem768` and `xwing` suites. They stay as the comparison behind spec §2.1. A quick ML-KEM-1024 run gave 3,381 B/msg at K = 1 and 1,959 at K = 10. The full ML-KEM-1024 grid at K = 1, 4, 8, 16 is still to run.
 
 Strict alternation:
 
@@ -206,7 +208,7 @@ A header without ratchet data costs 236 B (binary), so the floor for any K is 23
 npm --prefix ../frontend install && npm install
 npm run e7                                    # full grid, about 2 minutes on an M-series Mac
 npm run e7 -- --quick                         # 200 messages, K ∈ {1, 10}, 4 snapshots: smoke test
-npm run e7 -- --ks 1,10 --suites xwing --traffic alternate,poisson --seeds 1,2,3,4,5 --out results/my-e7
+npm run e7 -- --ks 1,4,8,16 --traffic alternate,poisson --seeds 1,2,3,4,5 --out results/my-e7
 npm run plot:e7 -- results/e7-<date>
 ```
 

@@ -230,7 +230,7 @@ let InitFinish(a: client, ikA: sigsk, b: client, ikB_pub: sigpub, u: bool,
                spk_ek: kempub, opk_ek: kempub,
                ct1: bitstring, ct2: bitstring, ss1: bitstring, ss2: bitstring) =
   let ikA_pub = sigpk(ikA) in
-  (* 4. first ratchet key pair (ML-KEM-768) *)
+  (* 4. first ratchet key pair (ML-KEM-1024) *)
   new dkA1: kemsk;
   let ekA1 = kempk(dkA1) in
   (* 5. transcript *)

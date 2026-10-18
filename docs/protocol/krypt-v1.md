@@ -1,6 +1,6 @@
 # Krypt v1 protocol specification
 
-Status: implemented in `frontend/src/crypto/` (branch `wt/protocol-core`).
+Status: implemented in `frontend/src/crypto/` (branch `major/v1-protocol`).
 This document is the source of truth. If the code and this document disagree,
 the code has a bug or this document needs a reviewed change (see section 13).
 
@@ -11,7 +11,7 @@ This document fixes every byte.
 |---|---|
 | `encoding.ts` | Length-prefixed encoding, labels, strict base64url, constant-time compare |
 | `kdf.ts` | SHA-256, HMAC-SHA-256, HKDF-SHA-256 (Web Crypto), root/chain/message-key KDFs |
-| `pq.ts` | ML-KEM-768, ML-KEM-1024, X-Wing, ML-DSA-87 wrappers with exact length checks |
+| `pq.ts` | ML-KEM-1024 and ML-DSA-87 wrappers with exact length checks |
 | `prekeys.ts` | Prekey generation, signing, wire shapes, bundle verification, `PrekeyStore` |
 | `handshake.ts` | Krypt-X3K `initiate` / `respond`, transcript `T` |
 | `envelope.ts` | Header and envelope types, canonical header bytes, JSON and binary codecs |
@@ -58,7 +58,7 @@ This document fixes every byte.
 | `Krypt-MK` | Message key + IV HKDF info |
 | `Krypt-AAD-v1` | AES-GCM associated data |
 | `krypt-session-v1` | Associated data for session state encrypted at rest |
-| `mlkem768`, `xwing` | Ratchet suite identifiers |
+| `mlkem1024` | Ratchet suite identifier (the only one, section 2.1) |
 
 ## 2. Algorithms and key hierarchy
 
@@ -66,8 +66,7 @@ This document fixes every byte.
 |---|---|---|
 | Identity signature `IK` | ML-DSA-87 (FIPS 204) | pk 2592, sk 4896, sig 4627 |
 | Signed prekey `SPK`, one-time prekeys `OPK` | ML-KEM-1024 (FIPS 203) | ek 1568, dk 3168, ct 1568, ss 32 |
-| Ratchet keys, suite `mlkem768` | ML-KEM-768 | ek 1184, dk 2400, ct 1088, ss 32 |
-| Ratchet keys, suite `xwing` | X-Wing (ML-KEM-768 + X25519), `ml_kem768_x25519` | ek 1216, dk 32 (seed), ct 1120, ss 32 |
+| Ratchet keys, suite `mlkem1024` | ML-KEM-1024 (FIPS 203) | ek 1568, dk 3168, ct 1568, ss 32 |
 | Symmetric | HKDF/HMAC-SHA-256, AES-256-GCM (96-bit IV, 128-bit tag) | |
 
 ML-DSA signatures sign a domain-separated message (`lp(label, ...)`) with the
@@ -91,6 +90,38 @@ identity bundle (`mlkem.ts`): the server's `identityKey` field is the JSON
 string `{"version": ..., "kem": <base64>, "dsa": <base64>}` (standard base64
 with padding). Krypt v1 reads only `dsa`; the long-term ML-KEM-1024 `kem` key is
 not used by v1 (prekeys replace it).
+
+### 2.1 Why one ratchet suite: ML-KEM-1024 (no ML-KEM-768, no X-Wing)
+
+Earlier builds offered two ratchet suites, `mlkem768` (default) and `xwing`
+(ML-KEM-768 + X25519 combined with SHA3-256), switched by a settings toggle.
+Both were removed: the code keeps one implementation per job, and this section
+records the comparison instead.
+
+| Suite | NIST category | Ratchet data per step (ct + ek) | Bytes/msg at K = 1, binary (E7, alternating) | CPU per root step (noble) |
+|---|---|---|---|---|
+| ML-KEM-768 | 3 | 1088 + 1184 = 2272 B | 2,516 | about 1.2 ms |
+| X-Wing | 3 + classical | 1120 + 1216 = 2336 B | 2,577 | about 3.2 ms |
+| **ML-KEM-1024 (chosen)** | **5** | **1568 + 1568 = 3136 B** | **3,381 (quick run)** | not yet measured |
+
+Why ML-KEM-1024:
+
+1. **Same level everywhere.** Prekeys (ML-KEM-1024) and identity signatures
+   (ML-DSA-87) are already category 5. A category-3 ratchet was the weakest link
+   for every message after epoch 0.
+2. **One code path.** One KEM object serves prekeys and the ratchet, so there is
+   no suite negotiation, no toggle and no second set of length checks to test.
+3. **X-Wing's hedge is small here.** Its X25519 half guards against a broken
+   ML-KEM, but it costs about 2.7× the CPU per ratchet step in noble's pure-JS
+   X25519, and the prekeys and handshake would still be ML-KEM-only.
+
+What we gave up: about 865 B per message at K = 1 compared with ML-KEM-768
+(sparse mode, section 5.6, recovers most of it), and the classical fallback that
+X-Wing offered if ML-KEM were broken.
+
+The suite name stays in the transcript `T` (section 4.1) and in every header
+(section 8.1), so a future suite change is explicit and cannot be downgraded
+silently. Any other suite value is `MALFORMED`.
 
 ## 3. Prekeys
 
@@ -174,7 +205,7 @@ Identity-key trust (key transparency, step 3.1 of the plan) is a separate hook:
 1. `bundle = fetchBundle("bob")`; `verifyBundle(bundle)`; `trustIdentity("bob", IK_B)`.
 2. `(ct1, ss1) = Encaps_1024(SPK_B)`.
 3. If the bundle has an OPK: `(ct2, ss2) = Encaps_1024(OPK_B)`; else `ct2 = ss2 = ε`.
-4. `(ek_A¹, dk_A¹) = KeyGen_suite()` (first ratchet key, suite `mlkem768` or `xwing`).
+4. `(ek_A¹, dk_A¹) = KeyGen_suite()` (first ratchet key, suite `mlkem1024`).
 5. Transcript:
 
    ```
@@ -411,6 +442,10 @@ strictly alternating traffic happens after the peer's own `K` sends, so about
 half of the headers still carry `(ct, ek)`. One-sided bursts benefit more.
 Experiment E7 should report both numbers.
 
+With ML-KEM-1024 each header that carries ratchet data adds 3136 B
+(`ct` 1568 + `ek` 1568). The default stays `K = 1` until E7 is re-run with
+ML-KEM-1024 at `K` = 1, 4, 8 and 16 and a default is chosen from that data.
+
 ## 6. Skipped keys and limits
 
 | Limit | Value | Enforced |
@@ -465,7 +500,7 @@ Every field of the header, including `contentType`, `from`, `to`, `sessionId`
 ```jsonc
 {
   "v": 1,
-  "suite": "mlkem768",              // or "xwing"
+  "suite": "mlkem1024",             // the only accepted value
   "sessionId": "<b64url 32 B>",
   "from": "alice",
   "to": "bob",
@@ -489,12 +524,12 @@ numbers, out-of-range values, non-canonical base64url, and wrong byte lengths
 `binary = lp(header, body)`. It carries exactly the same information as the
 JSON form and is provided for the bandwidth experiment (E5).
 
-### 8.4 Sizes at K = 1 (suite `mlkem768`)
+### 8.4 Sizes at K = 1 (suite `mlkem1024`)
 
 | Message | KEM material in header |
 |---|---|
-| Alice, epoch 0 | init: 2 × 1568 (ct1, ct2) + 1184 (ek) + 4627 (sig) ≈ 8.9 KB |
-| Any later message | kem: 1088 (ct) + 1184 (ek) = 2272 B |
+| Alice, epoch 0 | init: 2 × 1568 (ct1, ct2) + 1568 (ek) + 4627 (sig) = 9331 B ≈ 9.3 KB |
+| Any later message | kem: 1568 (ct) + 1568 (ek) = 3136 B |
 
 ## 9. Security properties (claims, stated precisely)
 
@@ -512,8 +547,8 @@ P has sent `K` messages on its current chain, so healing is delayed accordingly.
 
 Further limits that an examiner should hear from us first:
 
-- noble's ML-KEM / ML-DSA make no constant-time claim; X-Wing mode hedges this
-  with X25519.
+- noble's ML-KEM / ML-DSA make no constant-time claim. There is no classical
+  hedge: the X-Wing suite was removed (section 2.1).
 - Liveness is not claimed against a malicious relay: it can drop messages, and
   by reordering a simultaneous-initiation race it can make the two sides keep
   different sessions (both then report `SESSION_CLOSED`/`SESSION_SUPERSEDED`;
@@ -565,7 +600,7 @@ new SessionManager({
   fetchBundle: (username: string) => Promise<PrekeyBundleWire>,
   fetchIdentity: (username: string) => Promise<string>,  // identityKey JSON (as in the bundle)
   trustIdentity?: (username: string, dsaPub: Uint8Array) => Promise<boolean>, // default: accept
-  suite?: 'mlkem768' | 'xwing',          // ratchet suite for sessions we initiate (default mlkem768)
+  suite?: 'mlkem1024',                  // ratchet suite; the only value and the default
   ratchetEveryK?: number,                // sparse mode, default 1
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>,
   now?: () => number,                    // ms clock, for TTL tests
@@ -577,8 +612,8 @@ getStatus(peer): Promise<SessionStatus | null>
 closeSession(peer): Promise<void>
 ```
 
-The responder's suite is whatever the initiator chose (it is bound in `T`);
-both suites are always accepted.
+The suite is bound in `T` and in every header. An envelope or init with any
+suite other than `mlkem1024` is rejected as `MALFORMED`.
 
 ```ts
 type DecryptResult = { peer: string; plaintext: Uint8Array; contentType: string;
@@ -669,3 +704,6 @@ spec had to choose or tighten something:
     memory, so a late or replayed copy cannot later take the "peer started
     over" path and replace the agreed session. This is a liveness rule: it
     changes no secrecy or authentication property.
+14. **One ratchet suite** (section 2.1). The strategy's ML-KEM-768 default and
+    optional X-Wing hybrid (sections 4.5-4.6) are replaced by ML-KEM-1024 only,
+    matching the prekeys.
