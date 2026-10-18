@@ -19,47 +19,53 @@ model User {
   // Cryptographic Identity
   identityKeyPub String?  // The user's public key
   
-  // Friend System Relations (Linked via username for easy API lookups)
+  // Friend System Relations (linked via User.id)
   sentRequests     FriendRequest[] @relation("SentRequests")
   receivedRequests FriendRequest[] @relation("ReceivedRequests")
 
   // Block System Relations
   blockedByMe      BlockedUser[] @relation("BlockedByMe")
   blockedMe        BlockedUser[] @relation("BlockedMe")
-  
+
+  // Prekeys (Krypt-X3K handshake)
+  signedPrekey     SignedPrekey?
+  oneTimePrekeys   OneTimePrekey[]
+
   createdAt      DateTime @default(now())
 }
 
 model FriendRequest {
   id               String   @id @default(uuid())
   
-  senderUsername   String
-  sender           User     @relation("SentRequests", fields: [senderUsername], references: [username])
-  
-  receiverUsername String
-  receiver         User     @relation("ReceivedRequests", fields: [receiverUsername], references: [username])
-  
-  status           String   @default("pending") // pending, accepted, rejected
-  
-  createdAt        DateTime @default(now())
+  senderId   String
+  sender     User     @relation("SentRequests", fields: [senderId], references: [id])
+
+  receiverId String
+  receiver   User     @relation("ReceivedRequests", fields: [receiverId], references: [id])
+
+  status     String   @default("pending") // pending, accepted, rejected
+
+  createdAt  DateTime @default(now())
 
   // Prevent Alice from spamming 100 requests to Bob
-  @@unique([senderUsername, receiverUsername]) 
+  @@unique([senderId, receiverId])
+  @@index([receiverId])
 }
 
 model BlockedUser {
-  id              String   @id @default(uuid())
+  id        String   @id @default(uuid())
 
-  blockerUsername  String
-  blocker         User     @relation("BlockedByMe", fields: [blockerUsername], references: [username])
+  blockerId String
+  blocker   User     @relation("BlockedByMe", fields: [blockerId], references: [id])
 
-  blockedUsername  String
-  blocked         User     @relation("BlockedMe", fields: [blockedUsername], references: [username])
+  blockedId String
+  blocked   User     @relation("BlockedMe", fields: [blockedId], references: [id])
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   // Prevent duplicate blocks
-  @@unique([blockerUsername, blockedUsername])
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
 }
 
 model OfflineMessage {
@@ -67,9 +73,76 @@ model OfflineMessage {
   to        String
   from      String
   payload   Json
+  // UTF-8 size of the JSON payload, for the per-recipient byte quota.
+  bytes     Int      @default(0)
   createdAt DateTime @default(now())
 
   @@index([to])
+  @@index([to, createdAt])
+  @@index([createdAt])
+}
+
+// ML-KEM-1024 signed prekey; one active per user, replaced on rotation.
+// publicKey and signature are base64url (signature is ML-DSA-87 by the identity key).
+model SignedPrekey {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keyId     Int
+  publicKey String
+  signature String
+  createdAt DateTime @default(now())
+}
+
+// ML-KEM-1024 one-time prekeys; each row is handed out once, then deleted.
+model OneTimePrekey {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keyId     Int
+  publicKey String
+  signature String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, keyId])
+  @@index([userId, createdAt])
+}
+
+// ---------- Key transparency (plan 2.21-2.22, strategy §5) ----------
+// Append-only: rows are never updated or deleted in normal operation.
+
+// One row per log entry. leaf is the 153-byte KT leaf (shared/src/leaf.ts),
+// leafHash = SHA-256(0x00 || leaf), ownerSig is the full ML-DSA-87 signature
+// whose SHA-256 is inside the leaf.
+model KtLeaf {
+  idx        BigInt   @id
+  leaf       Bytes
+  leafHash   Bytes
+  userHash   Bytes
+  keyVersion Int
+  ownerSig   Bytes
+  createdAt  DateTime @default(now())
+
+  @@index([userHash, idx])
+}
+
+// Perfect-subtree hashes of the Merkle tree: (level, idx) covers leaves
+// [idx * 2^level, (idx + 1) * 2^level). Written once, never changed.
+model KtNode {
+  level Int
+  idx   BigInt
+  hash  Bytes
+
+  @@id([level, idx])
+}
+
+// Signed tree heads, one row per published tree size.
+model KtSth {
+  treeSize  BigInt   @id
+  rootHash  Bytes
+  timestamp BigInt
+  signature Bytes
+  createdAt DateTime @default(now())
 }
 
 
