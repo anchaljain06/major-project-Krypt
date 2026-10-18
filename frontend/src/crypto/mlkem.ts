@@ -1,6 +1,5 @@
-import { ml_kem1024 } from "@noble/post-quantum/ml-kem.js";
-import { ml_dsa87 } from "@noble/post-quantum/ml-dsa.js";
 import { fromBase64, toBase64 } from "@krypt/shared";
+import { mldsaKeygen, mlkem1024 } from "./pq";
 
 /**
  * Project Krypt - long-term identity keys and their storage formats.
@@ -31,8 +30,8 @@ export interface UserPublicIdentity {
 
 /** Generates the ML-KEM-1024 and ML-DSA-87 identity key pairs. */
 export function generateUserIdentityKeys(): UserIdentityKeys {
-  const kemKeys = ml_kem1024.keygen();
-  const dsaKeys = ml_dsa87.keygen();
+  const kemKeys = mlkem1024.keygen();
+  const dsaKeys = mldsaKeygen();
   return {
     kemPublicKey: kemKeys.publicKey,
     kemSecretKey: kemKeys.secretKey,
