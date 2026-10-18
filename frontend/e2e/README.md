@@ -13,7 +13,7 @@
 | Alice refreshes | Session cache restores the identity, the store key is re-derived, ratchet state survives |
 | Final check | Every message is present, no decrypt-error toast, no `[Krypt]` warning in the console |
 
-`files.spec.ts` covers large-file transfer (spec 15) between two users:
+`files.spec.ts` covers large-file transfer (spec 14) between two users:
 
 | Step | What it checks |
 |---|---|

@@ -1,5 +1,5 @@
 /**
- * Large-file transfer: manifest, chunk AAD and nonces (spec section 15).
+ * Large-file transfer: manifest, chunk AAD and nonces (spec section 14).
  *
  * The sender makes one random 128-bit transferId, one fresh 256-bit file key
  * and one random 4-byte nonce prefix per file, and sends them in the manifest
@@ -26,7 +26,7 @@ export const FILE_CHUNK_SIZE = 1024 * 1024;
 /** Accepted chunk sizes, so benchmarks can try 256 KiB and 4 MiB. */
 export const MIN_CHUNK_SIZE = 64 * 1024;
 export const MAX_CHUNK_SIZE = 4 * 1024 * 1024;
-/** Largest file this release sends or accepts (tested up to this size class; see spec 15.6). */
+/** Largest file this release sends or accepts (spec 14.6). */
 export const MAX_FILE_BYTES = 256 * 1024 * 1024;
 export const MAX_CHUNK_COUNT = 4096;
 /** Upper bound on nonce counters (the relay checks the same bound). */

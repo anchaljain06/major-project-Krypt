@@ -3,7 +3,7 @@ import { SlidingWindowLimiter } from "./rateLimit.js";
 import { usernameSchema } from "./schemas.js";
 import type { MessagePolicy } from "./social.js";
 
-// Binary `file:chunk` relay (spec 15.4, plan section 10).
+// Binary `file:chunk` relay (spec 14.4, plan section 10).
 //
 // A chunk is AES-256-GCM ciphertext under a per-file key the relay never sees;
 // the offer, acks and the rest of the file protocol travel as ordinary

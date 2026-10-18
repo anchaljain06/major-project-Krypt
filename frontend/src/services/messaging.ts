@@ -17,7 +17,7 @@
  * The outbox and the seen ids are persisted, encrypted under the store key
  * (services/messageState.ts), so a refresh loses neither.
  *
- * Large files (spec 15): control messages are ordinary v1 messages with
+ * Large files (spec 14): control messages are ordinary v1 messages with
  * contentType "file"; chunks are binary `file:chunk` frames. Both are handled
  * by one FileTransferManager per Protocol (`filesFor`).
  */

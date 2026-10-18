@@ -1,5 +1,5 @@
 /**
- * Large-file transfer orchestration (spec 15, plan sections 5-7 and 10).
+ * Large-file transfer orchestration (spec 14, plan sections 5-7 and 10).
  *
  * Control messages (offer, accept, reject, ack, resume, complete, cancel) go
  * through the normal SessionManager path (`sendControl`); chunks go as binary

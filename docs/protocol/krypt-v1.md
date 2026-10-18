@@ -690,7 +690,8 @@ key at integration): random 12-byte IV, `AAD = lp("krypt-session-v1", peer)`,
 so a record cannot be moved to another peer's slot. The same scheme protects
 prekey private keys in `IndexedDbPrekeyStore` (AAD label `krypt-prekeys-v1`).
 The app layer's re-send outbox and seen message ids (section 4.5) use the same
-key and scheme with AAD labels `krypt-outbox-v1` and `krypt-seen-v1`.
+key and scheme with AAD labels `krypt-outbox-v1` and `krypt-seen-v1`, and
+file-transfer records (section 14.5) with `krypt-file-transfer-v1`.
 
 ## 13. Changes relative to the strategy document
 
@@ -740,3 +741,140 @@ spec had to choose or tighten something:
 15. **Default ratchet threshold K = 4** (section 5.6). The strategy kept K = 1
     and treated sparse mode as a research knob; E7 with ML-KEM-1024 showed
     K = 4 cuts bytes and KEM work for two-way chat at a small healing cost.
+
+## 14. Large-file transfer
+
+Images and audio under about 12 MB keep the single-frame attachment path
+(`media.ts`, section 8.2's `attachment` field). Any other file goes through
+this section: one random file key per transfer, AES-256-GCM per chunk, chunks
+as binary socket frames, and a manifest that travels inside the ratchet. No
+ML-KEM runs per chunk, and a file costs one ratchet message per control
+message, not per chunk. Code: `crypto/fileManifest.ts`,
+`crypto/fileTransfer.ts`, `services/fileTransfer.ts`, `services/fileStore.ts`,
+relay `primary-backend/src/fileRelay.ts`.
+
+### 14.1 What the relay sees
+
+| Sees | Does not see |
+|---|---|
+| Sender and recipient usernames, `transferId` (16 random bytes), chunk index, nonce counter, chunk length, timing | File name, MIME type, exact size (only per-chunk lengths), file key, nonce prefix, plaintext |
+
+The relay cannot forge, modify or reorder a chunk undetected (each is
+authenticated with its position); it can drop or delay chunks. Delivery is
+**online only**: the relay never stores chunks. If the recipient is offline
+the sender pauses (section 14.5).
+
+### 14.2 Offer (manifest)
+
+The sender makes `transferId` (16 bytes), `fileKey` (32 bytes) and
+`noncePrefix` (4 bytes) from the CSPRNG, fresh for every file, and sends:
+
+```text
+{ v: 1, type: "file-offer", protocol: "KRYPT-FILE-V1", transferId, name, mime,
+  size, chunkSize, chunkCount = max(1, ceil(size / chunkSize)), fileKey, noncePrefix }
+```
+
+as the `ctl` of a v1 message with `contentType = "file"` (byte fields
+base64url). The receiver accepts it only if every check passes: safe
+non-negative integers, `size ≤ MAX_FILE_BYTES`, `MIN_CHUNK_SIZE ≤ chunkSize ≤
+MAX_CHUNK_SIZE`, `chunkCount` exactly as above and `≤ 4096`, exact byte lengths
+for the id, key and prefix, name 1-255 characters. A zero-byte file is one
+empty chunk.
+
+### 14.3 Chunk encryption
+
+```text
+nonce     = noncePrefix ‖ uint64_be(nonceCounter)                       (12 bytes)
+AAD       = lp("KRYPT-FILE-CHUNK-V1", transferId, sender, recipient,
+               u32(index), u32(chunkCount), u64(size), u32(chunkSize),
+               u32(chunkPlaintextLength), u64(nonceCounter))
+ciphertext = AES-256-GCM(fileKey, nonce, chunk, AAD)                    (chunk ‖ 16-byte tag)
+```
+
+`nonceCounter` counts encryption attempts for this file, not chunks. Because
+the key is unique per file, `(fileKey, nonce)` is unique as long as a counter
+is never used twice, which section 14.5 guarantees. Changing the transfer,
+either party, the index, any size or the counter makes GCM verification fail.
+There is no whole-file hash: per-chunk authentication, authenticated
+positions, the authenticated manifest and the final length check together
+cover integrity (plan 5.4).
+
+### 14.4 Messages and frames
+
+| Name | Carried as | Purpose |
+|---|---|---|
+| `offer` | v1 message, `contentType "file"` | Manifest (section 14.2) |
+| `accept`, `reject` | v1 message | Receiver's decision |
+| `file:chunk` | binary socket frame `{ to, transferId, index, nonceCounter, data }` | One encrypted chunk |
+| `ack` | v1 message, `{ transferId, have }` | Bitmap of chunks verified and stored; sent after 4 new chunks or 500 ms |
+| `resume` | v1 message, `{ transferId, have }` | Same bitmap; asks the sender to send what is missing |
+| `complete` | v1 message | Every chunk is present and the length matches |
+| `cancel` | v1 message | Either side stops; both delete the transfer's data |
+
+The relay stamps `from` with the token user and forwards the chunk only if
+the message policy allows sender → recipient (friends, not blocked), the
+frame is valid (`index ≤ 4095`, `nonceCounter < 2^32`, 16 ≤ data ≤ 4 MiB + 16)
+and the sender is within its limits (1200 frames and 512 MiB per minute, at
+most 8 transfers active in the last 10 minutes). It answers `{ ok: true }` or
+`{ ok: false, error }` with `INVALID`, `TOO_LARGE`, `BLOCKED`,
+`NOT_FRIENDS`, `RATE_LIMITED`, `TOO_MANY_TRANSFERS`, `OFFLINE` or
+`SERVER_ERROR`. A relay `ok` means only "forwarded"; the end-to-end `ack` is
+what the sender trusts.
+
+### 14.5 Sender and receiver state
+
+Local state lives in IndexedDB `krypt-files-v1:<user>`. Transfer records hold
+the manifest (with the file key), so they are sealed with the store key
+(section 12) under `AAD = lp("krypt-file-transfer-v1", transferId)`.
+
+Sender, for each chunk (plan 5.3):
+
+1. Reserve `c = nextNonceCounter` and store `c + 1` in one IndexedDB
+   transaction. Two tabs can never get the same counter.
+2. Read one slice of the file (`File.slice`), encrypt it with nonce counter `c`.
+3. Save the packet `{ c, ciphertext }`.
+4. Only then send it. At most 8 chunks are sent and not yet acknowledged.
+
+A retry resends the saved packet unchanged. A crash after step 1 burns `c`; a
+crash after step 3 resends the same bytes. Packets are deleted once
+acknowledged. If the page was closed, the transfer comes back paused; a
+`resume` is answered from saved packets, and if a missing chunk has no packet
+(the file is no longer open) the sender cancels and the user sends the file
+again.
+
+Receiver, for each frame (plan section 7): check the transfer is accepted and
+from this sender, the index is in range, the length equals the expected chunk
+length + 16, the chunk is not already stored and the counter was not used
+before; decrypt; then store the chunk (still ciphertext) and the updated
+bitmap in one transaction; then acknowledge. Anything that fails is dropped
+silently. When every chunk is present the receiver sends a final `ack` and
+`complete`.
+
+Resume: after its own reconnect, or when the sender comes online, the
+receiver sends `resume` with its bitmap for every transfer it is receiving;
+the sender sends exactly the missing chunks.
+
+### 14.6 Limits
+
+| Limit | Value | Where |
+|---|---|---|
+| File size | 256 MiB (`MAX_FILE_BYTES`) | Both clients |
+| Chunk size | 1 MiB default; 64 KiB-4 MiB accepted | Both clients |
+| Chunks per file | 4096 | Clients and relay |
+| Active transfers | 4 outgoing; 4 incoming (more offers are declined automatically) | Clients |
+| Stored incoming files | 512 MiB per device | Receiver |
+| Idle timeout | 24 h without progress: stopped and data deleted; finished transfers are deleted 24 h after their last activity | Both clients |
+| Relay rate | 1200 frames and 512 MiB per minute per sender; 8 active transfers | Relay |
+
+Every limit is enforced and unit-tested. Browser runs so far moved files up
+to 20 MB on one desktop; full-size transfers and slower devices are measured
+in the Phase E benchmarks, not claimed here.
+
+### 14.7 Download
+
+Only an explicit click on Download releases the file: every chunk is
+decrypted and authenticated again, the total length must equal `size`, and
+the result is saved as `application/octet-stream` under a cleaned name (no
+path separators, control or bidi characters, or leading dots). Nothing is
+previewed or opened, so a hostile name or MIME type cannot run or render
+anything.

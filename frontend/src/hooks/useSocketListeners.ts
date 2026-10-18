@@ -43,7 +43,7 @@ export function useSocketListeners({
     };
   }, [user]);
 
-  // Large files (spec 15): chunks arrive as binary frames. After our own
+  // Large files (spec 14): chunks arrive as binary frames. After our own
   // reconnect, or when a sender comes back online, ask senders to resume.
   useEffect(() => {
     if (!user) return;

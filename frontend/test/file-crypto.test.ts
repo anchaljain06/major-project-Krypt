@@ -1,5 +1,5 @@
 /**
- * File-transfer crypto (spec 15): manifest parsing, chunk AAD, nonces and
+ * File-transfer crypto (spec 14): manifest parsing, chunk AAD, nonces and
  * per-chunk AES-256-GCM, including the negative cases from plan Phase E.
  */
 import { describe, expect, it } from "vitest";

@@ -1,5 +1,5 @@
 /**
- * Large-file transfer end to end (spec 15): Alice offers files, Bob accepts,
+ * Large-file transfer end to end (spec 14): Alice offers files, Bob accepts,
  * chunks flow as binary frames through the real relay, Bob downloads and the
  * bytes match. Also: a zero-byte file with a hostile name (the download name
  * is cleaned), and a cancelled offer.

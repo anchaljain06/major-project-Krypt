@@ -12,7 +12,7 @@
  *
  *   { v: 1, id, sentAt, text?, file?: AttachmentMeta, ctl?: FileControl, kt?: { treeSize, rootHash } }
  *
- * contentType "file" carries a large-file control message (`ctl`, spec 15);
+ * contentType "file" carries a large-file control message (`ctl`, spec 14);
  * the file's chunks travel separately as binary `file:chunk` frames.
  *
  * `kt` is key-transparency gossip (plan 3.3). `id` lets the receiver drop a

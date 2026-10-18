@@ -162,7 +162,7 @@ export function registerSocketHandlers(io: Server, evil: EvilRelay | null = null
       }
     });
 
-    // Binary file chunks (spec 15.4): routed online only, never stored.
+    // Binary file chunks (spec 14.4): routed online only, never stored.
     socket.on("file:chunk", async (raw: unknown, callback?: unknown) => {
       asAck(callback)(await relayFileChunk({ userId, username }, raw));
     });

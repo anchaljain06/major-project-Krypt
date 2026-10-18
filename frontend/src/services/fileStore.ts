@@ -1,5 +1,5 @@
 /**
- * Local state for file transfers (spec 15.5), IndexedDB "krypt-files-v1:<user>":
+ * Local state for file transfers (spec 14.5), IndexedDB "krypt-files-v1:<user>":
  *
  * - transfers: one record per transfer (manifest with the file key, status,
  *   bitmap), sealed with the store key like the session store (spec 12),

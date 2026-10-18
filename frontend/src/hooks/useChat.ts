@@ -151,7 +151,7 @@ export function useChat(user: string, myPrivateKey: UserIdentityKeys | null, pro
     [activeChat, isSending, protocol],
   );
 
-  /** Any file, sent in encrypted chunks after the peer accepts (spec 15). Images and audio keep their own buttons. */
+  /** Any file, sent in encrypted chunks after the peer accepts (spec 14). Images and audio keep their own buttons. */
   const sendFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
