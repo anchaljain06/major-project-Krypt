@@ -269,6 +269,8 @@ export class SessionManager {
     if (!s.peerEk) throw new Error("send step without a peer ratchet key");
     // Invariant: our previous dk was consumed by the receive step that delivered peerEk.
     if (s.ourDk) throw new Error("send step while our ratchet key is still pending");
+    // Epochs are 32-bit on the wire; stop rather than wrap (nothing is saved).
+    if (s.recvEpoch + 1 > MAX_COUNTER) throw new Error("epoch space exhausted");
     const kem = ratchetKem(s.suite);
     const { cipherText: ct, sharedSecret: ss } = kem.encapsulate(s.peerEk);
     const fresh = kem.keygen();
