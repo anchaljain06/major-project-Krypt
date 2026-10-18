@@ -38,7 +38,17 @@ TRAFFIC_LABELS = {
     "poisson": "Poisson both ways",
     "oneSided90": "90/10 one-sided",
 }
-SUITE_LABELS = {"mlkem768": "ML-KEM-768", "xwing": "X-Wing"}
+SUITE_LABELS = {"mlkem1024": "ML-KEM-1024", "mlkem768": "ML-KEM-768 (pre-v1)", "xwing": "X-Wing (pre-v1)"}
+
+
+def suites_in(s: pd.DataFrame) -> list[str]:
+    """Suites present in the data: known ones in SUITE_LABELS order, then any others."""
+    have = list(dict.fromkeys(s.suite))
+    return [x for x in SUITE_LABELS if x in have] + [x for x in have if x not in SUITE_LABELS]
+
+
+def label(suite: str) -> str:
+    return SUITE_LABELS.get(suite, suite)
 DODGE = {"alternate": 0.92, "burst5": 0.97, "poisson": 1.03, "oneSided90": 1.08}
 
 
@@ -96,7 +106,7 @@ def spread_labels(ax) -> None:
         fig.canvas.draw()
 
 
-def fig_combined(s: pd.DataFrame, out: Path, note: str, floor: float | None, suite: str = "mlkem768") -> None:
+def fig_combined(s: pd.DataFrame, out: Path, note: str, floor: float | None, suite: str) -> None:
     d = s[s.suite == suite]
     ks = sorted(d.K.unique())
     fig, (top, bot) = plt.subplots(2, 1, figsize=(8.2, 6.6), sharex=True, gridspec_kw={"hspace": 0.12})
@@ -119,7 +129,7 @@ def fig_combined(s: pd.DataFrame, out: Path, note: str, floor: float | None, sui
     for ax in (top, bot):
         k_axis(ax, ks)
     bot.set_xlabel("sparse interval K (messages per sending chain before a KEM ratchet step), log scale")
-    fig.suptitle(f"E7 · Bandwidth vs healing, {SUITE_LABELS[suite]} ratchet", x=0.125, ha="left", y=1.02,
+    fig.suptitle(f"E7 · Bandwidth vs healing, {label(suite)} ratchet", x=0.125, ha="left", y=1.02,
                  fontsize=11, fontweight="semibold", color=INK)
     fig.text(0.125, 0.935, "Larger K saves bytes and KEM work but leaves a stolen state useful for longer.\n"
              "Whiskers = min–max over compromise points. Hollow marker = some compromise points had not healed "
@@ -130,7 +140,7 @@ def fig_combined(s: pd.DataFrame, out: Path, note: str, floor: float | None, sui
 
 
 def fig_bytes(s: pd.DataFrame, out: Path, note: str) -> None:
-    suites = [x for x in SUITE_LABELS if x in set(s.suite)]
+    suites = suites_in(s)
     ks = sorted(s.K.unique())
     fig, axes = plt.subplots(2, len(suites), figsize=(5.2 * len(suites), 6.4), sharex=True, sharey="row",
                              squeeze=False, gridspec_kw={"hspace": 0.15})
@@ -147,7 +157,7 @@ def fig_bytes(s: pd.DataFrame, out: Path, note: str) -> None:
             if j == 0:
                 ax.set_ylabel(f"bytes per message, {lab}\n(mean, init headers excluded)")
             if i == 0:
-                ax.set_title(SUITE_LABELS[suite], loc="left")
+                ax.set_title(label(suite), loc="left")
             spread_labels(ax)
         axes[1][j].set_xlabel("sparse interval K (log)")
     for i, col in enumerate(["binary_mean_steady", "json_mean_steady"]):
@@ -160,7 +170,7 @@ def fig_bytes(s: pd.DataFrame, out: Path, note: str) -> None:
 
 
 def fig_heal(s: pd.DataFrame, out: Path, note: str) -> None:
-    suites = [x for x in SUITE_LABELS if x in set(s.suite)]
+    suites = suites_in(s)
     ks = sorted(s.K.unique())
     fig, axes = plt.subplots(1, len(suites), figsize=(5.2 * len(suites), 3.9), sharey=True, squeeze=False)
     for j, suite in enumerate(suites):
@@ -174,7 +184,7 @@ def fig_heal(s: pd.DataFrame, out: Path, note: str) -> None:
         k_axis(ax, ks)
         ax.set_yscale("symlog", linthresh=10)
         ax.set_ylim(bottom=0)
-        ax.set_title(SUITE_LABELS[suite], loc="left")
+        ax.set_title(label(suite), loc="left")
         ax.set_xlabel("sparse interval K (log)")
         spread_labels(ax)
     axes[0][0].set_ylabel("messages to heal (median, min–max)")
@@ -187,7 +197,7 @@ def fig_heal(s: pd.DataFrame, out: Path, note: str) -> None:
 
 
 def fig_cpu(s: pd.DataFrame, out: Path, note: str) -> None:
-    suites = [x for x in SUITE_LABELS if x in set(s.suite)]
+    suites = suites_in(s)
     ks = sorted(s.K.unique())
     fig, axes = plt.subplots(2, len(suites), figsize=(5.2 * len(suites), 6.2), sharex=True, sharey="row",
                              squeeze=False, gridspec_kw={"hspace": 0.15})
@@ -206,7 +216,7 @@ def fig_cpu(s: pd.DataFrame, out: Path, note: str) -> None:
             if j == 0:
                 ax.set_ylabel(lab)
             if i == 0:
-                ax.set_title(SUITE_LABELS[suite], loc="left")
+                ax.set_title(label(suite), loc="left")
             spread_labels(ax)
         axes[1][j].set_xlabel("sparse interval K (log)")
     h, l = axes[0][0].get_legend_handles_labels()
@@ -226,11 +236,14 @@ def main() -> None:
         sys.exit(f"{summ} not found: run `npm run e7` first")
     s = pd.read_csv(summ)
     env = json.loads((a.dir / "env.json").read_text()) if (a.dir / "env.json").exists() else {}
+    # The headline figure shows the first suite present: the shipped ML-KEM-1024 for current
+    # runs, ML-KEM-768 when replotting the pre-v1 2026-10-17 comparison run.
+    main_suite = suites_in(s)[0]
     floor = None
     msgs = a.dir / "messages.csv"
     if msgs.exists():
         m = pd.read_csv(msgs, usecols=["suite", "ratchetData", "binaryBytes"])
-        bare = m[(m.suite == "mlkem768") & (m.ratchetData == "none")].binaryBytes
+        bare = m[(m.suite == main_suite) & (m.ratchetData == "none")].binaryBytes
         if not bare.empty:
             floor = float(bare.median())
     out = a.out or (a.dir / "figures")
@@ -239,7 +252,7 @@ def main() -> None:
             f"{len(env.get('snapshotsAt', []))} compromise points per run · seeds: 1 (alternation, bursts), "
             f"{len(env.get('randomSeeds', []))} (Poisson, 90/10) · {'QUICK' if env.get('quick') else 'full grid'}")
     print(f"[e7 plot] {a.dir} -> {out}")
-    fig_combined(s, out, note, floor, suite="mlkem768" if (s.suite == "mlkem768").any() else str(s.suite.iloc[0]))
+    fig_combined(s, out, note, floor, suite=main_suite)
     fig_bytes(s, out, note)
     fig_heal(s, out, note)
     fig_cpu(s, out, note)
