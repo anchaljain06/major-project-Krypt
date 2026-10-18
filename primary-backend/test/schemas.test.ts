@@ -5,14 +5,13 @@ import {
   base64urlBytes,
   blockBody,
   loginVerifyBody,
-  ML_DSA_87_SIGNATURE_BYTES,
-  ML_KEM_1024_PUBLIC_KEY_BYTES,
   privateMessagePayload,
   registerBody,
   sendOrRevokeBody,
   uploadPrekeysBody,
   usernameSchema,
 } from "../src/schemas.js";
+import { ML_DSA_87_SIGNATURE_BYTES, ML_KEM_1024_PUBLIC_KEY_BYTES } from "../src/sizes.js";
 
 const b64u = (n: number) => randomBytes(n).toString("base64url");
 const prekey = (keyId: number) => ({

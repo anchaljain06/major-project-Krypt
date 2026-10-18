@@ -1,11 +1,10 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { prisma } from "./db.js";
+import { ML_DSA_87_PUBLIC_KEY_BYTES, ML_DSA_87_SIGNATURE_BYTES } from "./sizes.js";
 import {
   KtError,
   KtLog,
-  ML_DSA_87_PUBLIC_KEY_BYTES,
-  ML_DSA_87_SIG_BYTES,
   checkSubmission,
   loadLogKey,
   parseIdentityKey,
@@ -109,7 +108,7 @@ const b64Bytes = (n: number) =>
 
 export const ktRegisterBody = z.object({
   leaf: b64Bytes(KT_LEAF_SIZE),
-  ownerSig: b64Bytes(ML_DSA_87_SIG_BYTES),
+  ownerSig: b64Bytes(ML_DSA_87_SIGNATURE_BYTES),
   /** The ML-DSA-87 key that made ownerSig, when it is not the stored identity key (rotation). */
   signerPk: b64Bytes(ML_DSA_87_PUBLIC_KEY_BYTES).optional(),
 });

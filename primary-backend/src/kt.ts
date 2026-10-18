@@ -18,6 +18,11 @@ import {
   type NodeStore,
   type SignedTreeHead,
 } from "./vendor/krypt-shared/index.js";
+import {
+  ML_DSA_87_PUBLIC_KEY_BYTES,
+  ML_DSA_87_SECRET_KEY_BYTES,
+  ML_KEM_1024_PUBLIC_KEY_BYTES,
+} from "./sizes.js";
 
 // Key transparency log (plan 2.21-2.22, strategy §5).
 //
@@ -33,10 +38,6 @@ import {
 // Appends are serialised because MerkleLog derives each new node from the
 // tree size; two concurrent appends at the same size would corrupt the tree.
 
-export const ML_DSA_87_PUBLIC_KEY_BYTES = 2592;
-export const ML_DSA_87_SECRET_KEY_BYTES = 4896;
-export const ML_DSA_87_SIG_BYTES = 4627;
-export const ML_KEM_1024_PUBLIC_KEY_BYTES = 1568;
 /** Default minimum time between two published tree heads (plan 2.22). */
 export const DEFAULT_STH_INTERVAL_MS = 5 * 60 * 1000;
 /** Arbitrary constant naming the KT append lock among Postgres advisory locks. */

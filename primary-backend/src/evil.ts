@@ -39,12 +39,12 @@
 
 import {
   KtError,
-  ML_DSA_87_SIG_BYTES,
   parseIdentityKey,
   type KtLog,
   type KtView,
   type StoredLeaf,
 } from "./kt.js";
+import { ML_DSA_87_SIGNATURE_BYTES } from "./sizes.js";
 import {
   KtOp,
   MemoryNodeStore,
@@ -344,7 +344,7 @@ export async function buildRogueLeaf(
   prev: StoredLeaf | null,
   timestampMs: number,
 ): Promise<{ bytes: Uint8Array; ownerSig: Uint8Array }> {
-  const ownerSig = globalThis.crypto.getRandomValues(new Uint8Array(ML_DSA_87_SIG_BYTES));
+  const ownerSig = globalThis.crypto.getRandomValues(new Uint8Array(ML_DSA_87_SIGNATURE_BYTES));
   const leaf: KtLeaf = {
     op: prev ? KtOp.Rotate : KtOp.Register,
     userHash: await hashUsername(victim),

@@ -1,5 +1,6 @@
 import type { Response } from "express";
 import { z } from "zod";
+import { ML_DSA_87_SIGNATURE_BYTES, ML_KEM_1024_PUBLIC_KEY_BYTES } from "./sizes.js";
 
 // Input validation for every REST body and socket payload.
 // Anything that fails here is rejected before it touches the DB or another client.
@@ -75,8 +76,6 @@ export const searchQuery = z.object({
 
 // ---------- Prekeys ----------
 
-export const ML_KEM_1024_PUBLIC_KEY_BYTES = 1568;
-export const ML_DSA_87_SIGNATURE_BYTES = 4627;
 export const MAX_OPKS_PER_REQUEST = 200;
 
 /** Unpadded base64url string that decodes to exactly `bytes` bytes. */

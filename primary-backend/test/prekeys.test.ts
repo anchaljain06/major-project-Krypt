@@ -18,7 +18,7 @@ process.env.AUTH_TOKEN_SECRET = "prekey-test-secret";
 const { createApp } = await import("../src/app.js");
 const { issueToken } = await import("../src/auth.js");
 const { ML_DSA_87_SIGNATURE_BYTES, ML_KEM_1024_PUBLIC_KEY_BYTES } = await import(
-  "../src/schemas.js"
+  "../src/sizes.js"
 );
 
 const token = issueToken({ userId: "u-alice", username: "alice" });
