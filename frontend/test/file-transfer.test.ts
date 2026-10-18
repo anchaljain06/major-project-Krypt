@@ -50,7 +50,7 @@ interface Sent extends ChunkFrame {
 }
 
 /** Alice and Bob over a fake relay. `chunkHook` can rewrite or refuse a chunk before delivery. */
-async function world() {
+async function world(opts: { chunkSize?: number } = {}) {
   const clock = { t: 1_000_000 };
   const net = {
     online: true,
@@ -70,6 +70,7 @@ async function world() {
       store: s,
       lock: createMutexLock(),
       ackDelayMs: 20,
+      chunkSize: opts.chunkSize,
       now: () => clock.t,
       sendControl: async (to, ctl) => {
         const copy = parseFileControl(JSON.parse(JSON.stringify(ctl)));
@@ -122,6 +123,20 @@ describe("file transfer", () => {
     expect(await w.stores.bob.countData(id)).toEqual({ packets: 0, chunks: 3 });
     // Acks are batched, not one per chunk.
     expect(w.net.controls.filter((c) => c.ctl.op === "ack").length).toBeLessThan(3);
+  });
+
+  it("a sender configured for 256 KiB chunks splits the file into 256 KiB chunks", async () => {
+    const w = await world({ chunkSize: 256 * 1024 });
+    const { id, man, bytes } = await sendAndAccept(w, MiB + 1);
+    expect(man.chunkSize).toBe(256 * 1024);
+    expect(man.chunkCount).toBe(5);
+    await until(() => status(w.bob, id) === "complete");
+    expect(compareBytes(new Uint8Array(await (await w.bob.download(id)).blob.arrayBuffer()), bytes)).toBe(0);
+  });
+
+  it("refuses a chunk size outside 64 KiB-4 MiB", async () => {
+    await expect(world({ chunkSize: 4 * MiB + 1 })).rejects.toThrow(/Chunk size/);
+    await expect(world({ chunkSize: 1024 })).rejects.toThrow(/Chunk size/);
   });
 
   it("sends a zero-byte file as one authenticated empty chunk", async () => {

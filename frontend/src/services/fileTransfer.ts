@@ -22,8 +22,11 @@
  */
 import { fromBase64url, toBase64url } from "../crypto/encoding";
 import {
+  FILE_CHUNK_SIZE,
   GCM_TAG_BYTES,
+  MAX_CHUNK_SIZE,
   MAX_FILE_BYTES,
+  MIN_CHUNK_SIZE,
   chunkAad,
   chunkLength,
   chunkNonce,
@@ -77,6 +80,8 @@ export interface FileTransferDeps {
   sendChunk(peer: string, frame: ChunkFrame): Promise<ChunkSendResult>;
   now?: () => number;
   ackDelayMs?: number;
+  /** Plaintext bytes per chunk of new offers (default FILE_CHUNK_SIZE); benchmarks compare 256 KiB, 1 MiB and 4 MiB. */
+  chunkSize?: number;
 }
 
 export interface TransferView {
@@ -120,6 +125,7 @@ function view(r: TransferRecord): TransferView {
 export class FileTransferManager {
   private readonly d: FileTransferDeps;
   private readonly now: () => number;
+  private readonly chunkSize: number;
   private readonly views = new Map<string, TransferView>();
   private readonly listeners = new Set<() => void>();
   private readonly files = new Map<string, Blob>();
@@ -136,6 +142,10 @@ export class FileTransferManager {
   constructor(deps: FileTransferDeps) {
     this.d = deps;
     this.now = deps.now ?? Date.now;
+    this.chunkSize = deps.chunkSize ?? FILE_CHUNK_SIZE;
+    if (!Number.isSafeInteger(this.chunkSize) || this.chunkSize < MIN_CHUNK_SIZE || this.chunkSize > MAX_CHUNK_SIZE) {
+      throw new FileTransferError(`Chunk size must be ${MIN_CHUNK_SIZE}-${MAX_CHUNK_SIZE} bytes.`);
+    }
     this.ready = this.load();
   }
 
@@ -249,7 +259,7 @@ export class FileTransferManager {
     if ((await this.activeCount("out")).length >= MAX_ACTIVE_TRANSFERS) {
       throw new FileTransferError(`At most ${MAX_ACTIVE_TRANSFERS} outgoing transfers at a time.`);
     }
-    const manifest = createManifest(name, mime, file.size);
+    const manifest = createManifest(name, mime, file.size, this.chunkSize);
     const t = this.now();
     const r: TransferRecord = {
       manifest,

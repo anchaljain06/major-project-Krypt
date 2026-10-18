@@ -243,6 +243,8 @@ function sendFileChunk(peer: string, frame: ChunkFrame): Promise<ChunkSendResult
 }
 
 const managers = new WeakMap<Protocol, FileTransferManager>();
+/** Benchmarks only (evaluation/files-bench): a build with VITE_FILE_CHUNK_SIZE offers files in chunks of that size. */
+const CHUNK_SIZE = Number(import.meta.env.VITE_FILE_CHUNK_SIZE) || undefined;
 
 /** The file-transfer manager of this Protocol. */
 export function filesFor(p: Protocol): FileTransferManager {
@@ -254,6 +256,7 @@ export function filesFor(p: Protocol): FileTransferManager {
       lock: appLock,
       sendControl: (peer, ctl) => sendFileControl(p, peer, ctl),
       sendChunk: sendFileChunk,
+      chunkSize: CHUNK_SIZE,
     });
     managers.set(p, m);
   }
