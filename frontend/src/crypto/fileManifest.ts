@@ -177,6 +177,44 @@ export function chunkAad(m: FileManifestV1, from: string, to: string, index: num
   );
 }
 
+// ---------------------------------------------------------------------------
+// Control messages (plan 6). Each travels as the body of a normal Krypt v1
+// message with contentType "file", so it is end-to-end authenticated.
+
+export type FileControl =
+  | { op: "offer"; manifest: FileManifestV1 }
+  | { op: "accept" | "reject" | "complete" | "cancel"; transferId: string }
+  /** `have`: base64url bitmap (bit i in byte i>>3, LSB first) of chunks the receiver has verified and stored. */
+  | { op: "ack" | "resume"; transferId: string; have: string };
+
+const SIMPLE_OPS = new Set(["accept", "reject", "complete", "cancel"]);
+
+/** Bitmap length for `chunkCount` chunks. */
+export const bitmapBytes = (chunkCount: number) => Math.ceil(chunkCount / 8);
+
+export function parseFileControl(x: unknown): FileControl {
+  const fail = (): never => {
+    throw new FileManifestError("file control message is malformed");
+  };
+  const c = x as Record<string, unknown> | null;
+  if (!c || typeof c !== "object" || typeof c.op !== "string") return fail();
+  if (c.op === "offer") return { op: "offer", manifest: parseManifest(c.manifest) };
+  if (!isTransferId(c.transferId)) return fail();
+  const transferId = c.transferId as string;
+  if (SIMPLE_OPS.has(c.op)) return { op: c.op as "accept", transferId };
+  if (c.op === "ack" || c.op === "resume") {
+    let have: Uint8Array | null = null;
+    try {
+      have = typeof c.have === "string" ? fromBase64url(c.have) : null;
+    } catch {
+      have = null;
+    }
+    if (!have || have.length === 0 || have.length > bitmapBytes(MAX_CHUNK_COUNT)) return fail();
+    return { op: c.op, transferId, have: c.have as string };
+  }
+  return fail();
+}
+
 /**
  * Filename that is safe to hand to a download: no path separators, no control
  * or bidi-override characters, no leading dots, not empty.
