@@ -4,6 +4,7 @@ import srp from "secure-remote-password/server.js";
 import { issueToken, requireAuth, requireSelf, sameUsername } from "./auth.js";
 import { ktApiRouter } from "./ktRoutes.js";
 import prekeys from "./prekeys.js";
+import { emitToUser } from "./realtime.js";
 import {
   acceptOrRejectBody,
   blockBody,
@@ -280,6 +281,7 @@ router.post(
             where: { id: existingRequest.id },
             data: { senderId, receiverId, status: "pending" },
           });
+          emitToUser(receiver, "receive_friend_request", me(req));
           return res
             .status(200)
             .json({ success: true, message: "Request re-sent!" });
@@ -289,6 +291,7 @@ router.post(
       await prisma.friendRequest.create({
         data: { senderId, receiverId, status: "pending" },
       });
+      emitToUser(receiver, "receive_friend_request", me(req));
 
       res.status(200).json({ success: true, message: "Request sent!" });
     } catch (err) {
@@ -347,13 +350,14 @@ router.post(
     if (!body) return;
 
     try {
-      await prisma.friendRequest.deleteMany({
+      const { count } = await prisma.friendRequest.deleteMany({
         where: {
           senderId: myId(req),
           receiver: { username: body.receiver },
           status: "pending",
         },
       });
+      if (count > 0) emitToUser(body.receiver, "request_revoked", me(req));
 
       res.status(200).json({ success: true, message: "Request revoked." });
     } catch (err) {
@@ -402,6 +406,7 @@ router.post(
         });
       });
       invalidateRelationship(body.sender, me(req));
+      emitToUser(body.sender, "request_accepted", me(req));
 
       res
         .status(200)
@@ -422,7 +427,7 @@ router.post(
     if (!body) return;
 
     try {
-      await prisma.friendRequest.updateMany({
+      const { count } = await prisma.friendRequest.updateMany({
         where: {
           sender: { username: body.sender },
           receiverId: myId(req),
@@ -430,6 +435,7 @@ router.post(
         },
         data: { status: "rejected" },
       });
+      if (count > 0) emitToUser(body.sender, "request_rejected", me(req));
 
       res
         .status(200)
@@ -513,6 +519,7 @@ router.post(
         }),
       ]);
       invalidateRelationship(me(req), blocked);
+      emitToUser(blocked, "user_blocked_you", me(req));
 
       res
         .status(200)

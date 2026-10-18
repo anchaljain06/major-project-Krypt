@@ -137,10 +137,6 @@ export const privateMessagePayload = z.looseObject({
 
 export const socketUsernameArg = usernameSchema;
 
-// Friend/block socket notifications reuse the REST body shapes:
-// send/revoke: { sender: me, receiver }   accept/reject: { sender, receiver: me }
-// block: { blocker: me, blocked }
-
 /** Parse input with a zod schema; on failure send 400 and return null. */
 export function parseOr400<T extends z.ZodType>(
   schema: T,

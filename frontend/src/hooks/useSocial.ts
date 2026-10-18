@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { socket } from "../services/socket";
 import { apiFetch, apiPostJson } from "../services/api";
 import toast from "react-hot-toast";
 
@@ -82,10 +81,6 @@ export function useSocial(
         const data = await res.json();
         if (!res.ok)
           return toast.error(data.error || "Failed to send request.");
-        socket.emit("send_friend_request", {
-          sender: user,
-          receiver: targetUser,
-        });
         setSentRequests((prev) => [...prev, targetUser]);
         setSearchResults([]);
         setSearchQuery("");
@@ -108,10 +103,6 @@ export function useSocial(
           const data = await res.json();
           throw new Error(data.error || "Failed to accept request.");
         }
-        socket.emit("accept_friend_request", {
-          sender: requester,
-          receiver: user,
-        });
         setPendingRequests((prev) => prev.filter((r) => r !== requester));
         setFriendsList((prev) => [...prev, requester]);
         toast.success(`You are now friends with ${requester}!`);
@@ -133,10 +124,6 @@ export function useSocial(
           const data = await res.json();
           throw new Error(data.error || "Failed to reject request.");
         }
-        socket.emit("reject_friend_request", {
-          sender: requester,
-          receiver: user,
-        });
         setPendingRequests((prev) => prev.filter((r) => r !== requester));
         toast.success(`Request from ${requester} rejected.`);
       } catch (err) {
@@ -156,11 +143,6 @@ export function useSocial(
         const data = await res.json();
         if (!res.ok)
           return toast.error(data.error || "Failed to revoke request.");
-
-        socket.emit("revoke_friend_request", {
-          sender: user,
-          receiver: targetUser,
-        });
         setSentRequests((prev) => prev.filter((u) => u !== targetUser));
         toast.success(`Request to ${targetUser} revoked.`);
       } catch {
@@ -179,7 +161,6 @@ export function useSocial(
         });
         const data = await res.json();
         if (!res.ok) return toast.error(data.error);
-        socket.emit("block_user", { blocker: user, blocked: targetUser });
         setBlockedUsers((prev) => [...prev, targetUser]);
         setFriendsList((prev) => prev.filter((u) => u !== targetUser));
         setPendingRequests((prev) => prev.filter((u) => u !== targetUser));

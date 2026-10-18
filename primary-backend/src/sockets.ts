@@ -5,14 +5,7 @@ import { enqueue, flush, MAILBOX_TTL_MS, prismaMailboxStore } from "./mailbox.js
 import type { EvilRelay } from "./evil.js";
 import { PREKEYS_LOW_WATERMARK, prekeyStatus, setBundleKeySource } from "./prekeys.js";
 import { onlineUsers, setIo } from "./realtime.js";
-import {
-  acceptOrRejectBody,
-  blockBody,
-  firstIssue,
-  privateMessagePayload,
-  sendOrRevokeBody,
-  socketUsernameArg,
-} from "./schemas.js";
+import { firstIssue, privateMessagePayload, socketUsernameArg } from "./schemas.js";
 import { messagePolicy } from "./social.js";
 
 const mailbox = prismaMailboxStore(prisma);
@@ -189,74 +182,6 @@ export function registerSocketHandlers(io: Server, evil: EvilRelay | null = null
         console.error("[Socket] DB Error fetching key:", err);
         ack({ success: false, error: "Server error fetching key." });
       }
-    });
-
-    // Friend/block notifications. The REST call already changed the DB; these only
-    // tell the other user, so each one is checked against the DB before forwarding.
-    const notify = async (target: string, event: string, check: () => Promise<unknown>) => {
-      const targetSocketId = onlineUsers.get(target);
-      if (!targetSocketId) return;
-      try {
-        if (await check()) io.to(targetSocketId).emit(event, username);
-      } catch (err) {
-        console.error(`[Socket] ${event} check failed:`, err);
-      }
-    };
-
-    socket.on("send_friend_request", (data: unknown) => {
-      const parsed = sendOrRevokeBody.safeParse(data);
-      if (!parsed.success) return;
-      const { receiver } = parsed.data;
-      void notify(receiver, "receive_friend_request", () =>
-        prisma.friendRequest.findFirst({
-          where: { senderId: userId, receiver: { username: receiver }, status: "pending" },
-          select: { id: true },
-        }),
-      );
-    });
-
-    socket.on("accept_friend_request", (data: unknown) => {
-      const parsed = acceptOrRejectBody.safeParse(data);
-      if (!parsed.success) return;
-      const { sender } = parsed.data;
-      void notify(sender, "request_accepted", () =>
-        prisma.friendRequest.findFirst({
-          where: { sender: { username: sender }, receiverId: userId, status: "accepted" },
-          select: { id: true },
-        }),
-      );
-    });
-
-    socket.on("reject_friend_request", (data: unknown) => {
-      const parsed = acceptOrRejectBody.safeParse(data);
-      if (!parsed.success) return;
-      const { sender } = parsed.data;
-      void notify(sender, "request_rejected", () =>
-        prisma.friendRequest.findFirst({
-          where: { sender: { username: sender }, receiverId: userId, status: "rejected" },
-          select: { id: true },
-        }),
-      );
-    });
-
-    socket.on("block_user", (data: unknown) => {
-      const parsed = blockBody.safeParse(data);
-      if (!parsed.success) return;
-      const { blocked } = parsed.data;
-      void notify(blocked, "user_blocked_you", () =>
-        prisma.blockedUser.findFirst({
-          where: { blockerId: userId, blocked: { username: blocked } },
-          select: { id: true },
-        }),
-      );
-    });
-
-    // The request row is already gone after a revoke, so there is nothing to check;
-    // the recipient just drops the sender from its pending list.
-    socket.on("revoke_friend_request", (data: unknown) => {
-      const parsed = sendOrRevokeBody.safeParse(data);
-      if (!parsed.success) return;
-      void notify(parsed.data.receiver, "request_revoked", async () => true);
     });
 
     void bringOnline(io, socket, username);
