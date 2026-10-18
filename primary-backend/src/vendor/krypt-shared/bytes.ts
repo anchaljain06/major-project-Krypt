@@ -79,11 +79,6 @@ export function u8(v: number): Uint8Array {
   return Uint8Array.of(v);
 }
 
-export function u16be(v: number): Uint8Array {
-  assertUint("u16", v, 0xffff);
-  return Uint8Array.of(v >>> 8, v & 0xff);
-}
-
 export function u32be(v: number): Uint8Array {
   assertUint("u32", v, 0xffffffff);
   const out = new Uint8Array(4);

@@ -160,7 +160,3 @@ export function hashesFromJson(v) {
 export function hashesToJson(hs) {
     return hs.map(toBase64);
 }
-/** Two heads are the same statement (ignoring signatures). */
-export function sameTreeHead(a, b) {
-    return a.treeSize === b.treeSize && a.timestampMs === b.timestampMs && bytesEqual(a.rootHash, b.rootHash);
-}

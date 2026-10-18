@@ -227,8 +227,3 @@ export function hashesFromJson(v: unknown): Hash[] {
 export function hashesToJson(hs: readonly Hash[]): string[] {
   return hs.map(toBase64);
 }
-
-/** Two heads are the same statement (ignoring signatures). */
-export function sameTreeHead(a: TreeHead, b: TreeHead): boolean {
-  return a.treeSize === b.treeSize && a.timestampMs === b.timestampMs && bytesEqual(a.rootHash, b.rootHash);
-}
