@@ -16,3 +16,7 @@ results/attack-matrix-dev/
 !results/e7-*/
 results/e7-*/messages.csv
 results/e7-*-quick/
+# ML-KEM-768 vs ML-KEM-1024 benchmark (plan B.4): summaries are committed, raw runs are not
+!results/kem-768-vs-1024-*/
+results/kem-768-vs-1024-*/*.json
+results/kem-768-vs-1024-*/long.csv
