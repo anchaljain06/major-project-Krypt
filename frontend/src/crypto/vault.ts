@@ -18,13 +18,36 @@ import { bytesToBase64, base64ToBytes } from "./utils";
 const MODERN_ITERATIONS = 600000;
 const LEGACY_ITERATIONS = 100000;
 
+/** Minimum length for a vault (.vault export) password. */
+export const MIN_VAULT_PASSWORD_LENGTH = 8;
+
+/**
+ * Checks a new vault password and its confirmation.
+ * @returns an error message, or null if the password is acceptable
+ */
+export function validateVaultPassword(
+  password: string,
+  confirm: string,
+): string | null {
+  if (password.length < MIN_VAULT_PASSWORD_LENGTH) {
+    return `Vault password must be at least ${MIN_VAULT_PASSWORD_LENGTH} characters.`;
+  }
+  if (password !== confirm) {
+    return "Vault passwords do not match.";
+  }
+  return null;
+}
+
+/**
+ * Encrypts data under a password (PBKDF2-HMAC-SHA256 -> AES-256-GCM).
+ * A password is mandatory: unencrypted export is refused.
+ */
 export async function encryptVaultData(
   data: string,
-  password?: string,
+  password: string,
 ): Promise<string> {
   if (!password) {
-    // Unencrypted vault export
-    return bytesToBase64(new TextEncoder().encode(data));
+    throw new Error("A password is required. Unencrypted export is not allowed.");
   }
 
   const enc = new TextEncoder();
@@ -73,25 +96,28 @@ export async function decryptVaultData(
   data: string,
   password?: string,
 ): Promise<string> {
-  const isV2 = data.startsWith("ENC:v2:");
-  const isV1 = !isV2 && data.startsWith("ENC:");
+  const trimmed = data.trim();
+  const isV2 = trimmed.startsWith("ENC:v2:");
+  const isV1 = !isV2 && trimmed.startsWith("ENC:");
 
   if (!isV1 && !isV2) {
-    // Treat as simple base64 (unencrypted) or plaintext JSON fallback
-    try {
-      const decodedBytes = base64ToBytes(data);
-      return new TextDecoder().decode(decodedBytes);
-    } catch {
-      return data;
-    }
+    // Fail closed: unencrypted (plain Base64 / JSON) vaults and backups are rejected.
+    throw new Error(
+      "This file is not encrypted. Unencrypted vault and backup files are no longer accepted.",
+    );
   }
 
   if (!password) {
     throw new Error("Password is required to decrypt this vault file.");
   }
 
-  const base64 = isV2 ? data.substring(7) : data.substring(4);
-  const combined = base64ToBytes(base64);
+  const base64 = isV2 ? trimmed.substring(7) : trimmed.substring(4);
+  let combined: Uint8Array;
+  try {
+    combined = base64ToBytes(base64);
+  } catch {
+    throw new Error("Invalid vault payload: corrupted or incomplete file.");
+  }
 
   if (combined.length < 16 + 12 + 16) {
     throw new Error("Invalid vault payload: corrupted or incomplete file.");
@@ -170,7 +196,11 @@ export async function importChatBackup(
   const decrypted = await decryptVaultData(backupContent, password);
   const data = JSON.parse(decrypted);
   if (data.messages && Array.isArray(data.messages)) {
-    const validMessages = data.messages.filter((m: any) => m.payload);
+    // Only encrypted message rows. Ratchet state is never in a backup (spec 7 rule 3).
+    const validMessages = data.messages.filter(
+      (m: unknown): m is { payload: string } =>
+        !!m && typeof m === "object" && typeof (m as { payload?: unknown }).payload === "string",
+    );
     if (validMessages.length > 0) {
       await db.messages.bulkAdd(validMessages);
     } else {

@@ -1,19 +1,11 @@
 import React, { useRef, useEffect } from "react";
-
-interface SavedMessage {
-  id?: number;
-  from: string;
-  to: string;
-  ciphertext: string;
-  decryptedText: string;
-  type: "text" | "image" | "audio";
-  timestamp: number;
-}
+import type { StoredMessage } from "../services/messaging";
 
 interface ChatWindowProps {
   user: string;
   activeChat: string | null;
-  messages: SavedMessage[];
+  messages: StoredMessage[];
+  onOpenSecurity: () => void;
   input: string;
   setInput: (val: string) => void;
   onSendMessage: () => void;
@@ -28,6 +20,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   user,
   activeChat,
   messages,
+  onOpenSecurity,
   input,
   setInput,
   onSendMessage,
@@ -68,11 +61,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     }`}
                   />
                   <p className="text-xs text-slate-400 font-medium">
-                    {isTargetOnline ? "Online" : "Offline"} • ML-KEM-1024 / AES-GCM {isTargetOnline ? "" : "(Mailbox Active)"}
+                    {isTargetOnline ? "Online" : "Offline"} • Krypt v1 PQ ratchet {isTargetOnline ? "" : "(Mailbox Active)"}
                   </p>
                 </div>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={onOpenSecurity}
+              className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 border border-slate-700 text-indigo-300 hover:bg-slate-700 transition"
+              title="Safety number, key transparency and session status"
+            >
+              Security
+            </button>
           </div>
 
           <div className="flex-1 p-6 overflow-y-auto">
@@ -104,7 +105,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   const isMe = msg.from === user;
                   return (
                     <div
-                      key={i}
+                      key={msg.id ?? i}
+                      data-testid="message"
+                      data-from={msg.from}
+                      data-type={msg.type}
                       className={`mb-6 flex flex-col ${isMe ? "items-end" : "items-start"}`}
                     >
                       <div

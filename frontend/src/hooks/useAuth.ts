@@ -1,5 +1,12 @@
 import { useState, useEffect } from "react";
-import { socket } from "../services/socket";
+import { socket, connectSocket, disconnectSocket } from "../services/socket";
+import { apiPostJson, setUnauthorizedHandler, notifyUnauthorized } from "../services/api";
+import { getToken, setToken, clearToken } from "../services/authToken";
+import {
+  createSessionCache,
+  restoreSessionCache,
+  clearSessionCache,
+} from "../services/sessionCache";
 import {
   generateUserIdentityKeys,
   exportPublicIdentity,
@@ -10,39 +17,97 @@ import {
 import srp from "secure-remote-password/client";
 import toast from "react-hot-toast";
 import { db } from "../services/db";
+import { deleteLegacySessionKeys, deleteSessionDatabase, stopProtocol } from "../services/protocol";
 import {
   encryptVaultData,
   decryptVaultData,
   exportChatBackup,
   importChatBackup,
+  MIN_VAULT_PASSWORD_LENGTH,
 } from "../crypto/vault";
+
+// sessionStorage key for a one-shot message shown after a forced reload
+const FLASH_KEY = "krypt_flash";
+
+// localStorage marker: account registered here but no encrypted vault downloaded yet
+const vaultPendingKey = (username: string) => `vaultPending_${username}`;
+
+const errorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : "Unknown error";
+
+/**
+ * Ends the server session after the token was rejected (REST 401 or socket
+ * "unauthorized"): drop the token and socket, then reload into the login screen.
+ */
+let isExpiring = false;
+async function expireSession() {
+  if (isExpiring) return;
+  isExpiring = true;
+  clearToken();
+  disconnectSocket();
+  await clearSessionCache().catch(() => {});
+  localStorage.removeItem("currentUser");
+  sessionStorage.setItem(FLASH_KEY, "Session expired. Please log in again.");
+  window.location.reload();
+}
 
 export function useAuth() {
   const [user, setUser] = useState(localStorage.getItem("currentUser") || "");
   const [myPrivateKey, setMyPrivateKey] = useState<UserIdentityKeys | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // True until a freshly registered user has downloaded an encrypted vault
+  const [needsVaultBackup, setNeedsVaultBackup] = useState(() => {
+    const current = localStorage.getItem("currentUser");
+    return !!current && !!localStorage.getItem(vaultPendingKey(current));
+  });
 
-  // Auto-restore private identity keys from encrypted cache on page refresh
+  // Route every token rejection (REST or socket) to the same logout path.
   useEffect(() => {
+    const flash = sessionStorage.getItem(FLASH_KEY);
+    if (flash) {
+      sessionStorage.removeItem(FLASH_KEY);
+      toast.error(flash);
+    }
+
+    setUnauthorizedHandler(expireSession);
+    const onConnectError = (err: Error) => {
+      if (err?.message === "unauthorized") notifyUnauthorized();
+    };
+    socket.on("connect_error", onConnectError);
+    return () => {
+      setUnauthorizedHandler(null);
+      socket.off("connect_error", onConnectError);
+    };
+  }, []);
+
+  // Auto-restore private identity keys on page refresh within the same tab.
+  // Uses the non-extractable session key (services/sessionCache.ts); never a password.
+  useEffect(() => {
+    // Migration: older builds kept the plaintext login password here.
+    sessionStorage.removeItem("sessionPassword");
+
     if (!user || myPrivateKey) return;
+    let cancelled = false;
     const restoreKey = async () => {
-      const cachedPassword = sessionStorage.getItem("sessionPassword");
-      const cachedKey = localStorage.getItem(`encryptedPrivateKey_${user}`);
-      if (!cachedPassword || !cachedKey) return;
+      if (!getToken()) {
+        // No server session in this tab: drop any leftover cache, require login.
+        await clearSessionCache().catch(() => {});
+        return;
+      }
       try {
-        const decryptedPrivateStr = await decryptVaultData(
-          cachedKey,
-          cachedPassword,
-        );
-        const loadedKeys = importPrivateIdentity(decryptedPrivateStr);
-        setMyPrivateKey(loadedKeys);
-      } catch (err) {
-        sessionStorage.removeItem("sessionPassword");
+        const bundle = await restoreSessionCache(user);
+        if (!bundle || cancelled) return;
+        setMyPrivateKey(importPrivateIdentity(bundle));
+      } catch {
+        await clearSessionCache(user).catch(() => {});
         // No toast here to avoid annoying the user on every fresh load if they aren't logged in
       }
     };
     restoreKey();
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, myPrivateKey]);
 
   const handleLogin = async (
     username: string,
@@ -52,6 +117,11 @@ export function useAuth() {
     vaultPassword?: string,
   ) => {
     setIsLoading(true);
+    // Any previous session token is discarded; login/registration run unauthenticated.
+    clearToken();
+    let sessionToken = "";
+    let loadedKeys: UserIdentityKeys;
+    let privateKeyBundle: string;
     try {
       if (isRegistering) {
         const salt = srp.generateSalt();
@@ -61,51 +131,41 @@ export function useAuth() {
         const keys = generateUserIdentityKeys();
         const publicKeyStr = exportPublicIdentity(keys);
 
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/register`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username,
-              publicKey: publicKeyStr,
-              srpSalt: salt,
-              srpVerifier: verifier,
-            }),
-          },
-        );
+        const res = await apiPostJson("/api/register", {
+          username,
+          publicKey: publicKeyStr,
+          srpSalt: salt,
+          srpVerifier: verifier,
+        });
 
+        const registerData = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const data = await res.json();
           throw new Error(
-            data.error || "Registration failed. Username might be taken.",
+            registerData.error || "Registration failed. Username might be taken.",
           );
         }
+        if (typeof registerData.token !== "string" || !registerData.token) {
+          throw new Error("Registration failed: server did not issue a session.");
+        }
+        sessionToken = registerData.token;
 
-        setMyPrivateKey(keys);
-        const privateKeyStr = exportPrivateIdentity(keys);
-        // Securely cache the private identity key for returning logins
+        loadedKeys = keys;
+        privateKeyBundle = exportPrivateIdentity(keys);
+        // Password-encrypted copy for returning logins on this device
         const encryptedCache = await encryptVaultData(
-          privateKeyStr,
+          privateKeyBundle,
           password,
         );
         localStorage.setItem(`encryptedPrivateKey_${username}`, encryptedCache);
 
-        // Vault Birth: Do not download automatically anymore.
-        // User must click Download Vault in the UI.
+        // Vault birth: the dashboard stays locked until an encrypted vault is downloaded.
+        localStorage.setItem(vaultPendingKey(username), "1");
       } else {
         const clientEphemeral = srp.generateEphemeral();
-        const challengeRes = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/login/challenge`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username,
-              clientEphemeralPublic: clientEphemeral.public,
-            }),
-          },
-        );
+        const challengeRes = await apiPostJson("/api/login/challenge", {
+          username,
+          clientEphemeralPublic: clientEphemeral.public,
+        });
 
         if (!challengeRes.ok) {
           const data = await challengeRes.json();
@@ -122,23 +182,37 @@ export function useAuth() {
           privateKey,
         );
 
-        const verifyRes = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/login/verify`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username,
-              clientEphemeralPublic: clientEphemeral.public,
-              clientSessionProof: clientSession.proof,
-            }),
-          },
-        );
+        const verifyRes = await apiPostJson("/api/login/verify", {
+          username,
+          clientEphemeralPublic: clientEphemeral.public,
+          clientSessionProof: clientSession.proof,
+        });
 
+        const verifyData = await verifyRes.json().catch(() => ({}));
         if (!verifyRes.ok) {
-          const data = await verifyRes.json();
-          throw new Error(data.error || "Invalid password!");
+          throw new Error(verifyData.error || "Invalid password!");
         }
+
+        // SRP-6a mutual authentication: the server must prove (M2) that it knows
+        // the verifier for this account. Without this check an impostor server
+        // could accept any password. verifySession throws on mismatch.
+        if (typeof verifyData.serverProof !== "string" || !verifyData.serverProof) {
+          throw new Error("Login aborted: server did not prove its identity.");
+        }
+        try {
+          srp.verifySession(
+            clientEphemeral.public,
+            clientSession,
+            verifyData.serverProof,
+          );
+        } catch {
+          throw new Error("Login aborted: server proof is invalid.");
+        }
+
+        if (typeof verifyData.token !== "string" || !verifyData.token) {
+          throw new Error("Login failed: server did not issue a session.");
+        }
+        sessionToken = verifyData.token;
 
         // If vaultFile is missing, try to load from secure cache
         let privateKeyStrToImport = "";
@@ -157,7 +231,7 @@ export function useAuth() {
               cachedKey,
               password,
             );
-          } catch (err) {
+          } catch {
             throw new Error(
               "Wrong password! Could not decrypt your local security cache.",
             );
@@ -171,7 +245,7 @@ export function useAuth() {
               fileContent,
               vaultPassword,
             );
-          } catch (err) {
+          } catch {
             throw new Error(
               "Failed to decrypt vault file. Check your vault password.",
             );
@@ -180,7 +254,7 @@ export function useAuth() {
           let vault;
           try {
             vault = JSON.parse(decryptedContent);
-          } catch (err) {
+          } catch {
             throw new Error("Invalid vault file format.");
           }
 
@@ -202,7 +276,7 @@ export function useAuth() {
           if (vault.contacts && Array.isArray(vault.contacts)) {
             await db.contacts.clear();
             const validContacts = vault.contacts.filter(
-              (c: any) => c.id && c.payload,
+              (c: { id?: string; payload?: string }) => c.id && c.payload,
             );
             if (validContacts.length > 0) {
               await db.contacts.bulkAdd(validContacts);
@@ -210,43 +284,58 @@ export function useAuth() {
           }
         }
 
-        const loadedKeys = importPrivateIdentity(privateKeyStrToImport);
-        setMyPrivateKey(loadedKeys);
+        loadedKeys = importPrivateIdentity(privateKeyStrToImport);
+        privateKeyBundle = privateKeyStrToImport;
       }
 
+      setToken(sessionToken);
       localStorage.setItem("currentUser", username);
-      sessionStorage.setItem("sessionPassword", password);
+      try {
+        // Lets a refresh in this tab resume without the password (see sessionCache.ts).
+        await createSessionCache(username, privateKeyBundle);
+      } catch (cacheErr) {
+        console.warn("Session cache unavailable; refresh will require login.", cacheErr);
+      }
+      // Set together so the socket only connects once the token is in place.
+      setNeedsVaultBackup(!!localStorage.getItem(vaultPendingKey(username)));
+      setMyPrivateKey(loadedKeys);
       setUser(username);
-      socket.connect();
-    } catch (err: any) {
+    } catch (err) {
       console.error("Login Error:", err);
-      toast.error(err?.message || "An unknown error occurred during login.");
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "An unknown error occurred during login.",
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Connect the socket once keys are loaded (after login, registration or restore).
+  // The server binds the socket to the user from the token; no register_socket emit.
   useEffect(() => {
     if (!user || !myPrivateKey) return;
-
-    const onConnect = () => {
-      socket.emit("register_socket", user);
-    };
-
-    if (socket.connected) {
-      onConnect();
+    const token = getToken();
+    if (!token) {
+      notifyUnauthorized();
+      return;
     }
-
-    socket.on("connect", onConnect);
-    socket.connect();
-
-    return () => {
-      socket.off("connect", onConnect);
-    };
+    connectSocket(token);
   }, [user, myPrivateKey]);
 
-  const handleDownloadVault = async (vaultPassword?: string) => {
-    if (!myPrivateKey || !user) return;
+  /**
+   * Downloads the identity vault, always encrypted under `vaultPassword`.
+   * @returns true if the file was produced and handed to the browser
+   */
+  const handleDownloadVault = async (vaultPassword: string): Promise<boolean> => {
+    if (!myPrivateKey || !user) return false;
+    if (!vaultPassword || vaultPassword.length < MIN_VAULT_PASSWORD_LENGTH) {
+      toast.error(
+        `Vault password must be at least ${MIN_VAULT_PASSWORD_LENGTH} characters.`,
+      );
+      return false;
+    }
     try {
       const privateKeyStr = exportPrivateIdentity(myPrivateKey);
       const contacts = await db.contacts.toArray();
@@ -268,10 +357,20 @@ export function useAuth() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success("Vault downloaded securely.");
-    } catch (err: any) {
-      toast.error("Failed to download vault: " + err.message);
+      // The registration-time backup requirement is satisfied.
+      localStorage.removeItem(vaultPendingKey(user));
+      toast.success("Encrypted vault downloaded.");
+      return true;
+    } catch (err) {
+      toast.error("Failed to download vault: " + errorMessage(err));
+      return false;
     }
+  };
+
+  // Called when the user leaves the post-registration vault backup screen.
+  const confirmVaultBackup = () => {
+    if (user && localStorage.getItem(vaultPendingKey(user))) return;
+    setNeedsVaultBackup(false);
   };
 
   const handleExportChats = async (password: string) => {
@@ -290,8 +389,8 @@ export function useAuth() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success("Chat history backed up securely.");
-    } catch (err: any) {
-      toast.error("Failed to backup chats: " + err.message);
+    } catch (err) {
+      toast.error("Failed to backup chats: " + errorMessage(err));
     }
   };
 
@@ -300,8 +399,8 @@ export function useAuth() {
       const content = await file.text();
       await importChatBackup(content, password);
       toast.success("Chat history restored successfully.");
-    } catch (err: any) {
-      toast.error("Failed to restore chats: " + err.message);
+    } catch (err) {
+      toast.error("Failed to restore chats: " + errorMessage(err));
     }
   };
 
@@ -309,34 +408,28 @@ export function useAuth() {
     try {
       await db.messages.clear();
       await db.contacts.clear();
-      // Wipe ratchet session state
-      const keysToRemove = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith(`session_${user}_`)) {
-          keysToRemove.push(key);
-        }
-      }
-      for (const key of keysToRemove) {
-        localStorage.removeItem(key);
-      }
+      // Wipe Krypt v1 ratchet sessions on this device. Prekey private halves
+      // are kept, so peers can still start new sessions with us.
+      deleteLegacySessionKeys();
+      if (user) await deleteSessionDatabase(user);
 
       toast.success("Local cache completely wiped.");
       setTimeout(() => window.location.reload(), 1500);
-    } catch (err: any) {
-      toast.error("Failed to wipe cache: " + err.message);
+    } catch (err) {
+      toast.error("Failed to wipe cache: " + errorMessage(err));
     }
   };
 
   const handleLogout = async (
     shouldDownload: boolean = false,
-    vaultPassword?: string,
+    vaultPassword: string = "",
     clearCache: boolean = false,
   ) => {
     if (!myPrivateKey || !user) return;
 
     if (shouldDownload) {
-      await handleDownloadVault(vaultPassword);
+      // Do not sign out if the requested backup could not be produced.
+      if (!(await handleDownloadVault(vaultPassword))) return;
       await new Promise((resolve) => setTimeout(resolve, 1500)); // Ensure download begins before reload
     }
 
@@ -346,8 +439,11 @@ export function useAuth() {
     }
 
     // Secure sign out
+    disconnectSocket();
+    await stopProtocol().catch(() => {});
+    clearToken();
+    await clearSessionCache(user).catch(() => {});
     localStorage.removeItem("currentUser");
-    sessionStorage.removeItem("sessionPassword");
     setMyPrivateKey(null);
     setUser("");
     window.location.reload();
@@ -361,6 +457,8 @@ export function useAuth() {
     handleLogin,
     handleLogout,
     handleDownloadVault,
+    needsVaultBackup,
+    confirmVaultBackup,
     handleExportChats,
     handleImportChats,
     handleWipeCache,

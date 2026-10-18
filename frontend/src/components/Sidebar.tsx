@@ -1,4 +1,7 @@
 import React from "react";
+import { validateVaultPassword, MIN_VAULT_PASSWORD_LENGTH } from "../crypto/vault";
+import type { SearchResult } from "../hooks/useSocial";
+import KtBadge from "./KtBadge";
 
 interface SidebarProps {
   user: string;
@@ -8,7 +11,7 @@ interface SidebarProps {
   sentRequests: string[];
   friendsList: string[];
   blockedUsers: string[];
-  searchResults: any[];
+  searchResults: SearchResult[];
   searchQuery: string;
   onSearch: (query: string) => void;
   onSendRequest: (target: string) => void;
@@ -21,10 +24,10 @@ interface SidebarProps {
   getRelationship: (username: string) => "friend" | "sent" | "pending" | "none";
   onLogout: (
     shouldDownload: boolean,
-    password?: string,
+    password: string,
     clearCache?: boolean,
   ) => void;
-  onDownloadVault: (password?: string) => void;
+  onDownloadVault: (password: string) => void;
   onlineUsers: string[];
   onRevokeRequest: (target: string) => void;
   onExportChats: (password: string) => void;
@@ -65,6 +68,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [showLogoutModal, setShowLogoutModal] = React.useState(false);
   const [showDownloadModal, setShowDownloadModal] = React.useState(false);
   const [vaultPassword, setVaultPassword] = React.useState("");
+  const [vaultConfirm, setVaultConfirm] = React.useState("");
+  const vaultError = validateVaultPassword(vaultPassword, vaultConfirm);
+  const showVaultError =
+    (vaultPassword.length > 0 || vaultConfirm.length > 0) && !!vaultError;
+  const resetVaultFields = () => {
+    setVaultPassword("");
+    setVaultConfirm("");
+  };
   const [backupOnLogout, setBackupOnLogout] = React.useState(true);
   const [clearCacheOnLogout, setClearCacheOnLogout] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -78,6 +89,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
             {user}
           </p>
+          <div className="mt-1.5">
+            <KtBadge />
+          </div>
         </div>
         <div className="flex gap-2">
           <button
@@ -172,21 +186,32 @@ const Sidebar: React.FC<SidebarProps> = ({
               Secure Vault Backup
             </h3>
             <p className="text-xs text-slate-400 mb-4">
-              Enter an optional password to encrypt your vault file. If left
-              blank, it will be stored in standard format.
+              Choose a password to encrypt your vault file (at least{" "}
+              {MIN_VAULT_PASSWORD_LENGTH} characters). Vault files are always
+              encrypted; you will need this password to restore your identity.
             </p>
             <input
               type="password"
-              placeholder="Vault Password (Optional)"
+              placeholder="Vault Password"
               value={vaultPassword}
               onChange={(e) => setVaultPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100 mb-6 placeholder-slate-500"
+              className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100 mb-3 placeholder-slate-500"
             />
+            <input
+              type="password"
+              placeholder="Confirm Vault Password"
+              value={vaultConfirm}
+              onChange={(e) => setVaultConfirm(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100 mb-2 placeholder-slate-500"
+            />
+            <p className="text-xs text-red-400 min-h-4 mb-4">
+              {showVaultError ? vaultError : ""}
+            </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => {
                   setShowDownloadModal(false);
-                  setVaultPassword("");
+                  resetVaultFields();
                 }}
                 className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200"
               >
@@ -194,11 +219,13 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
               <button
                 onClick={() => {
+                  if (vaultError) return;
                   onDownloadVault(vaultPassword);
                   setShowDownloadModal(false);
-                  setVaultPassword("");
+                  resetVaultFields();
                 }}
-                className="px-4 py-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors shadow-md"
+                disabled={!!vaultError}
+                className="px-4 py-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Download
               </button>
@@ -236,19 +263,31 @@ const Sidebar: React.FC<SidebarProps> = ({
               Wipe Local Device Cache (Messages)
             </label>
             {backupOnLogout && (
-              <input
-                type="password"
-                placeholder="Vault Password (Optional)"
-                value={vaultPassword}
-                onChange={(e) => setVaultPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100 mb-6 placeholder-slate-500"
-              />
+              <>
+                <input
+                  type="password"
+                  placeholder={`Vault Password (min ${MIN_VAULT_PASSWORD_LENGTH} characters)`}
+                  value={vaultPassword}
+                  onChange={(e) => setVaultPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100 mb-3 placeholder-slate-500"
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm Vault Password"
+                  value={vaultConfirm}
+                  onChange={(e) => setVaultConfirm(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100 mb-2 placeholder-slate-500"
+                />
+                <p className="text-xs text-red-400 min-h-4 mb-4">
+                  {showVaultError ? vaultError : ""}
+                </p>
+              </>
             )}
             <div className="flex justify-end gap-3 mt-2">
               <button
                 onClick={() => {
                   setShowLogoutModal(false);
-                  setVaultPassword("");
+                  resetVaultFields();
                 }}
                 className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200"
               >
@@ -256,15 +295,17 @@ const Sidebar: React.FC<SidebarProps> = ({
               </button>
               <button
                 onClick={() => {
+                  if (backupOnLogout && vaultError) return;
                   onLogout(
                     backupOnLogout,
                     backupOnLogout ? vaultPassword : "",
                     clearCacheOnLogout,
                   );
                   setShowLogoutModal(false);
-                  setVaultPassword("");
+                  resetVaultFields();
                 }}
-                className="px-4 py-2 text-sm font-bold bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors shadow-md flex items-center gap-2"
+                disabled={backupOnLogout && !!vaultError}
+                className="px-4 py-2 text-sm font-bold bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors shadow-md flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg
                   className="w-4 h-4"

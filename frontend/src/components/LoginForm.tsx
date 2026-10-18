@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { db } from "../services/db";
+import { deleteSessionKeyDatabase } from "../services/sessionCache";
+import { deleteAllSessionDatabases } from "../services/protocol";
 
 interface LoginFormProps {
   onLogin: (
@@ -34,7 +36,7 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
         <div className="bg-linear-to-r from-indigo-600 to-indigo-800 px-8 py-10 text-center text-white">
           <h1 className="text-3xl font-extrabold tracking-tight mb-2">Krypt</h1>
           <p className="text-indigo-200 text-sm font-medium">
-            Zero-Knowledge Authentication
+            SRP-6a Password Login (Augmented PAKE)
           </p>
         </div>
 
@@ -90,7 +92,7 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Vault Password{" "}
                   <span className="text-slate-500 text-xs font-normal">
-                    (if encrypted)
+                    (required with a vault file)
                   </span>
                 </label>
                 <input
@@ -98,8 +100,9 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
                   value={vaultPassword}
                   onChange={(e) => setVaultPassword(e.target.value)}
                   disabled={isLoading}
+                  required={!!vaultFile}
                   className="w-full px-4 py-3 bg-slate-950/50 border border-slate-700 text-slate-100 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all outline-none disabled:opacity-50 placeholder-slate-500"
-                  placeholder="Leave blank if not encrypted"
+                  placeholder="Password used to encrypt the vault"
                 />
               </div>
             </div>
@@ -159,7 +162,18 @@ export default function LoginForm({ onLogin, isLoading }: LoginFormProps) {
               sessionStorage.clear();
               try {
                 await db.delete();
-              } catch {}
+              } catch {
+                // Database may already be gone.
+              }
+              try {
+                // Also drop the non-extractable session key store.
+                await deleteSessionKeyDatabase();
+              } catch {
+                // Database may already be gone.
+              }
+              // Krypt v1 ratchet sessions go too; prekey private halves stay so
+              // prekeys already published on the server remain usable.
+              await deleteAllSessionDatabases();
               window.location.reload();
             }}
             disabled={isLoading}

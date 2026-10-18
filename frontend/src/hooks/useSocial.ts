@@ -1,16 +1,24 @@
 import { useState, useEffect, useCallback } from "react";
 import { socket } from "../services/socket";
+import { apiFetch, apiPostJson } from "../services/api";
 import toast from "react-hot-toast";
+
+/** One row of GET /api/users/search. */
+export interface SearchResult {
+  username: string;
+  identityKeyPub?: string | null;
+}
 
 export function useSocial(
   user: string,
   activeChat: string | null,
   setActiveChat: (name: string | null) => void,
+  signedIn: boolean,
 ) {
   const [pendingRequests, setPendingRequests] = useState<string[]>([]);
   const [sentRequests, setSentRequests] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [friendsList, setFriendsList] = useState<string[]>([]);
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
   const [showBlockPanel, setShowBlockPanel] = useState(false);
@@ -23,21 +31,24 @@ export function useSocial(
     }
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/users/search?q=${searchQuery}&current_user=${user}`,
+        const res = await apiFetch(
+          `/api/users/search?q=${encodeURIComponent(searchQuery)}&current_user=${encodeURIComponent(user)}`,
         );
         if (!res.ok) return setSearchResults([]);
         const data = await res.json();
         setSearchResults(Array.isArray(data) ? data : []);
-      } catch (err) {
+      } catch {
         setSearchResults([]);
       }
     }, 300);
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, user]);
 
+  // Loaded once the session is live. Keyed on `signedIn` too: a returning
+  // login in a new tab starts with `user` already set (from localStorage) but
+  // no token, and `user` does not change when the login completes.
   useEffect(() => {
-    if (!user) return;
+    if (!user || !signedIn) return;
     const endpoints = [
       {
         url: `request/pending/${user}`,
@@ -49,26 +60,25 @@ export function useSocial(
       { url: `blocked/${user}`, setter: setBlockedUsers, key: "blocked" },
     ];
     endpoints.forEach(({ url, setter, key }) => {
-      fetch(`${import.meta.env.VITE_API_URL}/api/${url}`)
+      apiFetch(`/api/${url}`)
         .then((res) => res.json())
         .then((data) => {
           if (data && data[key]) setter(data[key]);
+        })
+        .catch(() => {
+          // 401 is handled globally by apiFetch (logout); other failures leave lists empty.
         });
     });
-  }, [user]);
+  }, [user, signedIn]);
 
   const sendRequest = useCallback(
     async (targetUser: string) => {
       if (targetUser === user) return toast.error("You cannot add yourself!");
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/request/send`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender: user, receiver: targetUser }),
-          },
-        );
+        const res = await apiPostJson("/api/request/send", {
+          sender: user,
+          receiver: targetUser,
+        });
         const data = await res.json();
         if (!res.ok)
           return toast.error(data.error || "Failed to send request.");
@@ -80,7 +90,7 @@ export function useSocial(
         setSearchResults([]);
         setSearchQuery("");
         toast.success(`Request sent to ${targetUser}`);
-      } catch (err) {
+      } catch {
         toast.error("Failed to send request.");
       }
     },
@@ -90,14 +100,10 @@ export function useSocial(
   const acceptRequest = useCallback(
     async (requester: string) => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/request/accept`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender: requester, receiver: user }),
-          },
-        );
+        const res = await apiPostJson("/api/request/accept", {
+          sender: requester,
+          receiver: user,
+        });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || "Failed to accept request.");
@@ -109,8 +115,8 @@ export function useSocial(
         setPendingRequests((prev) => prev.filter((r) => r !== requester));
         setFriendsList((prev) => [...prev, requester]);
         toast.success(`You are now friends with ${requester}!`);
-      } catch (err: any) {
-        toast.error(err.message || "Failed to accept request.");
+      } catch (err) {
+        toast.error((err instanceof Error && err.message) || "Failed to accept request.");
       }
     },
     [user],
@@ -119,14 +125,10 @@ export function useSocial(
   const rejectRequest = useCallback(
     async (requester: string) => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/request/reject`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender: requester, receiver: user }),
-          },
-        );
+        const res = await apiPostJson("/api/request/reject", {
+          sender: requester,
+          receiver: user,
+        });
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || "Failed to reject request.");
@@ -137,8 +139,8 @@ export function useSocial(
         });
         setPendingRequests((prev) => prev.filter((r) => r !== requester));
         toast.success(`Request from ${requester} rejected.`);
-      } catch (err: any) {
-        toast.error(err.message || "Failed to reject request.");
+      } catch (err) {
+        toast.error((err instanceof Error && err.message) || "Failed to reject request.");
       }
     },
     [user],
@@ -147,14 +149,10 @@ export function useSocial(
   const revokeRequest = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/request/revoke`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender: user, receiver: targetUser }),
-          },
-        );
+        const res = await apiPostJson("/api/request/revoke", {
+          sender: user,
+          receiver: targetUser,
+        });
         const data = await res.json();
         if (!res.ok)
           return toast.error(data.error || "Failed to revoke request.");
@@ -165,7 +163,7 @@ export function useSocial(
         });
         setSentRequests((prev) => prev.filter((u) => u !== targetUser));
         toast.success(`Request to ${targetUser} revoked.`);
-      } catch (err) {
+      } catch {
         toast.error("Failed to revoke request.");
       }
     },
@@ -175,10 +173,9 @@ export function useSocial(
   const blockUser = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/block`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blocker: user, blocked: targetUser }),
+        const res = await apiPostJson("/api/block", {
+          blocker: user,
+          blocked: targetUser,
         });
         const data = await res.json();
         if (!res.ok) return toast.error(data.error);
@@ -189,7 +186,7 @@ export function useSocial(
         setSentRequests((prev) => prev.filter((u) => u !== targetUser));
         if (activeChat === targetUser) setActiveChat(null);
         toast.success(`${targetUser} blocked.`);
-      } catch (err) {
+      } catch {
         toast.error("Failed to block user.");
       }
     },
@@ -199,10 +196,9 @@ export function useSocial(
   const unblockUser = useCallback(
     async (targetUser: string) => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/unblock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blocker: user, blocked: targetUser }),
+        const res = await apiPostJson("/api/unblock", {
+          blocker: user,
+          blocked: targetUser,
         });
         if (!res.ok) {
           const data = await res.json();
@@ -210,8 +206,8 @@ export function useSocial(
         }
         setBlockedUsers((prev) => prev.filter((u) => u !== targetUser));
         toast.success(`${targetUser} unblocked.`);
-      } catch (err: any) {
-        toast.error(err.message || "Failed to unblock user.");
+      } catch (err) {
+        toast.error((err instanceof Error && err.message) || "Failed to unblock user.");
       }
     },
     [user],

@@ -1,0 +1,66 @@
+name: ci-frontend
+
+on:
+  push:
+    paths:
+      - "frontend/**"
+      - "shared/**"
+      - ".github/workflows/ci-frontend.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "shared/**"
+      - ".github/workflows/ci-frontend.yml"
+
+jobs:
+  build-lint-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            shared/package-lock.json
+
+      # The frontend compiles ../shared/src directly (the @krypt/shared alias),
+      # so shared needs its own node_modules too.
+      - name: npm ci (shared)
+        run: npm ci
+        working-directory: shared
+      - name: npm ci (frontend)
+        run: npm ci
+
+      - run: npm run build
+      - run: npm run lint
+      - run: npm run typecheck:test
+      - run: npm test
+
+      # Known-answer tests. The trimmed vectors are committed; the two large
+      # files (Wycheproof mlkem_1024 and mldsa_87_verify) are gitignored. They
+      # are restored from the cache, or fetched on a cache miss. If the fetch
+      # fails, their suites are skipped (describe.skipIf) and the rest still runs.
+      - name: Restore large KAT vectors
+        id: kat-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/test/vectors/wycheproof-mlkem-1024.json
+            frontend/test/vectors/wycheproof-mldsa87-verify.json
+          key: kat-vectors-v1-${{ hashFiles('frontend/scripts/fetch-vectors.sh', 'frontend/scripts/filter-vectors.mjs') }}
+      - name: Fetch large KAT vectors (cache miss only)
+        if: steps.kat-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        # Filter into a scratch directory and copy only the large files, so the
+        # committed vectors are what the tests check, not today's upstream.
+        run: |
+          bash scripts/fetch-vectors.sh "$RUNNER_TEMP/kat-raw"
+          node scripts/filter-vectors.mjs "$RUNNER_TEMP/kat-raw" "$RUNNER_TEMP/kat-out"
+          cp "$RUNNER_TEMP/kat-out/wycheproof-mlkem-1024.json" "$RUNNER_TEMP/kat-out/wycheproof-mldsa87-verify.json" test/vectors/
+      - run: npm run test:kat
