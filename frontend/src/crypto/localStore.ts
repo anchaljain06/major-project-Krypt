@@ -1,5 +1,5 @@
 import type { UserIdentityKeys } from "./mlkem";
-import { fromBase64, sha256, toBase64 } from "@krypt/shared";
+import { fromBase64, toBase64 } from "@krypt/shared";
 
 /**
  * Project Krypt - Local Device Storage Cryptographic Engine
@@ -9,8 +9,8 @@ import { fromBase64, sha256, toBase64 } from "@krypt/shared";
  * - NIST SP 800-38D: AES-256-GCM Authenticated Encryption for local IndexedDB cache
  *
  * Encrypts messages and contacts before persisting to IndexedDB on the client device.
- * Derives local storage keys from the user's ML-KEM-1024 secret key with fallback
- * to legacy SHA-256 derivation for existing messages.
+ * Derives the local storage key from the user's ML-KEM-1024 secret key (HKDF).
+ * Entries written under the older SHA-256-derived key fail closed.
  */
 
 let cachedLocalKey: CryptoKey | null = null;
@@ -48,20 +48,6 @@ export async function getLocalKey(privateKey: UserIdentityKeys): Promise<CryptoK
   lastSourceKey = privateKey;
 
   return cachedLocalKey;
-}
-
-/**
- * Legacy key derivation helper for pre-upgrade IndexedDB entries.
- */
-async function getLegacyLocalKey(privateKey: UserIdentityKeys): Promise<CryptoKey> {
-  const hash = await sha256(privateKey.kemSecretKey);
-  return await window.crypto.subtle.importKey(
-    "raw",
-    hash as unknown as BufferSource,
-    { name: "AES-GCM" },
-    false,
-    ["decrypt"],
-  );
 }
 
 export async function encryptLocal(
@@ -122,7 +108,6 @@ export async function decryptLocal(
   const iv = combined.subarray(0, 12);
   const ciphertext = combined.subarray(12);
 
-  // 1. Attempt decryption with modern HKDF-derived key
   try {
     const key = await getLocalKey(privateKey);
     const decrypted = await window.crypto.subtle.decrypt(
@@ -132,19 +117,6 @@ export async function decryptLocal(
     );
     return new TextDecoder().decode(decrypted);
   } catch {
-    // 2. Fallback: attempt decryption with legacy SHA-256 derived key
-    try {
-      const legacyKey = await getLegacyLocalKey(privateKey);
-      const decrypted = await window.crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: iv as unknown as BufferSource },
-        legacyKey,
-        ciphertext as unknown as BufferSource,
-      );
-      return new TextDecoder().decode(decrypted);
-    } catch {
-      throw new LocalStoreDecryptError(
-        "Failed to decrypt local entry with current or legacy key.",
-      );
-    }
+    throw new LocalStoreDecryptError("Failed to decrypt local entry.");
   }
 }
