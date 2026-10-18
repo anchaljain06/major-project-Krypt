@@ -20,6 +20,7 @@ against Neon.** `migrate dev` and `reset` can drop and recreate the database.
 | 5 | `20261017000300_prekeys` | New tables `SignedPrekey` and `OneTimePrekey`. | No |
 | 6 | `20261017000400_key_transparency` | New tables `KtLeaf`, `KtNode`, `KtSth` for the key transparency log. | No |
 | 7 | `20261017000500_mailbox_bytes` | Adds `OfflineMessage.bytes` (payload size, for the 50 MB per-recipient quota) and backfills it. | **Yes: one UPDATE over waiting offline messages** (sets only the new column) |
+| 8 | `20261018000000_drop_offline_to_index` | Drops `OfflineMessage_to_idx`; the `(to, createdAt)` index from migration 4 covers the same lookups. | No |
 
 ### How migration 3 keeps your data
 
@@ -78,7 +79,7 @@ npx prisma migrate resolve --applied 20260420135802_init
 
 This writes one row to `_prisma_migrations`. It runs no SQL against your tables.
 
-Run `npx prisma migrate status` again. It should list migrations 2 to 7 as
+Run `npx prisma migrate status` again. It should list migrations 2 to 8 as
 pending, and nothing else.
 
 ### 4. Apply
@@ -87,7 +88,7 @@ pending, and nothing else.
 npx prisma migrate deploy
 ```
 
-Expected output: migrations 2 to 7 listed as applied.
+Expected output: migrations 2 to 8 listed as applied.
 
 ### 5. Verify
 
@@ -166,7 +167,7 @@ committed. After you change `shared/`, run `npm run vendor:shared`.
 
 **Easiest:** Neon's point-in-time restore. Before step 4, note the time or
 create a branch named `pre-migration`. To roll back, restore `main` to that
-point, or promote the branch. This also covers migrations 4 to 7.
+point, or promote the branch. This also covers migrations 4 to 8.
 
 **Manual, for migration 3 only.** This was tested locally: it restored every
 row, and the forward migration re-applied cleanly afterwards. Run it in the

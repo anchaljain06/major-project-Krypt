@@ -77,7 +77,6 @@ model OfflineMessage {
   bytes     Int      @default(0)
   createdAt DateTime @default(now())
 
-  @@index([to])
   @@index([to, createdAt])
   @@index([createdAt])
 }
