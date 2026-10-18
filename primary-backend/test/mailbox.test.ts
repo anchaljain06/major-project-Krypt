@@ -56,11 +56,10 @@ function fakeStore() {
         if (i >= 0) rows.splice(i, 1);
       }
     },
-    async purgeExpired(cutoff, to) {
+    async purgeExpired(cutoff) {
       const before = rows.length;
       for (let i = rows.length - 1; i >= 0; i--) {
-        const r = rows[i]!;
-        if (r.createdAt < cutoff.getTime() && (!to || r.to === to)) rows.splice(i, 1);
+        if (rows[i]!.createdAt < cutoff.getTime()) rows.splice(i, 1);
       }
       return before - rows.length;
     },
@@ -117,7 +116,7 @@ describe("mailbox flush", () => {
     expect(store.rows).toHaveLength(0);
   });
 
-  it("purges and never delivers expired messages", async () => {
+  it("never delivers expired messages; the periodic purge removes them", async () => {
     const { store, now } = fakeStore();
     await enqueue(store, { to: "bob", from: "alice", payload: "old" });
     store.tick(MAILBOX_TTL_MS + 1);
@@ -125,6 +124,8 @@ describe("mailbox flush", () => {
     const got: unknown[] = [];
     await flush(store, "bob", (p) => (got.push(p), true), now());
     expect(got).toEqual(["new"]);
+    expect(store.rows).toHaveLength(1);
+    expect(await store.purgeExpired(new Date(now() - MAILBOX_TTL_MS))).toBe(1);
     expect(store.rows).toHaveLength(0);
   });
 });

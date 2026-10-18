@@ -4,7 +4,8 @@ import type { PrismaClient } from "@prisma/client";
 // Rules (plan 0.7):
 // - flush in createdAt order BEFORE the user is marked online
 // - delete exactly the rows that were delivered, never "everything for user X"
-// - rows expire after 7 days (purged on flush, at startup and hourly)
+// - rows expire after 7 days: reads skip them at once, and the purge at
+//   startup and every hour deletes them
 // - at most 500 waiting rows AND 50 MB of payload per recipient (a single
 //   socket frame may be 16 MB, so the row cap alone allowed ~8 GB)
 
@@ -26,7 +27,7 @@ export interface MailboxStore {
   /** Oldest first (createdAt, then id), only rows newer than notBefore. */
   fetch(to: string, notBefore: Date, limit: number): Promise<QueuedMessage[]>;
   deleteIds(ids: string[]): Promise<void>;
-  purgeExpired(cutoff: Date, to?: string): Promise<number>;
+  purgeExpired(cutoff: Date): Promise<number>;
 }
 
 export type EnqueueResult = "queued" | "mailbox_full";
@@ -63,8 +64,6 @@ export async function flush(
   now = Date.now(),
 ): Promise<number> {
   const cutoff = new Date(now - MAILBOX_TTL_MS);
-  await store.purgeExpired(cutoff, to);
-
   let total = 0;
   for (;;) {
     const batch = await store.fetch(to, cutoff, FLUSH_BATCH);
@@ -108,9 +107,9 @@ export function prismaMailboxStore(prisma: PrismaClient): MailboxStore {
     deleteIds: async (ids) => {
       await prisma.offlineMessage.deleteMany({ where: { id: { in: ids } } });
     },
-    purgeExpired: async (cutoff, to) => {
+    purgeExpired: async (cutoff) => {
       const { count } = await prisma.offlineMessage.deleteMany({
-        where: { createdAt: { lt: cutoff }, ...(to ? { to } : {}) },
+        where: { createdAt: { lt: cutoff } },
       });
       return count;
     },
