@@ -5,6 +5,7 @@ import { ALLOWED_ORIGINS, createApp } from "./app.js";
 import { prisma } from "./db.js";
 import { createEvilKt, loadEvilRelay } from "./evil.js";
 import { ktLog, setKtEvil } from "./ktRoutes.js";
+import { identityKeyOf } from "./prekeys.js";
 import { MAX_SOCKET_MESSAGE_BYTES } from "./schemas.js";
 import { purgeExpiredMailbox, registerSocketHandlers } from "./sockets.js";
 
@@ -24,10 +25,7 @@ const evil = loadEvilRelay();
 registerSocketHandlers(io, evil);
 if (evil) {
   setKtEvil(
-    createEvilKt(evil.config, ktLog(), async (username) =>
-      (await prisma.user.findUnique({ where: { username }, select: { identityKeyPub: true } }))
-        ?.identityKeyPub ?? null,
-    ),
+    createEvilKt(evil.config, ktLog(), identityKeyOf),
   );
 }
 

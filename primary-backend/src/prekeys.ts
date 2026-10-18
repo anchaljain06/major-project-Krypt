@@ -48,9 +48,13 @@ export async function claimOneTimePrekey(userId: string): Promise<PublicPrekey |
   return rows[0] ?? null;
 }
 
+export function countOneTimePrekeys(userId: string): Promise<number> {
+  return prisma.oneTimePrekey.count({ where: { userId } });
+}
+
 export async function prekeyStatus(userId: string) {
   const [oneTimeRemaining, signed] = await Promise.all([
-    prisma.oneTimePrekey.count({ where: { userId } }),
+    countOneTimePrekeys(userId),
     prisma.signedPrekey.findUnique({ where: { userId }, select: { id: true } }),
   ]);
   return { oneTimeRemaining, hasSignedPrekey: signed !== null };
@@ -58,7 +62,7 @@ export async function prekeyStatus(userId: string) {
 
 /** Tell the owner to refill if they are online and running low. */
 export async function warnIfLow(owner: { id: string; username: string }) {
-  const remaining = await prisma.oneTimePrekey.count({ where: { userId: owner.id } });
+  const remaining = await countOneTimePrekeys(owner.id);
   if (remaining < PREKEYS_LOW_WATERMARK) {
     emitToUser(owner.username, "prekeys_low", { remaining });
   }
@@ -101,6 +105,12 @@ export async function fetchBundle(
   };
 }
 
+/** A user's identity key (the identityKeyPub JSON), or null. */
+export async function identityKeyOf(username: string): Promise<string | null> {
+  const user = await prisma.user.findUnique({ where: { username }, select: { identityKeyPub: true } });
+  return user?.identityKeyPub ?? null;
+}
+
 // Hook for the evil relay's swap_key attack; identity in normal operation.
 let bundleKeySource: (username: string) => string = (username) => username;
 export function setBundleKeySource(fn: (username: string) => string) {
@@ -120,7 +130,7 @@ router.post("/prekeys", async (req, res) => {
   }
 
   if (opks.length > 0) {
-    const stored = await prisma.oneTimePrekey.count({ where: { userId } });
+    const stored = await countOneTimePrekeys(userId);
     if (stored + opks.length > MAX_STORED_OPKS) {
       return res.status(400).json({
         error: `Too many one-time prekeys stored (max ${MAX_STORED_OPKS}).`,
@@ -158,7 +168,7 @@ router.delete("/prekeys/one-time", async (req, res) => {
   await prisma.oneTimePrekey.deleteMany({
     where: body.keyIds ? { userId, keyId: { in: body.keyIds } } : { userId },
   });
-  const oneTimeRemaining = await prisma.oneTimePrekey.count({ where: { userId } });
+  const oneTimeRemaining = await countOneTimePrekeys(userId);
   res.status(200).json({ success: true, oneTimeRemaining });
 });
 

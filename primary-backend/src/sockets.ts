@@ -3,8 +3,8 @@ import { prisma } from "./db.js";
 import { socketAuth } from "./auth.js";
 import { enqueue, flush, MAILBOX_TTL_MS, prismaMailboxStore } from "./mailbox.js";
 import type { EvilRelay } from "./evil.js";
-import { PREKEYS_LOW_WATERMARK, prekeyStatus, setBundleKeySource } from "./prekeys.js";
-import { onlineUsers, setIo } from "./realtime.js";
+import { PREKEYS_LOW_WATERMARK, identityKeyOf, prekeyStatus, setBundleKeySource } from "./prekeys.js";
+import { emitToUser, onlineUsers, setIo } from "./realtime.js";
 import { firstIssue, privateMessagePayload, socketUsernameArg } from "./schemas.js";
 import { messagePolicy } from "./social.js";
 
@@ -17,14 +17,11 @@ export type RouteStatus = "delivered_online" | "queued_offline" | "mailbox_full"
 
 /** Deliver a (validated, from-stamped) payload now, or queue it for later. */
 export async function routeMessage(
-  io: Server,
   sender: Socket,
   payload: Record<string, unknown> & { to: string; from: string },
 ): Promise<RouteStatus> {
-  const targetSocketId = onlineUsers.get(payload.to);
-  if (targetSocketId) {
+  if (emitToUser(payload.to, "receive_message", payload)) {
     console.log(`[Router] Instant delivery from ${payload.from} to ${payload.to}`);
-    io.to(targetSocketId).emit("receive_message", payload);
     return "delivered_online";
   }
 
@@ -153,7 +150,7 @@ export function registerSocketHandlers(io: Server, evil: EvilRelay | null = null
       const outgoing = evil ? evil.process(payload) : [payload];
       let status: RouteStatus = onlineUsers.has(payload.to) ? "delivered_online" : "queued_offline";
       for (const [i, msg] of outgoing.entries()) {
-        const s = await routeMessage(io, socket, msg as typeof payload);
+        const s = await routeMessage(socket, msg as typeof payload);
         if (i === 0) status = s;
       }
       if (status === "delivered_online" || status === "queued_offline") {
@@ -169,12 +166,9 @@ export function registerSocketHandlers(io: Server, evil: EvilRelay | null = null
       const parsed = socketUsernameArg.safeParse(targetUsername);
       if (!parsed.success) return ack({ success: false, error: "Invalid username." });
       try {
-        const targetUser = await prisma.user.findUnique({
-          where: { username: evil ? evil.keySource(parsed.data) : parsed.data },
-          select: { identityKeyPub: true },
-        });
-        if (targetUser && targetUser.identityKeyPub) {
-          ack({ success: true, publicKey: targetUser.identityKeyPub });
+        const publicKey = await identityKeyOf(evil ? evil.keySource(parsed.data) : parsed.data);
+        if (publicKey) {
+          ack({ success: true, publicKey });
         } else {
           ack({ success: false, error: "User not registered or missing key." });
         }
