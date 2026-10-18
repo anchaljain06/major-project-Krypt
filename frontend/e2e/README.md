@@ -13,6 +13,14 @@
 | Alice refreshes | Session cache restores the identity, the store key is re-derived, ratchet state survives |
 | Final check | Every message is present, no decrypt-error toast, no `[Krypt]` warning in the console |
 
+`files.spec.ts` covers large-file transfer (spec 15) between two users:
+
+| Step | What it checks |
+|---|---|
+| 20 MB file | Offer, accept, 20 chunks of 1 MiB as binary `file:chunk` frames, both sides reach "Done", downloaded bytes match (SHA-256) |
+| Zero-byte file named `../../empty.html` | One empty authenticated chunk; the download is saved as `_.._empty.html`, never opened |
+| Cancel | Alice cancels before Bob answers; both cards show Cancelled and Bob can no longer accept |
+
 Key transparency runs in **disabled** mode here unless the frontend is started with `VITE_KT_LOG_PUBKEY`.
 
 ## Run it
