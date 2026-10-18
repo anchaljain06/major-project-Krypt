@@ -23,6 +23,8 @@
 
 Key transparency runs in **disabled** mode here unless the frontend is started with `VITE_KT_LOG_PUBKEY`.
 
+`bench-files.spec.ts` is a benchmark, not a test: Playwright skips it unless `BENCH` is set, and `evaluation/files-bench/run.mjs` runs it (see `evaluation/README.md`, "File transfer"). The attack specs are skipped the same way unless `ATTACK` is set.
+
 ## Run it
 
 Use a throwaway database. Do not use `primary-backend/.env`.
