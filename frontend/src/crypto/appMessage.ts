@@ -99,7 +99,6 @@ export function assertFrameFits(p: WirePayload) {
 
 export type IncomingFrame =
   | { kind: "v1"; from: string; envelope: unknown; attachment?: string }
-  | { kind: "v0"; from: string }
   | { kind: "malformed"; from: string };
 
 /** Classifies a relayed frame without trusting any of it. */
@@ -113,7 +112,6 @@ export function classifyIncoming(raw: unknown): IncomingFrame {
     if (o.attachment !== undefined && typeof o.attachment !== "string") return { kind: "malformed", from };
     return { kind: "v1", from, envelope: o.envelope, attachment: o.attachment as string | undefined };
   }
-  // v0 frames carried { ciphertext, type, eph?, sig? }.
-  if (typeof o.ciphertext === "string" || "eph" in o || "kemCiphertext" in o) return { kind: "v0", from };
+  // Anything else, including v0 frames ({ ciphertext, type, eph?, sig? }), is malformed.
   return { kind: "malformed", from };
 }

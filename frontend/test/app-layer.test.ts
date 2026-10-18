@@ -74,7 +74,7 @@ describe("app messages and frames", () => {
     expect(frameSize(buildWirePayload(env))).toBeLessThan(64 * 1024);
     // Relay-stamped sender must match the envelope.
     expect(classifyIncoming({ ...frame, from: "mallory" }).kind).toBe("malformed");
-    expect(classifyIncoming({ to: "bob", from: "alice", ciphertext: "GCM:abc", type: "text" }).kind).toBe("v0");
+    expect(classifyIncoming({ to: "bob", from: "alice", ciphertext: "GCM:abc", type: "text" }).kind).toBe("malformed");
     expect(classifyIncoming(null).kind).toBe("malformed");
     // The evil relay's flip_type changes only the outer `type`; the envelope is what counts.
     expect(classifyIncoming({ ...frame, type: "image" }).kind).toBe("v1");

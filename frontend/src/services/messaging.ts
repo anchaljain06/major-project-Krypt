@@ -238,10 +238,6 @@ export function enqueueIncoming(raw: unknown) {
 async function processIncoming(raw: unknown) {
   const p = await protocolReady();
   const frame = classifyIncoming(raw);
-  if (frame.kind === "v0") {
-    toast.error(`Legacy v0 message rejected (from ${frame.from}).`);
-    return;
-  }
   if (frame.kind === "malformed") {
     toast.error(`Dropped a malformed message from ${frame.from}.`);
     return;
