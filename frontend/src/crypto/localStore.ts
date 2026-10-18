@@ -1,5 +1,8 @@
 import type { UserIdentityKeys } from "./mlkem";
-import { fromBase64, toBase64 } from "@krypt/shared";
+import { concatBytes, fromBase64, toBase64 } from "@krypt/shared";
+import { EMPTY, fromUtf8, utf8 } from "./encoding";
+import { bs } from "./kdf";
+import { open, seal } from "./session-store";
 
 /**
  * Project Krypt - Local Device Storage Cryptographic Engine
@@ -16,8 +19,8 @@ import { fromBase64, toBase64 } from "@krypt/shared";
 let cachedLocalKey: CryptoKey | null = null;
 let lastSourceKey: UserIdentityKeys | null = null;
 
-const LOCAL_STORE_SALT = new TextEncoder().encode("KRYPT_LOCAL_STORE_SALT_V1");
-const LOCAL_STORE_INFO = new TextEncoder().encode("KRYPT_LOCAL_STORAGE_ENCRYPTION_KEY_V1");
+const LOCAL_STORE_SALT = utf8("KRYPT_LOCAL_STORE_SALT_V1");
+const LOCAL_STORE_INFO = utf8("KRYPT_LOCAL_STORAGE_ENCRYPTION_KEY_V1");
 
 export async function getLocalKey(privateKey: UserIdentityKeys): Promise<CryptoKey> {
   if (cachedLocalKey && lastSourceKey === privateKey) {
@@ -37,8 +40,8 @@ export async function getLocalKey(privateKey: UserIdentityKeys): Promise<CryptoK
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt: LOCAL_STORE_SALT,
-      info: LOCAL_STORE_INFO,
+      salt: bs(LOCAL_STORE_SALT),
+      info: bs(LOCAL_STORE_INFO),
     },
     ikm,
     { name: "AES-GCM", length: 256 },
@@ -54,21 +57,9 @@ export async function encryptLocal(
   plaintext: string,
   privateKey: UserIdentityKeys,
 ): Promise<string> {
-  const key = await getLocalKey(privateKey);
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
-  const encoded = new TextEncoder().encode(plaintext);
-
-  const ciphertext = await window.crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    encoded,
-  );
-
-  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(ciphertext), iv.length);
-
-  return "LOC:" + toBase64(combined);
+  // "LOC:" + base64(iv ‖ AES-GCM ciphertext), no AAD.
+  const { iv, ct } = await seal(await getLocalKey(privateKey), EMPTY, utf8(plaintext));
+  return "LOC:" + toBase64(concatBytes(iv, ct));
 }
 
 /**
@@ -105,17 +96,9 @@ export async function decryptLocal(
     throw new LocalStoreDecryptError("Local entry is corrupted (too short).");
   }
 
-  const iv = combined.subarray(0, 12);
-  const ciphertext = combined.subarray(12);
-
   try {
-    const key = await getLocalKey(privateKey);
-    const decrypted = await window.crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: iv as unknown as BufferSource },
-      key,
-      ciphertext as unknown as BufferSource,
-    );
-    return new TextDecoder().decode(decrypted);
+    const sealed = { iv: combined.subarray(0, 12), ct: combined.subarray(12) };
+    return fromUtf8(await open(await getLocalKey(privateKey), EMPTY, sealed));
   } catch {
     throw new LocalStoreDecryptError("Failed to decrypt local entry.");
   }

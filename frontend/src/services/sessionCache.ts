@@ -1,5 +1,7 @@
 import { Dexie, type Table } from "dexie";
-import { fromBase64, toBase64 } from "@krypt/shared";
+import { concatBytes, fromBase64, toBase64 } from "@krypt/shared";
+import { fromUtf8, utf8 } from "../crypto/encoding";
+import { open, seal } from "../crypto/session-store";
 
 /**
  * Refresh-survivable session cache for the private identity key bundle.
@@ -22,7 +24,7 @@ import { fromBase64, toBase64 } from "@krypt/shared";
 const ACTIVE_FLAG = "krypt_session_active";
 const CACHE_PREFIX = "sessionCache_";
 const CACHE_HEADER = "SC1:";
-const AAD = new TextEncoder().encode("krypt-session-cache-v1");
+const AAD = utf8("krypt-session-cache-v1");
 
 interface SessionKeyRecord {
   id: string; // username
@@ -52,19 +54,10 @@ export async function createSessionCache(user: string, bundle: string): Promise<
     false,
     ["encrypt", "decrypt"],
   );
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await window.crypto.subtle.encrypt(
-    { name: "AES-GCM", iv, additionalData: AAD },
-    key,
-    new TextEncoder().encode(bundle),
-  );
-
-  const combined = new Uint8Array(iv.length + ciphertext.byteLength);
-  combined.set(iv, 0);
-  combined.set(new Uint8Array(ciphertext), iv.length);
+  const { iv, ct } = await seal(key, AAD, utf8(bundle));
 
   await keyDb.keys.put({ id: user, key });
-  localStorage.setItem(cacheKey(user), CACHE_HEADER + toBase64(combined));
+  localStorage.setItem(cacheKey(user), CACHE_HEADER + toBase64(concatBytes(iv, ct)));
   sessionStorage.setItem(ACTIVE_FLAG, "1");
 }
 
@@ -87,16 +80,8 @@ export async function restoreSessionCache(user: string): Promise<string | null> 
 
   try {
     const combined = fromBase64(stored.substring(CACHE_HEADER.length));
-    const plaintext = await window.crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: combined.subarray(0, 12) as unknown as BufferSource,
-        additionalData: AAD,
-      },
-      record.key,
-      combined.subarray(12) as unknown as BufferSource,
-    );
-    return new TextDecoder().decode(plaintext);
+    const sealed = { iv: combined.subarray(0, 12), ct: combined.subarray(12) };
+    return fromUtf8(await open(record.key, AAD, sealed));
   } catch {
     await clearSessionCache(user);
     return null;

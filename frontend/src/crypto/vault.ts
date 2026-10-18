@@ -1,5 +1,8 @@
 import { db } from "../services/db";
-import { fromBase64, toBase64 } from "@krypt/shared";
+import { concatBytes, fromBase64, toBase64 } from "@krypt/shared";
+import { EMPTY, fromUtf8, utf8 } from "./encoding";
+import { bs } from "./kdf";
+import { open, seal } from "./session-store";
 
 /**
  * Project Krypt - Vault & Backup Cryptographic Engine
@@ -38,9 +41,22 @@ export function validateVaultPassword(
   return null;
 }
 
+/** PBKDF2-HMAC-SHA256 (600,000 iterations) from the password to an AES-256-GCM key. */
+async function vaultKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  const keyMaterial = await crypto.subtle.importKey("raw", bs(utf8(password)), { name: "PBKDF2" }, false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: bs(salt), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
 /**
  * Encrypts data under a password (PBKDF2-HMAC-SHA256 -> AES-256-GCM).
  * A password is mandatory: unencrypted export is refused.
+ * Format: "ENC:v2:" + base64(salt(16) ‖ iv(12) ‖ ciphertext), no AAD.
  */
 export async function encryptVaultData(
   data: string,
@@ -49,47 +65,9 @@ export async function encryptVaultData(
   if (!password) {
     throw new Error("A password is required. Unencrypted export is not allowed.");
   }
-
-  const enc = new TextEncoder();
-  const salt = window.crypto.getRandomValues(new Uint8Array(16));
-  const iv = window.crypto.getRandomValues(new Uint8Array(12));
-
-  const keyMaterial = await window.crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveKey"],
-  );
-
-  const key = await window.crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: salt,
-      iterations: PBKDF2_ITERATIONS,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt"],
-  );
-
-  const ciphertext = await window.crypto.subtle.encrypt(
-    {
-      name: "AES-GCM",
-      iv: iv,
-    },
-    key,
-    enc.encode(data),
-  );
-
-  const combined = new Uint8Array(salt.length + iv.length + ciphertext.byteLength);
-  combined.set(salt, 0);
-  combined.set(iv, salt.length);
-  combined.set(new Uint8Array(ciphertext), salt.length + iv.length);
-
-  return VAULT_HEADER + toBase64(combined);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const { iv, ct } = await seal(await vaultKey(password, salt), EMPTY, utf8(data));
+  return VAULT_HEADER + toBase64(concatBytes(salt, iv, ct));
 }
 
 export async function decryptVaultData(
@@ -123,35 +101,9 @@ export async function decryptVaultData(
   }
 
   const salt = combined.subarray(0, 16);
-  const iv = combined.subarray(16, 28);
-  const ciphertext = combined.subarray(28);
-
+  const sealed = { iv: combined.subarray(16, 28), ct: combined.subarray(28) };
   try {
-    const keyMaterial = await window.crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(password),
-      { name: "PBKDF2" },
-      false,
-      ["deriveKey"],
-    );
-    const key = await window.crypto.subtle.deriveKey(
-      {
-        name: "PBKDF2",
-        salt: salt as unknown as BufferSource,
-        iterations: PBKDF2_ITERATIONS,
-        hash: "SHA-256",
-      },
-      keyMaterial,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["decrypt"],
-    );
-    const plaintext = await window.crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: iv as unknown as BufferSource },
-      key,
-      ciphertext as unknown as BufferSource,
-    );
-    return new TextDecoder().decode(plaintext);
+    return fromUtf8(await open(await vaultKey(password, salt), EMPTY, sealed));
   } catch {
     throw new Error("Failed to decrypt vault file. Wrong password or corrupted file.");
   }
