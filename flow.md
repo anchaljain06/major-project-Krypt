@@ -1,6 +1,8 @@
-# 🛡️ Project Krypt: Detailed System Lifecycle
+# 🛡️ Project Krypt: Detailed System Lifecycle (v0, historical)
 
-This document provides a technical walkthrough of the **Project Krypt** lifecycle, detailing the cryptographic operations and state transitions behind its password-less server storage (SRP-6a augmented PAKE), post-quantum key establishment, and v0 symmetric hash ratchet. It describes protocol **v0**; the v1 plan is in [`Krypt_Implementation_Plan.md`](Krypt_Implementation_Plan.md).
+> **Historical.** This walkthrough describes protocol **v0** (tag `protocol-v0`), which this branch replaces. For how Krypt works now, read the v1 specification, [`docs/protocol/krypt-v1.md`](docs/protocol/krypt-v1.md). Sections 1-3 (registration, SRP-6a login, session restore, friends) still describe v1 broadly, but v1 adds prekeys, a required vault password and key transparency; sections 4-5 (handshake, ratchet, media) are v0 only.
+
+This document provides a technical walkthrough of the **Project Krypt** v0 lifecycle, detailing the cryptographic operations and state transitions behind its password-less server storage (SRP-6a augmented PAKE), post-quantum key establishment, and v0 symmetric hash ratchet.
 
 ---
 

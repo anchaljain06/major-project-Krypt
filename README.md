@@ -118,39 +118,66 @@ The application is organized into a frontend React application and a backend Nod
 ### Frontend (`frontend/src/`)
 ```plaintext
 src/
-├── components/         # UI Elements
-│   ├── LoginForm.tsx   # SRP-6a login UI & Vault Uploads
-│   ├── Sidebar.tsx     # Social Wall, Friend Requests, Search
-│   ├── ChatWindow.tsx  # Main message rendering
-│   ├── ImagePreview.tsx# Image lightbox and zoom preview
-│   └── VaultBackupModal.tsx # Forced encrypted vault download after registration
-├── hooks/              # Custom React Logic
-│   ├── useAuth.ts      # SRP-6a login (incl. server proof check), token & session restore
-│   ├── useSocketListeners.ts # WebSocket listeners
-│   ├── useChat.ts      # Message handling & E2EE flow
-│   ├── useSocial.ts    # Friend management & social state
-│   └── useRatchet.ts   # Symmetric hash ratchet (v0) management
-├── crypto/             # The Cryptographic Engines
-│   ├── aes_wasm.ts     # AES-256-GCM via Web Crypto (name kept for history; no WASM)
-│   ├── mlkem.ts        # ML-KEM-1024 Post-Quantum Key Encapsulation & ML-DSA-87 Authentication
-│   ├── ratchet.ts      # Symmetric hash ratchet (v0, HKDF-SHA-256)
-│   ├── localStore.ts   # AES-GCM encryption of the local IndexedDB cache
-│   └── vault.ts        # PBKDF2 + AES-GCM vault / backup encryption
-├── services/           # External Connections
-│   ├── api.ts          # REST helper: bearer token, 401 -> logout
-│   ├── authToken.ts    # Session token (memory + sessionStorage)
-│   ├── sessionCache.ts # Refresh cache under a non-extractable IndexedDB key
-│   ├── socket.ts       # Socket.io instance, token-authenticated connect
-│   └── db.ts           # Dexie (IndexedDB) configuration
-└── App.tsx             # Main layout and provider wrapper
+├── components/               # UI
+│   ├── LoginForm.tsx         # SRP-6a login and vault upload
+│   ├── Sidebar.tsx           # Friends, requests, search
+│   ├── ChatWindow.tsx        # Message rendering and composer
+│   ├── SecurityPanel.tsx     # Safety number, session and KT status per contact
+│   ├── IdentityChangeDialog.tsx # Blocks sending until the user decides on a changed key
+│   ├── KtBadge.tsx, ktSummary.ts # Key transparency status badge
+│   ├── ImagePreview.tsx      # Image lightbox
+│   └── VaultBackupModal.tsx  # Forced encrypted vault download after registration
+├── hooks/
+│   ├── useAuth.ts            # SRP-6a login (incl. server proof), token and session restore
+│   ├── useProtocol.ts        # Starts the v1 protocol service after login
+│   ├── useChat.ts            # Message list and sending
+│   ├── useSocial.ts          # Friend management
+│   └── useSocketListeners.ts # Incoming socket events
+├── crypto/                   # Krypt v1 (spec: docs/protocol/krypt-v1.md)
+│   ├── pq.ts                 # ML-KEM-1024 and ML-DSA-87 wrappers with input checks
+│   ├── kdf.ts                # HKDF / HMAC key schedule, AES-256-GCM
+│   ├── encoding.ts           # Length-prefixed canonical encoding
+│   ├── prekeys.ts            # Signed and one-time prekeys, bundle verification
+│   ├── handshake.ts          # Krypt-X3K handshake
+│   ├── envelope.ts           # v1 envelope: header bytes, AAD, strict parsing
+│   ├── session.ts            # SessionManager: the KEM ratchet state machine
+│   ├── session-store.ts      # Encrypted IndexedDB session store
+│   ├── appMessage.ts, media.ts # App message codec, attachment encryption
+│   ├── safetyNumber.ts       # 60-digit safety numbers
+│   ├── errors.ts             # Decrypt and handshake error codes
+│   ├── mlkem.ts              # Long-term identity keys and their storage formats
+│   ├── localStore.ts         # Encryption of the local message cache
+│   └── vault.ts              # PBKDF2 + AES-GCM vault / backup encryption
+├── services/
+│   ├── protocol.ts           # Wires SessionManager, stores, prekeys and KT together
+│   ├── messaging.ts          # Encrypt, relay, decrypt, re-send outbox
+│   ├── messageState.ts       # Persisted outbox and seen message ids
+│   ├── prekeyMaintenance.ts  # Keeps prekeys topped up and withdraws stale ones
+│   ├── trust.ts, identityPrompt.ts # KT + trust-on-first-use pins, key-change prompt
+│   ├── kt.ts                 # Key transparency client and monitoring
+│   ├── api.ts, authToken.ts  # REST helper with bearer token; token storage
+│   ├── socket.ts             # Socket.io client, token-authenticated connect
+│   ├── sessionCache.ts       # Refresh cache under a non-extractable key
+│   └── db.ts                 # Dexie (IndexedDB) configuration
+└── App.tsx, main.tsx         # Layout and entry point
 ```
 
 ### Backend (`primary-backend/src/`)
 ```plaintext
 src/
-├── api.ts              # Express REST endpoints (Auth, Search, Friends, Revoke)
-├── server.ts           # Socket.io router and HTTP server setup
-└── db.ts               # Prisma client initialization
+├── server.ts                 # HTTP + Socket.io server, startup
+├── app.ts                    # Express app, middleware, error handler
+├── auth.ts                   # HMAC bearer tokens for REST and sockets
+├── api.ts, social.ts         # SRP auth, search, friends and blocks
+├── sockets.ts, realtime.ts   # Message relay and presence
+├── mailbox.ts                # Offline mailbox: TTL, row and byte quotas
+├── prekeys.ts                # Prekey upload, bundle fetch, OPK claims
+├── kt.ts, ktRoutes.ts        # Key transparency log and /kt endpoints
+├── schemas.ts, sizes.ts      # Request validation, key and signature sizes
+├── rateLimit.ts              # Rate limits
+├── evil.ts                   # EVIL_MODE malicious relay, for attack tests only
+├── db.ts                     # Prisma client
+└── vendor/krypt-shared/      # Generated copy of shared/src (KT library)
 ```
 
 ---
