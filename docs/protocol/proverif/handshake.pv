@@ -1,0 +1,344 @@
+(* ======================================================================
+   Krypt v1 -- Krypt-X3K handshake (strategy section 4.3)
+
+   Symbolic (Dolev-Yao) model. Unbounded clients, unbounded sessions,
+   unbounded signed prekeys (SPK) and one-time prekeys (OPK) per client.
+   The relay/server is the attacker: every bundle and every message goes
+   over the public channel c.
+
+   Compromise oracles (attacker chooses when):
+     CompromiseIK(c)       ML-DSA identity secret of client c
+     CompromiseSPK(c,spk)  ML-KEM-1024 SPK secret
+     CompromiseOPK(c,opk)  ML-KEM-1024 OPK secret, ONLY while it is still on
+                           the server; once Bob consumes an OPK it is deleted
+                           and can no longer be revealed (deletion is modelled
+                           by a single input that either reveals or consumes).
+   Phase 1 (after every handshake has finished): every identity key and
+   every SPK secret is leaked. OPK secrets are not, because they were deleted.
+   This is the "later compromise" of the forward-secrecy claim.
+
+   This file models the FIXED spec (decisions taken after this model's
+   first findings, see README):
+     (1) OPKs are signed with their own label "Krypt-OPK"; SPKs keep
+         "Krypt-SPK". The literal old spec ("each signed the same way") is
+         handshake_samelabel.pv.
+     (2) Bob remembers sessionId = H(T) for EVERY accepted session (SPK-only
+         and OPK) and accepts each H(T) at most once.
+
+   Replay cache and injectivity. ProVerif cannot express an atomic
+   "test-and-insert" cache: restrictions may not mention time variables
+   (so "CacheInsert(h)@i && CacheInsert(h)@j ==> i = j" is rejected), and
+   table get/insert is neither atomic nor precise in ProVerif's abstraction.
+   So the cache is NOT in the processes below. Instead this file proves
+   the two facts the cache needs (Q5b, Q5c):
+     - every H(T) Bob accepts was produced by an Alice session with the
+       same (a, b, H(T), RK0)            (non-injective agreement), and
+     - each H(T) belongs to exactly one Alice session (uniqueness).
+   A cache that accepts each H(T) at most once then makes the agreement
+   injective. Q5a proves injectivity directly for the OPK path (OPK is
+   single-use). handshake_nocache.pv shows the replay attack that the
+   cache has to stop on the SPK-only path.
+
+   Run:  proverif handshake.pv      (or `make check` in this folder)
+   ====================================================================== *)
+
+free c: channel.
+
+(* The OPK input below either reveals the OPK or consumes it, never both.
+   Without preciseActions ProVerif's abstraction forgets that one input
+   receives one message, finds a spurious "revealed AND consumed" OPK and
+   cannot prove Q4. *)
+set preciseActions = true.
+
+(* ----------------------------------------------------------------------
+   Primitives (section 4.2)
+   ---------------------------------------------------------------------- *)
+
+(* ML-KEM as a BINDING KEM: the shared secret is a function of the public
+   key and the encapsulation coins, matching ML-KEM's K = G(m || H(ek)).
+   Strategy 4.8: decap(encap_ct(pk(sk), r), sk) = encap_ss(pk(sk), r).
+   Implicit rejection is modelled as failure (the AEAD would fail anyway). *)
+type kemsk.
+type kempub.
+type coins.
+fun kempk(kemsk): kempub.
+fun kem_ct(kempub, coins): bitstring.
+fun kem_ss(kempub, coins): bitstring.
+fun kem_dec(kemsk, bitstring): bitstring
+  reduc forall sk: kemsk, r: coins;
+        kem_dec(sk, kem_ct(kempk(sk), r)) = kem_ss(kempk(sk), r).
+
+(* ML-DSA-87 signatures. The message is recoverable from a signature
+   (conservative: ML-DSA does not hide it). *)
+type sigsk.
+type sigpub.
+fun sigpk(sigsk): sigpub.
+fun sign(sigsk, bitstring): bitstring.
+fun verify(sigpub, bitstring, bitstring): bool
+  reduc forall sk: sigsk, m: bitstring; verify(sigpk(sk), m, sign(sk, m)) = true.
+fun getmess(bitstring): bitstring
+  reduc forall sk: sigsk, m: bitstring; getmess(sign(sk, m)) = m.
+
+(* H = SHA-256, a random oracle. *)
+fun H(bitstring): bitstring.
+
+(* HKDF(0^32, ss1 || ss2, "Krypt-X3K" || H(T), 64) -> RK0 || CK0.
+   The two 32-byte halves are two independent functions of the same input. *)
+type key.
+fun x3k_rk(bitstring, bitstring): key.   (* (ikm, H(T)) -> RK0 *)
+fun x3k_ck(bitstring, bitstring): key.   (* (ikm, H(T)) -> CK0 *)
+
+(* Chain step (section 4.4): mk = HMAC(CK, 0x01), CK' = HMAC(CK, 0x02).
+   key || iv = HKDF(0, mk, "Krypt-MK", 44) is folded into mk itself. *)
+const b01, b02: bitstring.
+fun hmac(key, bitstring): key.
+
+(* AES-256-GCM as a perfect AEAD. *)
+fun aead_enc(key, bitstring, bitstring): bitstring.
+fun aead_dec(key, bitstring, bitstring): bitstring
+  reduc forall k: key, m: bitstring, ad: bitstring;
+        aead_dec(k, aead_enc(k, m, ad), ad) = m.
+
+(* Length-prefixed encodings (section 4.2): [data] = injective, invertible
+   by anyone. Different encodings can never collide. *)
+const lbl_v1: bitstring.       (* "Krypt-v1"   *)
+const lbl_spk: bitstring.      (* "Krypt-SPK"  *)
+const lbl_opk: bitstring.      (* "Krypt-OPK"  -- see SPEC NOTE 1 *)
+const lbl_init: bitstring.     (* "Krypt-init" *)
+const e0, n0: bitstring.       (* epoch 0, message number 0 *)
+const reveal: bitstring.       (* attacker's "compromise now" request *)
+
+(* Sig(IK_B, label || id || key). The id is a lookup handle; we identify a
+   prekey by the key itself, so id is omitted. *)
+fun prekey_tbs(bitstring, kempub): bitstring [data].
+(* Sig(IK_A, "Krypt-init" || H(T)) *)
+fun init_tbs(bitstring, bitstring): bitstring [data].
+(* T = "Krypt-v1" || IK_A || IK_B || SPK_B || OPK_B || ct1 || ct2 || ek_A1 *)
+fun transcript(bitstring, sigpub, sigpub, kempub, kempub, bitstring, bitstring, kempub): bitstring [data].
+(* ss1 || ss2 *)
+fun ikm(bitstring, bitstring): bitstring [data].
+(* Epoch-0 header: (sessionId, e, n, init header {ct1, ct2, ek_A1, sig_A}) *)
+fun hdr0(bitstring, bitstring, bitstring, bitstring, bitstring, kempub, bitstring): bitstring [data].
+(* AD = H(T) || header *)
+fun ad(bitstring, bitstring): bitstring [data].
+
+(* "No OPK" placeholders for the last-resort path (empty fields in T). *)
+const no_opk: kempub.
+const no_ct: bitstring.
+const no_ss: bitstring.
+
+(* ----------------------------------------------------------------------
+   PKI: the key-transparency log (C2) is trusted here, so it is a table
+   the attacker cannot write. Section 4.3 step 1 "verify IK_B against KT".
+   ---------------------------------------------------------------------- *)
+type client.
+table identity(client, sigpub).
+
+(* ----------------------------------------------------------------------
+   Events
+   ---------------------------------------------------------------------- *)
+event CompromiseIK(client).
+event CompromiseSPK(client, kempub).
+event CompromiseOPK(client, kempub).
+
+(* (initiator, responder, OPK used?, H(T), RK0) *)
+event AliceInit(client, client, bool, bitstring, key).
+event BobAccepts(client, client, bool, bitstring, key).
+(* (initiator, responder, OPK used?, SPK, OPK, epoch-0 payload) *)
+event AliceSent0(client, client, bool, kempub, kempub, bitstring).
+event BobRecv0(client, client, bool, kempub, kempub, bitstring).
+
+(* ----------------------------------------------------------------------
+   Queries -- mapping to strategy section 4.7
+   ---------------------------------------------------------------------- *)
+
+(* Q0 sanity: both Bob paths are reachable (expected: "is false",
+   i.e. the event CAN happen; otherwise the other results are vacuous). *)
+query a, b: client, s, o: kempub, m: bitstring;
+  event(BobRecv0(a, b, true, s, o, m)).
+query a, b: client, s, o: kempub, m: bitstring;
+  event(BobRecv0(a, b, false, s, o, m)).
+
+(* Q1 Confidentiality + FS + KCI, initiator side (4.7 rows 1-2).
+   Alice's epoch-0 payload is secret unless
+     - Bob's identity key was compromised BEFORE Alice ran (the attacker
+       signs its own SPK), or
+     - the SPK secret leaks at ANY time and either no OPK was used or the
+       OPK leaked before Bob consumed it.
+   Not listed, therefore proven harmless: IK_A at any time (KCI), IK_B after
+   the session (FS), SPK alone when an OPK was used (FS). Expected: true. *)
+query a, b: client, u: bool, s, o: kempub, m: bitstring, i, j: time;
+  event(AliceSent0(a, b, u, s, o, m))@i && attacker(m) ==>
+     (event(CompromiseIK(b))@j && j < i)
+  || (event(CompromiseSPK(b, s)) && (u = false || event(CompromiseOPK(b, o)))).
+
+(* Q2 Forward secrecy, as stated in the brief: an OPK handshake stays secret
+   when IK_B and SPK_B leak later (phase 1), after OPK deletion.
+   Expected: true. *)
+query a, b: client, s, o: kempub, m: bitstring, i, j: time;
+  event(AliceSent0(a, b, true, s, o, m))@i && attacker(m) ==>
+     (event(CompromiseIK(b))@j && j < i)
+  || event(CompromiseOPK(b, o)).
+
+(* Q3 The documented limitation (4.3 "Without an OPK, epoch-0 messages stay
+   exposed until SPK_B's private key is deleted"). Same query without OPK.
+   Expected: FALSE (attack: phase-1 SPK leak decapsulates ct1). *)
+query a, b: client, s, o: kempub, m: bitstring, i, j: time;
+  event(AliceSent0(a, b, false, s, o, m))@i && attacker(m) ==>
+     (event(CompromiseIK(b))@j && j < i).
+
+(* Q4 Confidentiality, responder side. Bob's received epoch-0 payload is
+   secret unless IK_A was compromised before (impersonation of Alice), or
+   it was an SPK-only handshake and the SPK leaked at any time.
+   Not listed: IK_B (KCI), SPK before the session when an OPK was used.
+   Expected: true. *)
+query a, b: client, u: bool, s, o: kempub, m: bitstring, i, j: time;
+  event(BobRecv0(a, b, u, s, o, m))@i && attacker(m) ==>
+     (event(CompromiseIK(a))@j && j < i)
+  || (event(CompromiseSPK(b, s)) && u = false).
+
+(* Q5 Authentication (4.7 row 4): agreement on (IK_A, IK_B, T, RK0)
+   (H(T) covers both identity keys and the whole transcript).
+   Exception: IK_A compromised before Bob accepted. Not listed, therefore
+   proven harmless: IK_B and SPK_B compromise at any time (KCI; the KEM
+   authenticates nobody, sig_A does).
+
+   Q5a injective, OPK path (the OPK is consumed once). Expected: true. *)
+query a, b: client, h: bitstring, k: key, i, j: time;
+  inj-event(BobAccepts(a, b, true, h, k))@i ==>
+     inj-event(AliceInit(a, b, true, h, k))
+  || (event(CompromiseIK(a))@j && j < i).
+
+(* Q5b non-injective, both paths. Expected: true. *)
+query a, b: client, u: bool, h: bitstring, k: key, i, j: time;
+  event(BobAccepts(a, b, u, h, k))@i ==>
+     event(AliceInit(a, b, u, h, k))
+  || (event(CompromiseIK(a))@j && j < i).
+
+(* Q5c H(T) identifies one Alice session: two AliceInit events with the
+   same H(T) are the same event. With Q5b this is what makes a cache keyed
+   on sessionId = H(T) sufficient for injectivity. Expected: true. *)
+query a, b, a', b': client, u, u': bool, h: bitstring, k, k': key, i, j: time;
+  event(AliceInit(a, b, u, h, k))@i && event(AliceInit(a', b', u', h, k'))@j ==> i = j.
+
+(* ----------------------------------------------------------------------
+   Processes
+   ---------------------------------------------------------------------- *)
+
+(* Alice, steps 4-7 of section 4.3 plus the first epoch-0 message. *)
+let InitFinish(a: client, ikA: sigsk, b: client, ikB_pub: sigpub, u: bool,
+               spk_ek: kempub, opk_ek: kempub,
+               ct1: bitstring, ct2: bitstring, ss1: bitstring, ss2: bitstring) =
+  let ikA_pub = sigpk(ikA) in
+  (* 4. first ratchet key pair (ML-KEM-1024) *)
+  new dkA1: kemsk;
+  let ekA1 = kempk(dkA1) in
+  (* 5. transcript *)
+  let T = transcript(lbl_v1, ikA_pub, ikB_pub, spk_ek, opk_ek, ct1, ct2, ekA1) in
+  let hT = H(T) in
+  (* 6. RK0 || CK0 = HKDF(0^32, ss1 || ss2, "Krypt-X3K" || H(T), 64) *)
+  let rk0 = x3k_rk(ikm(ss1, ss2), hT) in
+  let ck0 = x3k_ck(ikm(ss1, ss2), hT) in
+  (* 7. sig_A = Sig(IK_A, "Krypt-init" || H(T)) *)
+  let sigA = sign(ikA, init_tbs(lbl_init, hT)) in
+  event AliceInit(a, b, u, hT, rk0);
+  (* Epoch-0 message on CK0 (section 4.4 chain step), AD = H(T) || header *)
+  let mk0 = hmac(ck0, b01) in
+  new m0: bitstring;
+  event AliceSent0(a, b, u, spk_ek, opk_ek, m0);
+  let h = hdr0(hT, e0, n0, ct1, ct2, ekA1, sigA) in
+  out(c, (a, b, spk_ek, opk_ek, ct1, ct2, ekA1, sigA, aead_enc(mk0, m0, ad(hT, h)))).
+
+let Initiator(a: client, ikA: sigsk) =
+  (* the attacker picks the peer *)
+  in(c, b: client);
+  (* 1. verify IK_B against the KT log *)
+  get identity(=b, ikB_pub) in
+  (* 1. bundle from the (untrusted) relay; verify sigma_SPK *)
+  in(c, (spk_ek: kempub, spk_sig: bitstring));
+  if verify(ikB_pub, prekey_tbs(lbl_spk, spk_ek), spk_sig) then
+  (* 2. (ct1, ss1) = Encaps(SPK_B) *)
+  new r1: coins;
+  let ct1 = kem_ct(spk_ek, r1) in
+  let ss1 = kem_ss(spk_ek, r1) in
+  (* 3. the relay decides whether an OPK is returned *)
+  in(c, (u: bool, opk_ek: kempub, opk_sig: bitstring));
+  if u = true then (
+    if verify(ikB_pub, prekey_tbs(lbl_opk, opk_ek), opk_sig) then
+    new r2: coins;
+    InitFinish(a, ikA, b, ikB_pub, true, spk_ek, opk_ek,
+               ct1, kem_ct(opk_ek, r2), ss1, kem_ss(opk_ek, r2))
+  ) else (
+    InitFinish(a, ikA, b, ikB_pub, false, spk_ek, no_opk, ct1, no_ct, ss1, no_ss)
+  ).
+
+(* Bob, after decapsulation: verify sig_A, derive RK0 || CK0, decrypt msg 0. *)
+let RespFinish(b: client, ikB: sigsk, a: client, u: bool,
+               spk_ek: kempub, opk_ek: kempub,
+               ct1: bitstring, ct2: bitstring, ss1: bitstring, ss2: bitstring,
+               ekA1: kempub, sigA: bitstring, c0: bitstring) =
+  get identity(=a, ikA_pub) in
+  let T = transcript(lbl_v1, ikA_pub, sigpk(ikB), spk_ek, opk_ek, ct1, ct2, ekA1) in
+  let hT = H(T) in
+  if verify(ikA_pub, init_tbs(lbl_init, hT), sigA) then
+  let rk0 = x3k_rk(ikm(ss1, ss2), hT) in
+  let ck0 = x3k_ck(ikm(ss1, ss2), hT) in
+  let m0 = aead_dec(hmac(ck0, b01), c0, ad(hT, hdr0(hT, e0, n0, ct1, ct2, ekA1, sigA))) in
+  (* Commit only after AEAD verification (section 4.4). *)
+  event BobAccepts(a, b, u, hT, rk0);
+  event BobRecv0(a, b, u, spk_ek, opk_ek, m0).
+
+let Responder(b: client, ikB: sigsk) =
+  ! (
+    (* A signed prekey, rotated: unboundedly many per client. *)
+    new spk_dk: kemsk;
+    let spk_ek = kempk(spk_dk) in
+    out(c, (spk_ek, sign(ikB, prekey_tbs(lbl_spk, spk_ek))));
+    (
+      (* SPK compromise at an attacker-chosen time *)
+      (in(c, =reveal); event CompromiseSPK(b, spk_ek); out(c, spk_dk))
+    | (* SPK leaked after the run (forward-secrecy scenario) *)
+      (phase 1; event CompromiseSPK(b, spk_ek); out(c, spk_dk))
+    | (* Last-resort path: SPK only. Unboundedly many handshakes per SPK;
+         the sessionId cache is argued via Q5b + Q5c, see header. *)
+      ! (
+        in(c, (a: client, =b, =spk_ek, =no_opk, ct1: bitstring, =no_ct,
+               ekA1: kempub, sigA: bitstring, c0: bitstring));
+        let ss1 = kem_dec(spk_dk, ct1) in
+        RespFinish(b, ikB, a, false, spk_ek, no_opk, ct1, no_ct, ss1, no_ss, ekA1, sigA, c0)
+      )
+    | (* One-time prekeys under this SPK *)
+      ! (
+        new opk_dk: kemsk;
+        let opk_ek = kempk(opk_dk) in
+        out(c, (opk_ek, sign(ikB, prekey_tbs(lbl_opk, opk_ek))));
+        (* One input: either the OPK leaks while still on the server, or it
+           is consumed by a handshake and deleted. Never both. *)
+        in(c, x: bitstring);
+        if x = reveal then (
+          event CompromiseOPK(b, opk_ek); out(c, opk_dk)
+        ) else (
+          let (a: client, =b, =spk_ek, =opk_ek, ct1: bitstring, ct2: bitstring,
+               ekA1: kempub, sigA: bitstring, c0: bitstring) = x in
+          let ss1 = kem_dec(spk_dk, ct1) in
+          let ss2 = kem_dec(opk_dk, ct2) in
+          (* opk_dk is deleted here: nothing below uses or leaks it. *)
+          RespFinish(b, ikB, a, true, spk_ek, opk_ek, ct1, ct2, ss1, ss2, ekA1, sigA, c0)
+        )
+      )
+    )
+  ).
+
+process
+  ! (
+    new cl: client;
+    new ik: sigsk;
+    insert identity(cl, sigpk(ik));
+    out(c, (cl, sigpk(ik)));
+    (
+      (! Initiator(cl, ik))
+    | Responder(cl, ik)
+    | (in(c, =reveal); event CompromiseIK(cl); out(c, ik))
+    | (phase 1; event CompromiseIK(cl); out(c, ik))
+    )
+  )

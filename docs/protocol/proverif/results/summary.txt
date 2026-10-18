@@ -1,0 +1,75 @@
+== handshake
+RESULT not event(BobRecv0(a_3,b_2,true,s,o,m)) is false.
+RESULT not event(BobRecv0(a_3,b_2,false,s,o,m)) is false.
+RESULT event(AliceSent0(a_3,b_2,u_5,s,o,m))@i && attacker_p1(m) ==> (event(CompromiseIK(b_2))@j && i > j) || (event(CompromiseSPK(b_2,s)) && (u_5 = false || event(CompromiseOPK(b_2,o)))) is true.
+RESULT event(AliceSent0(a_3,b_2,true,s,o,m))@i && attacker_p1(m) ==> (event(CompromiseIK(b_2))@j && i > j) || event(CompromiseOPK(b_2,o)) is true.
+RESULT event(AliceSent0(a_3,b_2,false,s,o,m))@i && attacker_p1(m) ==> event(CompromiseIK(b_2))@j && i > j is false.
+RESULT event(BobRecv0(a_3,b_2,u_5,s,o,m))@i && attacker_p1(m) ==> (event(CompromiseIK(a_3))@j && i > j) || (event(CompromiseSPK(b_2,s)) && u_5 = false) is true.
+RESULT inj-event(BobAccepts(a_3,b_2,true,h_2,k))@i ==> inj-event(AliceInit(a_3,b_2,true,h_2,k)) || (event(CompromiseIK(a_3))@j && i > j) is true.
+RESULT event(BobAccepts(a_3,b_2,u_5,h_2,k))@i ==> event(AliceInit(a_3,b_2,u_5,h_2,k)) || (event(CompromiseIK(a_3))@j && i > j) is true.
+RESULT event(AliceInit(a_3,b_2,u_5,h_2,k))@i && event(AliceInit(a',b',u',h_2,k'))@j ==> i = j is true.
+# exit=0 wall_ms=1851
+== handshake_nocache
+RESULT not event(BobRecv0(a_3,b_2,true,s,o,m)) is false.
+RESULT not event(BobRecv0(a_3,b_2,false,s,o,m)) is false.
+RESULT inj-event(BobAccepts(a_3,b_2,false,h_2,k))@i ==> inj-event(AliceInit(a_3,b_2,false,h_2,k)) || (event(CompromiseIK(a_3))@j && i > j) is false.
+RESULT (query encoded as inj-event(BobAccepts(a_3,b_2,false,h_2,k))@i ==> inj-event(AliceInit(a_3,b_2,false,h_2,k)) || (event(CompromiseIK(a_3))@i_1 && i > i_1))
+RESULT (but event(BobAccepts(a_3,b_2,false,h_2,k))@i ==> event(AliceInit(a_3,b_2,false,h_2,k)) || (event(CompromiseIK(a_3))@i_1 && i > i_1) is true.)
+# exit=0 wall_ms=741
+== handshake_samelabel
+RESULT not event(BobRecv0(a_3,b_2,true,s,o,m)) is false.
+RESULT not event(BobRecv0(a_3,b_2,false,s,o,m)) is false.
+RESULT event(AliceSent0(a_3,b_2,u_5,s,o,m))@i && attacker_p1(m) ==> (event(CompromiseIK(b_2))@j && i > j) || (event(CompromiseSPK(b_2,s)) && (u_5 = false || event(CompromiseOPK(b_2,o)))) is false.
+RESULT event(AliceSent0(a_3,b_2,true,s,o,m))@i && attacker_p1(m) ==> (event(CompromiseIK(b_2))@j && i > j) || event(CompromiseOPK(b_2,o)) is false.
+RESULT event(AliceSent0(a_3,b_2,false,s,o,m))@i && attacker_p1(m) ==> event(CompromiseIK(b_2))@j && i > j is false.
+RESULT event(BobRecv0(a_3,b_2,u_5,s,o,m))@i && attacker_p1(m) ==> (event(CompromiseIK(a_3))@j && i > j) || (event(CompromiseSPK(b_2,s)) && u_5 = false) is true.
+RESULT inj-event(BobAccepts(a_3,b_2,true,h_2,k))@i ==> inj-event(AliceInit(a_3,b_2,true,h_2,k)) || (event(CompromiseIK(a_3))@j && i > j) is true.
+RESULT event(BobAccepts(a_3,b_2,u_5,h_2,k))@i ==> event(AliceInit(a_3,b_2,u_5,h_2,k)) || (event(CompromiseIK(a_3))@j && i > j) is true.
+RESULT event(AliceInit(a_3,b_2,u_5,h_2,k))@i && event(AliceInit(a',b',u',h_2,k'))@j ==> i = j is true.
+# exit=0 wall_ms=3334
+== ratchet
+RESULT not event(AliceGot5) is false.
+RESULT not attacker_p1(m0[]) is true.
+RESULT not attacker_p1(m1[]) is true.
+RESULT not attacker_p1(m2[]) is true.
+RESULT not attacker_p1(m2b[]) is false.
+RESULT not attacker_p1(m3[]) is false.
+RESULT not attacker_p1(m4[]) is true.
+RESULT not attacker_p1(m5[]) is true.
+# exit=0 wall_ms=169948
+== binding_weak
+RESULT not event(Done) is false.
+RESULT not attacker(m0[]) is true.
+RESULT not attacker(m1[]) is true.
+RESULT not attacker(m2[]) is true.
+RESULT not attacker(m3[]) is true.
+RESULT event(RecvRoot(e_18,ek,ct,k)) ==> event(SendRoot(e_18,ek,ct,k)) is true.
+RESULT event(RecvRoot(e_18,ek1,ct1_2,k)) && event(SendRoot(e',ek2,ct2_2,k)) ==> ek1 = ek2 is true.
+# exit=0 wall_ms=1701
+== binding_fixed
+RESULT not event(Done) is false.
+RESULT not attacker(m0[]) is true.
+RESULT not attacker(m1[]) is true.
+RESULT not attacker(m2[]) is true.
+RESULT not attacker(m3[]) is true.
+RESULT event(RecvRoot(e_18,ek,ct,k)) ==> event(SendRoot(e_18,ek,ct,k)) is true.
+RESULT event(RecvRoot(e_18,ek1,ct1_2,k)) && event(SendRoot(e',ek2,ct2_2,k)) ==> ek1 = ek2 is true.
+# exit=0 wall_ms=1778
+== binding_weak_unauth
+RESULT not event(Done) is false.
+RESULT not attacker(m0[]) is true.
+RESULT not attacker(m1[]) is true.
+RESULT not attacker(m2[]) is true.
+RESULT not attacker(m3[]) is true.
+RESULT event(RecvRoot(e_18,ek,ct,k)) ==> event(SendRoot(e_18,ek,ct,k)) is false.
+RESULT event(RecvRoot(e_18,ek1,ct1_2,k)) && event(SendRoot(e',ek2,ct2_2,k)) ==> ek1 = ek2 is false.
+# exit=0 wall_ms=859
+== binding_fixed_unauth
+RESULT not event(Done) is false.
+RESULT not attacker(m0[]) is true.
+RESULT not attacker(m1[]) is true.
+RESULT not attacker(m2[]) is true.
+RESULT not attacker(m3[]) is true.
+RESULT event(RecvRoot(e_18,ek,ct,k)) ==> event(SendRoot(e_18,ek,ct,k)) is true.
+RESULT event(RecvRoot(e_18,ek1,ct1_2,k)) && event(SendRoot(e',ek2,ct2_2,k)) ==> ek1 = ek2 is true.
+# exit=0 wall_ms=603

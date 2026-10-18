@@ -1,0 +1,559 @@
+# proverif binding_weak.pv (Proverif 2.05. Cryptographic protocol verifier, by Bruno Blanchet, Vincent Cheval, and Marc Sylvestre)
+Process 0 (that is, the initial process):
+{1}new ikA: sigsk;
+{2}new ikB: sigsk;
+{3}out(c, (sigpk(ikA),sigpk(ikB)));
+(
+    {4}let ikA_1: sigsk = ikA in
+    {5}let ikB_pub: sigpub = sigpk(ikB) in
+    {6}let ikA_pub: sigpub = sigpk(ikA_1) in
+    {7}in(c, (spk_ek: kempub,spk_sig: bitstring,opk_ek: kempub,opk_sig: bitstring));
+    {8}if verify(ikB_pub,prekey_tbs(lbl_spk,spk_ek),spk_sig) then
+    {9}if verify(ikB_pub,prekey_tbs(lbl_opk,opk_ek),opk_sig) then
+    {10}new ss1: bitstring;
+    {11}new ss2: bitstring;
+    {12}let ct1: bitstring = kem_enc(spk_ek,ss1) in
+    {13}let ct2: bitstring = kem_enc(opk_ek,ss2) in
+    {14}new dkA1: kemsk;
+    {15}let ekA1: kempub = kempk(dkA1) in
+    {16}let hT: bitstring = H(transcript(lbl_v1,ikA_pub,ikB_pub,spk_ek,opk_ek,ct1,ct2,ekA1)) in
+    {17}let rk0: key = x3k_rk(ikm(ss1,ss2),hT) in
+    {18}let ck0: key = x3k_ck(ikm(ss1,ss2),hT) in
+    {19}let sigA: bitstring = sign(ikA_1,init_tbs(lbl_init,hT)) in
+    {20}out(c, (spk_ek,opk_ek,ct1,ct2,ekA1,sigA,aead_enc(hmac(ck0,b01),m0,ad(hT,hdr0(hT,e0,n0,ct1,ct2,ekA1,sigA)))));
+    {21}in(c, (=e1,ctB1: bitstring,ekB1: kempub,cB1: bitstring));
+    {22}let s1: bitstring = kem_dec(dkA1,ctB1) in
+    {23}let e: bitstring = e1 in
+    {24}let rk1: key = kdf_rk(rk0,s1,ctx2(e,H(ctB1))) in
+    {25}let e_1: bitstring = e1 in
+    {26}let ckr1: key = kdf_ck(rk0,s1,ctx2(e_1,H(ctB1))) in
+    {27}let e_2: bitstring = e1 in
+    {28}let x1: bitstring = aead_dec(hmac(ckr1,b01),cB1,ad(hT,hdr(hT,e_2,n0,ctB1,ekB1))) in
+    {29}event RecvRoot(e1,ekA1,ctB1,rk1);
+    {30}new s2: bitstring;
+    {31}let ctA2: bitstring = kem_enc(ekB1,s2) in
+    {32}new dkA2: kemsk;
+    {33}let ekA2: kempub = kempk(dkA2) in
+    {34}let e_3: bitstring = e2 in
+    {35}let rk2: key = kdf_rk(rk1,s2,ctx2(e_3,H(ctA2))) in
+    {36}let e_4: bitstring = e2 in
+    {37}let cks2: key = kdf_ck(rk1,s2,ctx2(e_4,H(ctA2))) in
+    {38}event SendRoot(e2,ekB1,ctA2,rk2);
+    {39}let e_5: bitstring = e2 in
+    {40}out(c, (e2,ctA2,ekA2,aead_enc(hmac(cks2,b01),m2,ad(hT,hdr(hT,e_5,n0,ctA2,ekA2)))));
+    {41}in(c, (=e3,ctB3: bitstring,ekB3: kempub,cB3: bitstring));
+    {42}let s3: bitstring = kem_dec(dkA2,ctB3) in
+    {43}let e_6: bitstring = e3 in
+    {44}let rk3: key = kdf_rk(rk2,s3,ctx2(e_6,H(ctB3))) in
+    {45}let e_7: bitstring = e3 in
+    {46}let ckr3: key = kdf_ck(rk2,s3,ctx2(e_7,H(ctB3))) in
+    {47}let e_8: bitstring = e3 in
+    {48}let x3: bitstring = aead_dec(hmac(ckr3,b01),cB3,ad(hT,hdr(hT,e_8,n0,ctB3,ekB3))) in
+    {49}event RecvRoot(e3,ekA2,ctB3,rk3);
+    {50}event Done
+) | (
+    {51}let ikB_1: sigsk = ikB in
+    {52}let ikA_pub_1: sigpub = sigpk(ikA) in
+    {53}let ikB_pub_1: sigpub = sigpk(ikB_1) in
+    {54}new spk_dk: kemsk;
+    {55}new opk_dk: kemsk;
+    {56}let spk_ek_1: kempub = kempk(spk_dk) in
+    {57}let opk_ek_1: kempub = kempk(opk_dk) in
+    {58}out(c, (spk_ek_1,sign(ikB_1,prekey_tbs(lbl_spk,spk_ek_1)),opk_ek_1,sign(ikB_1,prekey_tbs(lbl_opk,opk_ek_1))));
+    {59}in(c, (=spk_ek_1,=opk_ek_1,ct1_1: bitstring,ct2_1: bitstring,ekA1_1: kempub,sigA_1: bitstring,c0: bitstring));
+    {60}let hT_1: bitstring = H(transcript(lbl_v1,ikA_pub_1,ikB_pub_1,spk_ek_1,opk_ek_1,ct1_1,ct2_1,ekA1_1)) in
+    {61}if verify(ikA_pub_1,init_tbs(lbl_init,hT_1),sigA_1) then
+    {62}let ss1_1: bitstring = kem_dec(spk_dk,ct1_1) in
+    {63}let ss2_1: bitstring = kem_dec(opk_dk,ct2_1) in
+    {64}let rk0_1: key = x3k_rk(ikm(ss1_1,ss2_1),hT_1) in
+    {65}let ck0_1: key = x3k_ck(ikm(ss1_1,ss2_1),hT_1) in
+    {66}let x0: bitstring = aead_dec(hmac(ck0_1,b01),c0,ad(hT_1,hdr0(hT_1,e0,n0,ct1_1,ct2_1,ekA1_1,sigA_1))) in
+    {67}new dkB1: kemsk;
+    {68}let ekB1_1: kempub = kempk(dkB1) in
+    {69}out(c, dkB1);
+    {70}new s1_1: bitstring;
+    {71}let ctB1_1: bitstring = kem_enc(ekA1_1,s1_1) in
+    {72}let e_9: bitstring = e1 in
+    {73}let rk1_1: key = kdf_rk(rk0_1,s1_1,ctx2(e_9,H(ctB1_1))) in
+    {74}let e_10: bitstring = e1 in
+    {75}let cks1: key = kdf_ck(rk0_1,s1_1,ctx2(e_10,H(ctB1_1))) in
+    {76}event SendRoot(e1,ekA1_1,ctB1_1,rk1_1);
+    {77}let e_11: bitstring = e1 in
+    {78}out(c, (e1,ctB1_1,ekB1_1,aead_enc(hmac(cks1,b01),m1,ad(hT_1,hdr(hT_1,e_11,n0,ctB1_1,ekB1_1)))));
+    {79}in(c, (=e2,ctA2_1: bitstring,ekA2_1: kempub,cA2: bitstring));
+    {80}let s2_1: bitstring = kem_dec(dkB1,ctA2_1) in
+    {81}let e_12: bitstring = e2 in
+    {82}let rk2_1: key = kdf_rk(rk1_1,s2_1,ctx2(e_12,H(ctA2_1))) in
+    {83}let e_13: bitstring = e2 in
+    {84}let ckr2: key = kdf_ck(rk1_1,s2_1,ctx2(e_13,H(ctA2_1))) in
+    {85}let e_14: bitstring = e2 in
+    {86}let x2: bitstring = aead_dec(hmac(ckr2,b01),cA2,ad(hT_1,hdr(hT_1,e_14,n0,ctA2_1,ekA2_1))) in
+    {87}event RecvRoot(e2,ekB1_1,ctA2_1,rk2_1);
+    {88}new s3_1: bitstring;
+    {89}let ctB3_1: bitstring = kem_enc(ekA2_1,s3_1) in
+    {90}new dkB3: kemsk;
+    {91}let ekB3_1: kempub = kempk(dkB3) in
+    {92}let e_15: bitstring = e3 in
+    {93}let rk3_1: key = kdf_rk(rk2_1,s3_1,ctx2(e_15,H(ctB3_1))) in
+    {94}let e_16: bitstring = e3 in
+    {95}let cks3: key = kdf_ck(rk2_1,s3_1,ctx2(e_16,H(ctB3_1))) in
+    {96}event SendRoot(e3,ekA2_1,ctB3_1,rk3_1);
+    {97}let e_17: bitstring = e3 in
+    {98}out(c, (e3,ctB3_1,ekB3_1,aead_enc(hmac(cks3,b01),m3,ad(hT_1,hdr(hT_1,e_17,n0,ctB3_1,ekB3_1)))))
+)
+
+--  Process 1 (that is, process 0, with let moved downwards):
+{1}new ikA: sigsk;
+{2}new ikB: sigsk;
+{3}out(c, (sigpk(ikA),sigpk(ikB)));
+(
+    {7}in(c, (spk_ek: kempub,spk_sig: bitstring,opk_ek: kempub,opk_sig: bitstring));
+    {5}let ikB_pub: sigpub = sigpk(ikB) in
+    {8}if verify(ikB_pub,prekey_tbs(lbl_spk,spk_ek),spk_sig) then
+    {9}if verify(ikB_pub,prekey_tbs(lbl_opk,opk_ek),opk_sig) then
+    {10}new ss1: bitstring;
+    {11}new ss2: bitstring;
+    {14}new dkA1: kemsk;
+    {15}let ekA1: kempub = kempk(dkA1) in
+    {13}let ct2: bitstring = kem_enc(opk_ek,ss2) in
+    {12}let ct1: bitstring = kem_enc(spk_ek,ss1) in
+    {4}let ikA_1: sigsk = ikA in
+    {6}let ikA_pub: sigpub = sigpk(ikA_1) in
+    {16}let hT: bitstring = H(transcript(lbl_v1,ikA_pub,ikB_pub,spk_ek,opk_ek,ct1,ct2,ekA1)) in
+    {19}let sigA: bitstring = sign(ikA_1,init_tbs(lbl_init,hT)) in
+    {18}let ck0: key = x3k_ck(ikm(ss1,ss2),hT) in
+    {20}out(c, (spk_ek,opk_ek,ct1,ct2,ekA1,sigA,aead_enc(hmac(ck0,b01),m0,ad(hT,hdr0(hT,e0,n0,ct1,ct2,ekA1,sigA)))));
+    {21}in(c, (=e1,ctB1: bitstring,ekB1: kempub,cB1: bitstring));
+    {22}let s1: bitstring = kem_dec(dkA1,ctB1) in
+    {27}let e_2: bitstring = e1 in
+    {25}let e_1: bitstring = e1 in
+    {17}let rk0: key = x3k_rk(ikm(ss1,ss2),hT) in
+    {26}let ckr1: key = kdf_ck(rk0,s1,ctx2(e_1,H(ctB1))) in
+    {28}let x1: bitstring = aead_dec(hmac(ckr1,b01),cB1,ad(hT,hdr(hT,e_2,n0,ctB1,ekB1))) in
+    {23}let e: bitstring = e1 in
+    {24}let rk1: key = kdf_rk(rk0,s1,ctx2(e,H(ctB1))) in
+    {29}event RecvRoot(e1,ekA1,ctB1,rk1);
+    {30}new s2: bitstring;
+    {32}new dkA2: kemsk;
+    {34}let e_3: bitstring = e2 in
+    {31}let ctA2: bitstring = kem_enc(ekB1,s2) in
+    {35}let rk2: key = kdf_rk(rk1,s2,ctx2(e_3,H(ctA2))) in
+    {38}event SendRoot(e2,ekB1,ctA2,rk2);
+    {39}let e_5: bitstring = e2 in
+    {36}let e_4: bitstring = e2 in
+    {37}let cks2: key = kdf_ck(rk1,s2,ctx2(e_4,H(ctA2))) in
+    {33}let ekA2: kempub = kempk(dkA2) in
+    {40}out(c, (e2,ctA2,ekA2,aead_enc(hmac(cks2,b01),m2,ad(hT,hdr(hT,e_5,n0,ctA2,ekA2)))));
+    {41}in(c, (=e3,ctB3: bitstring,ekB3: kempub,cB3: bitstring));
+    {42}let s3: bitstring = kem_dec(dkA2,ctB3) in
+    {47}let e_8: bitstring = e3 in
+    {45}let e_7: bitstring = e3 in
+    {46}let ckr3: key = kdf_ck(rk2,s3,ctx2(e_7,H(ctB3))) in
+    {48}let x3: bitstring = aead_dec(hmac(ckr3,b01),cB3,ad(hT,hdr(hT,e_8,n0,ctB3,ekB3))) in
+    {43}let e_6: bitstring = e3 in
+    {44}let rk3: key = kdf_rk(rk2,s3,ctx2(e_6,H(ctB3))) in
+    {49}event RecvRoot(e3,ekA2,ctB3,rk3);
+    {50}event Done
+) | (
+    {54}new spk_dk: kemsk;
+    {55}new opk_dk: kemsk;
+    {57}let opk_ek_1: kempub = kempk(opk_dk) in
+    {56}let spk_ek_1: kempub = kempk(spk_dk) in
+    {51}let ikB_1: sigsk = ikB in
+    {58}out(c, (spk_ek_1,sign(ikB_1,prekey_tbs(lbl_spk,spk_ek_1)),opk_ek_1,sign(ikB_1,prekey_tbs(lbl_opk,opk_ek_1))));
+    {59}in(c, (=spk_ek_1,=opk_ek_1,ct1_1: bitstring,ct2_1: bitstring,ekA1_1: kempub,sigA_1: bitstring,c0: bitstring));
+    {53}let ikB_pub_1: sigpub = sigpk(ikB_1) in
+    {52}let ikA_pub_1: sigpub = sigpk(ikA) in
+    {60}let hT_1: bitstring = H(transcript(lbl_v1,ikA_pub_1,ikB_pub_1,spk_ek_1,opk_ek_1,ct1_1,ct2_1,ekA1_1)) in
+    {61}if verify(ikA_pub_1,init_tbs(lbl_init,hT_1),sigA_1) then
+    {62}let ss1_1: bitstring = kem_dec(spk_dk,ct1_1) in
+    {63}let ss2_1: bitstring = kem_dec(opk_dk,ct2_1) in
+    {65}let ck0_1: key = x3k_ck(ikm(ss1_1,ss2_1),hT_1) in
+    {66}let x0: bitstring = aead_dec(hmac(ck0_1,b01),c0,ad(hT_1,hdr0(hT_1,e0,n0,ct1_1,ct2_1,ekA1_1,sigA_1))) in
+    {67}new dkB1: kemsk;
+    {69}out(c, dkB1);
+    {70}new s1_1: bitstring;
+    {72}let e_9: bitstring = e1 in
+    {71}let ctB1_1: bitstring = kem_enc(ekA1_1,s1_1) in
+    {64}let rk0_1: key = x3k_rk(ikm(ss1_1,ss2_1),hT_1) in
+    {73}let rk1_1: key = kdf_rk(rk0_1,s1_1,ctx2(e_9,H(ctB1_1))) in
+    {76}event SendRoot(e1,ekA1_1,ctB1_1,rk1_1);
+    {77}let e_11: bitstring = e1 in
+    {74}let e_10: bitstring = e1 in
+    {75}let cks1: key = kdf_ck(rk0_1,s1_1,ctx2(e_10,H(ctB1_1))) in
+    {68}let ekB1_1: kempub = kempk(dkB1) in
+    {78}out(c, (e1,ctB1_1,ekB1_1,aead_enc(hmac(cks1,b01),m1,ad(hT_1,hdr(hT_1,e_11,n0,ctB1_1,ekB1_1)))));
+    {79}in(c, (=e2,ctA2_1: bitstring,ekA2_1: kempub,cA2: bitstring));
+    {80}let s2_1: bitstring = kem_dec(dkB1,ctA2_1) in
+    {85}let e_14: bitstring = e2 in
+    {83}let e_13: bitstring = e2 in
+    {84}let ckr2: key = kdf_ck(rk1_1,s2_1,ctx2(e_13,H(ctA2_1))) in
+    {86}let x2: bitstring = aead_dec(hmac(ckr2,b01),cA2,ad(hT_1,hdr(hT_1,e_14,n0,ctA2_1,ekA2_1))) in
+    {81}let e_12: bitstring = e2 in
+    {82}let rk2_1: key = kdf_rk(rk1_1,s2_1,ctx2(e_12,H(ctA2_1))) in
+    {87}event RecvRoot(e2,ekB1_1,ctA2_1,rk2_1);
+    {88}new s3_1: bitstring;
+    {90}new dkB3: kemsk;
+    {92}let e_15: bitstring = e3 in
+    {89}let ctB3_1: bitstring = kem_enc(ekA2_1,s3_1) in
+    {93}let rk3_1: key = kdf_rk(rk2_1,s3_1,ctx2(e_15,H(ctB3_1))) in
+    {96}event SendRoot(e3,ekA2_1,ctB3_1,rk3_1);
+    {97}let e_17: bitstring = e3 in
+    {94}let e_16: bitstring = e3 in
+    {95}let cks3: key = kdf_ck(rk2_1,s3_1,ctx2(e_16,H(ctB3_1))) in
+    {91}let ekB3_1: kempub = kempk(dkB3) in
+    {98}out(c, (e3,ctB3_1,ekB3_1,aead_enc(hmac(cks3,b01),m3,ad(hT_1,hdr(hT_1,e_17,n0,ctB3_1,ekB3_1)))))
+)
+
+-- Query not event(Done) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 184 rules (59 with conclusion selected). Queue: 23 rules.
+400 rules inserted. Base: 245 rules (67 with conclusion selected). Queue: 5 rules.
+Starting query not event(Done)
+goal reachable: event(Done)
+
+Derivation:
+Abbreviations:
+ss1_2 = ss1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss2_2 = ss2[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+dkA1_1 = dkA1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s1_2 = s1_1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+dkB1_1 = dkB1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+dkA2_1 = dkA2[cB1 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))),ekB1 = kempk(dkB1_1),ctB1 = kem_enc(kempk(dkA1_1),s1_2),opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s2_2 = s2[cB1 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))),ekB1 = kempk(dkB1_1),ctB1 = kem_enc(kempk(dkA1_1),s1_2),opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s3_2 = s3_1[cA2 = aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1)))),ekA2_1 = kempk(dkA2_1),ctA2_1 = kem_enc(kempk(dkB1_1),s2_2),c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+dkB3_1 = dkB3[cA2 = aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1)))),ekA2_1 = kempk(dkA2_1),ctA2_1 = kem_enc(kempk(dkB1_1),s2_2),c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+
+1. The message (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))) may be sent to the attacker at output {58}.
+attacker((kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))))).
+
+2. By 1, the attacker may know (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))).
+Using the function 4-proj-4-tuple the attacker may obtain sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))).
+attacker(sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))).
+
+3. By 1, the attacker may know (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))).
+Using the function 3-proj-4-tuple the attacker may obtain kempk(opk_dk[]).
+attacker(kempk(opk_dk[])).
+
+4. By 1, the attacker may know (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))).
+Using the function 2-proj-4-tuple the attacker may obtain sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))).
+attacker(sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[])))).
+
+5. By 1, the attacker may know (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))).
+Using the function 1-proj-4-tuple the attacker may obtain kempk(spk_dk[]).
+attacker(kempk(spk_dk[])).
+
+6. By 5, the attacker may know kempk(spk_dk[]).
+By 4, the attacker may know sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))).
+By 3, the attacker may know kempk(opk_dk[]).
+By 2, the attacker may know sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))).
+Using the function 4-tuple the attacker may obtain (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))).
+attacker((kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))))).
+
+7. The message (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))) that the attacker may have by 6 may be received at input {7}.
+So the message (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))) may be sent to the attacker at output {20}.
+attacker((kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))))).
+
+8. By 7, the attacker may know (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))).
+Using the function 7-proj-7-tuple the attacker may obtain aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))).
+attacker(aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))).
+
+9. By 7, the attacker may know (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))).
+Using the function 6-proj-7-tuple the attacker may obtain sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))).
+attacker(sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))).
+
+10. By 7, the attacker may know (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))).
+Using the function 5-proj-7-tuple the attacker may obtain kempk(dkA1_1).
+attacker(kempk(dkA1_1)).
+
+11. By 7, the attacker may know (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))).
+Using the function 4-proj-7-tuple the attacker may obtain kem_enc(kempk(opk_dk[]),ss2_2).
+attacker(kem_enc(kempk(opk_dk[]),ss2_2)).
+
+12. By 7, the attacker may know (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))).
+Using the function 3-proj-7-tuple the attacker may obtain kem_enc(kempk(spk_dk[]),ss1_2).
+attacker(kem_enc(kempk(spk_dk[]),ss1_2)).
+
+13. By 5, the attacker may know kempk(spk_dk[]).
+By 3, the attacker may know kempk(opk_dk[]).
+By 12, the attacker may know kem_enc(kempk(spk_dk[]),ss1_2).
+By 11, the attacker may know kem_enc(kempk(opk_dk[]),ss2_2).
+By 10, the attacker may know kempk(dkA1_1).
+By 9, the attacker may know sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))).
+By 8, the attacker may know aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))).
+Using the function 7-tuple the attacker may obtain (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))).
+attacker((kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))))).
+
+14. The message (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))) that the attacker may have by 13 may be received at input {59}.
+So the message (e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1))))) may be sent to the attacker at output {78}.
+attacker((e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))))).
+
+15. By 14, the attacker may know (e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1))))).
+Using the function 4-proj-4-tuple the attacker may obtain aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))).
+attacker(aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1))))).
+
+16. By 14, the attacker may know (e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1))))).
+Using the function 3-proj-4-tuple the attacker may obtain kempk(dkB1_1).
+attacker(kempk(dkB1_1)).
+
+17. By 14, the attacker may know (e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1))))).
+Using the function 2-proj-4-tuple the attacker may obtain kem_enc(kempk(dkA1_1),s1_2).
+attacker(kem_enc(kempk(dkA1_1),s1_2)).
+
+18. Using the function e1 the attacker may obtain e1.
+attacker(e1).
+
+19. By 18, the attacker may know e1.
+By 17, the attacker may know kem_enc(kempk(dkA1_1),s1_2).
+By 16, the attacker may know kempk(dkB1_1).
+By 15, the attacker may know aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))).
+Using the function 4-tuple the attacker may obtain (e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1))))).
+attacker((e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))))).
+
+20. The message (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))) that the attacker may have by 6 may be received at input {7}.
+The message (e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1))))) that the attacker may have by 19 may be received at input {21}.
+So the message (e2,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1),aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1))))) may be sent to the attacker at output {40}.
+attacker((e2,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1),aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1)))))).
+
+21. By 20, the attacker may know (e2,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1),aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1))))).
+Using the function 4-proj-4-tuple the attacker may obtain aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1)))).
+attacker(aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1))))).
+
+22. By 20, the attacker may know (e2,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1),aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1))))).
+Using the function 3-proj-4-tuple the attacker may obtain kempk(dkA2_1).
+attacker(kempk(dkA2_1)).
+
+23. By 20, the attacker may know (e2,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1),aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1))))).
+Using the function 2-proj-4-tuple the attacker may obtain kem_enc(kempk(dkB1_1),s2_2).
+attacker(kem_enc(kempk(dkB1_1),s2_2)).
+
+24. Using the function e2 the attacker may obtain e2.
+attacker(e2).
+
+25. By 24, the attacker may know e2.
+By 23, the attacker may know kem_enc(kempk(dkB1_1),s2_2).
+By 22, the attacker may know kempk(dkA2_1).
+By 21, the attacker may know aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1)))).
+Using the function 4-tuple the attacker may obtain (e2,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1),aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1))))).
+attacker((e2,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1),aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1)))))).
+
+26. The message (kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))))))) that the attacker may have by 13 may be received at input {59}.
+The message (e2,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1),aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1))))) that the attacker may have by 25 may be received at input {79}.
+So the message (e3,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1),aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1))))) may be sent to the attacker at output {98}.
+attacker((e3,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1),aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1)))))).
+
+27. By 26, the attacker may know (e3,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1),aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1))))).
+Using the function 4-proj-4-tuple the attacker may obtain aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1)))).
+attacker(aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1))))).
+
+28. By 26, the attacker may know (e3,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1),aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1))))).
+Using the function 3-proj-4-tuple the attacker may obtain kempk(dkB3_1).
+attacker(kempk(dkB3_1)).
+
+29. By 26, the attacker may know (e3,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1),aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1))))).
+Using the function 2-proj-4-tuple the attacker may obtain kem_enc(kempk(dkA2_1),s3_2).
+attacker(kem_enc(kempk(dkA2_1),s3_2)).
+
+30. Using the function e3 the attacker may obtain e3.
+attacker(e3).
+
+31. By 30, the attacker may know e3.
+By 29, the attacker may know kem_enc(kempk(dkA2_1),s3_2).
+By 28, the attacker may know kempk(dkB3_1).
+By 27, the attacker may know aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1)))).
+Using the function 4-tuple the attacker may obtain (e3,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1),aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1))))).
+attacker((e3,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1),aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1)))))).
+
+32. The message (kempk(spk_dk[]),sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),kempk(opk_dk[]),sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[])))) that the attacker may have by 6 may be received at input {7}.
+The message (e1,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1),aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1))))) that the attacker may have by 19 may be received at input {21}.
+The message (e3,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1),aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))),b01),m3[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e3,n0,kem_enc(kempk(dkA2_1),s3_2),kempk(dkB3_1))))) that the attacker may have by 31 may be received at input {41}.
+So event Done may be executed at {50}.
+event(Done).
+
+33. By 32, event(Done).
+The goal is reached, represented in the following fact:
+event(Done).
+
+
+A more detailed output of the traces is available with
+  set traceDisplay = long.
+
+new ikA: sigsk creating ikA_2 at {1}
+
+new ikB: sigsk creating ikB_2 at {2}
+
+out(c, (~M,~M_1)) with ~M = sigpk(ikA_2), ~M_1 = sigpk(ikB_2) at {3}
+
+new spk_dk: kemsk creating spk_dk_1 at {54}
+
+new opk_dk: kemsk creating opk_dk_1 at {55}
+
+out(c, (~M_2,~M_3,~M_4,~M_5)) with ~M_2 = kempk(spk_dk_1), ~M_3 = sign(ikB_2,prekey_tbs(lbl_spk,kempk(spk_dk_1))), ~M_4 = kempk(opk_dk_1), ~M_5 = sign(ikB_2,prekey_tbs(lbl_opk,kempk(opk_dk_1))) at {58}
+
+in(c, (~M_2,~M_3,~M_4,~M_5)) with ~M_2 = kempk(spk_dk_1), ~M_3 = sign(ikB_2,prekey_tbs(lbl_spk,kempk(spk_dk_1))), ~M_4 = kempk(opk_dk_1), ~M_5 = sign(ikB_2,prekey_tbs(lbl_opk,kempk(opk_dk_1))) at {7}
+
+new ss1: bitstring creating ss1_3 at {10}
+
+new ss2: bitstring creating ss2_3 at {11}
+
+new dkA1: kemsk creating dkA1_2 at {14}
+
+out(c, (~M_6,~M_7,~M_8,~M_9,~M_10,~M_11,~M_12)) with ~M_6 = kempk(spk_dk_1), ~M_7 = kempk(opk_dk_1), ~M_8 = kem_enc(kempk(spk_dk_1),ss1_3), ~M_9 = kem_enc(kempk(opk_dk_1),ss2_3), ~M_10 = kempk(dkA1_2), ~M_11 = sign(ikA_2,init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))))), ~M_12 = aead_enc(hmac(x3k_ck(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),b01),m0,ad(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),hdr0(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),e0,n0,kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2),sign(ikA_2,init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))))))) at {20}
+
+in(c, (~M_2,~M_4,~M_8,~M_9,~M_10,~M_11,~M_12)) with ~M_2 = kempk(spk_dk_1), ~M_4 = kempk(opk_dk_1), ~M_8 = kem_enc(kempk(spk_dk_1),ss1_3), ~M_9 = kem_enc(kempk(opk_dk_1),ss2_3), ~M_10 = kempk(dkA1_2), ~M_11 = sign(ikA_2,init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))))), ~M_12 = aead_enc(hmac(x3k_ck(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),b01),m0,ad(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),hdr0(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),e0,n0,kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2),sign(ikA_2,init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))))))) at {59}
+
+new dkB1: kemsk creating dkB1_2 at {67}
+
+out(c, ~M_13) with ~M_13 = dkB1_2 at {69}
+
+new s1_1: bitstring creating s1_3 at {70}
+
+event SendRoot(e1,kempk(dkA1_2),kem_enc(kempk(dkA1_2),s1_3),kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3))))) at {76}
+
+out(c, (~M_14,~M_15,~M_16,~M_17)) with ~M_14 = e1, ~M_15 = kem_enc(kempk(dkA1_2),s1_3), ~M_16 = kempk(dkB1_2), ~M_17 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),b01),m1,ad(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),hdr(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),e1,n0,kem_enc(kempk(dkA1_2),s1_3),kempk(dkB1_2)))) at {78}
+
+in(c, (e1,~M_15,~M_16,~M_17)) with ~M_15 = kem_enc(kempk(dkA1_2),s1_3), ~M_16 = kempk(dkB1_2), ~M_17 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),b01),m1,ad(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),hdr(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),e1,n0,kem_enc(kempk(dkA1_2),s1_3),kempk(dkB1_2)))) at {21}
+
+event RecvRoot(e1,kempk(dkA1_2),kem_enc(kempk(dkA1_2),s1_3),kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3))))) at {29}
+
+new s2: bitstring creating s2_3 at {30}
+
+new dkA2: kemsk creating dkA2_2 at {32}
+
+event SendRoot(e2,kempk(dkB1_2),kem_enc(kempk(dkB1_2),s2_3),kdf_rk(kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),s2_3,ctx2(e2,H(kem_enc(kempk(dkB1_2),s2_3))))) at {38}
+
+out(c, (~M_18,~M_19,~M_20,~M_21)) with ~M_18 = e2, ~M_19 = kem_enc(kempk(dkB1_2),s2_3), ~M_20 = kempk(dkA2_2), ~M_21 = aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),s2_3,ctx2(e2,H(kem_enc(kempk(dkB1_2),s2_3)))),b01),m2,ad(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),hdr(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),e2,n0,kem_enc(kempk(dkB1_2),s2_3),kempk(dkA2_2)))) at {40}
+
+in(c, (e2,~M_19,~M_20,~M_21)) with ~M_19 = kem_enc(kempk(dkB1_2),s2_3), ~M_20 = kempk(dkA2_2), ~M_21 = aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),s2_3,ctx2(e2,H(kem_enc(kempk(dkB1_2),s2_3)))),b01),m2,ad(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),hdr(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),e2,n0,kem_enc(kempk(dkB1_2),s2_3),kempk(dkA2_2)))) at {79}
+
+event RecvRoot(e2,kempk(dkB1_2),kem_enc(kempk(dkB1_2),s2_3),kdf_rk(kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),s2_3,ctx2(e2,H(kem_enc(kempk(dkB1_2),s2_3))))) at {87}
+
+new s3_1: bitstring creating s3_3 at {88}
+
+new dkB3: kemsk creating dkB3_2 at {90}
+
+event SendRoot(e3,kempk(dkA2_2),kem_enc(kempk(dkA2_2),s3_3),kdf_rk(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),s2_3,ctx2(e2,H(kem_enc(kempk(dkB1_2),s2_3)))),s3_3,ctx2(e3,H(kem_enc(kempk(dkA2_2),s3_3))))) at {96}
+
+out(c, (~M_22,~M_23,~M_24,~M_25)) with ~M_22 = e3, ~M_23 = kem_enc(kempk(dkA2_2),s3_3), ~M_24 = kempk(dkB3_2), ~M_25 = aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),s2_3,ctx2(e2,H(kem_enc(kempk(dkB1_2),s2_3)))),s3_3,ctx2(e3,H(kem_enc(kempk(dkA2_2),s3_3)))),b01),m3,ad(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),hdr(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),e3,n0,kem_enc(kempk(dkA2_2),s3_3),kempk(dkB3_2)))) at {98}
+
+in(c, (e3,~M_23,~M_24,~M_25)) with ~M_23 = kem_enc(kempk(dkA2_2),s3_3), ~M_24 = kempk(dkB3_2), ~M_25 = aead_enc(hmac(kdf_ck(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),s2_3,ctx2(e2,H(kem_enc(kempk(dkB1_2),s2_3)))),s3_3,ctx2(e3,H(kem_enc(kempk(dkA2_2),s3_3)))),b01),m3,ad(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),hdr(H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2))),e3,n0,kem_enc(kempk(dkA2_2),s3_3),kempk(dkB3_2)))) at {41}
+
+event RecvRoot(e3,kempk(dkA2_2),kem_enc(kempk(dkA2_2),s3_3),kdf_rk(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_3,ss2_3),H(transcript(lbl_v1,sigpk(ikA_2),sigpk(ikB_2),kempk(spk_dk_1),kempk(opk_dk_1),kem_enc(kempk(spk_dk_1),ss1_3),kem_enc(kempk(opk_dk_1),ss2_3),kempk(dkA1_2)))),s1_3,ctx2(e1,H(kem_enc(kempk(dkA1_2),s1_3)))),s2_3,ctx2(e2,H(kem_enc(kempk(dkB1_2),s2_3)))),s3_3,ctx2(e3,H(kem_enc(kempk(dkA2_2),s3_3))))) at {49}
+
+event Done at {50} (goal)
+
+The event Done is executed at {50}.
+A trace has been found.
+RESULT not event(Done) is false.
+-- Query not attacker(m0[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 180 rules (59 with conclusion selected). Queue: 22 rules.
+400 rules inserted. Base: 243 rules (70 with conclusion selected). Queue: 1 rules.
+Starting query not attacker(m0[])
+RESULT not attacker(m0[]) is true.
+-- Query not attacker(m1[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 180 rules (59 with conclusion selected). Queue: 22 rules.
+400 rules inserted. Base: 243 rules (70 with conclusion selected). Queue: 1 rules.
+Starting query not attacker(m1[])
+RESULT not attacker(m1[]) is true.
+-- Query not attacker(m2[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 180 rules (59 with conclusion selected). Queue: 22 rules.
+400 rules inserted. Base: 243 rules (70 with conclusion selected). Queue: 1 rules.
+Starting query not attacker(m2[])
+RESULT not attacker(m2[]) is true.
+-- Query not attacker(m3[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 180 rules (59 with conclusion selected). Queue: 22 rules.
+400 rules inserted. Base: 243 rules (70 with conclusion selected). Queue: 1 rules.
+Starting query not attacker(m3[])
+RESULT not attacker(m3[]) is true.
+-- Query event(RecvRoot(e_18,ek,ct,k)) ==> event(SendRoot(e_18,ek,ct,k)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 184 rules (54 with conclusion selected). Queue: 18 rules.
+400 rules inserted. Base: 259 rules (67 with conclusion selected). Queue: 7 rules.
+Starting query event(RecvRoot(e_18,ek,ct,k)) ==> event(SendRoot(e_18,ek,ct,k))
+goal reachable: b-event(SendRoot(e1,kempk(dkA1_1),kem_enc(kempk(dkA1_1),s1_2),kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))))) -> event(RecvRoot(e1,kempk(dkA1_1),kem_enc(kempk(dkA1_1),s1_2),kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2))))))
+Abbreviations:
+dkA1_1 = dkA1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss1_2 = ss1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss2_2 = ss2[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s1_2 = s1_1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+goal reachable: b-event(SendRoot(e2,kempk(dkB1_1),kem_enc(kempk(dkB1_1),s2_2),kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))))) && b-event(SendRoot(e1,kempk(dkA1_1),kem_enc(kempk(dkA1_1),s1_2),kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))))) -> event(RecvRoot(e2,kempk(dkB1_1),kem_enc(kempk(dkB1_1),s2_2),kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2))))))
+Abbreviations:
+ss1_2 = ss1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss2_2 = ss2[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+dkA1_1 = dkA1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+dkB1_1 = dkB1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+s1_2 = s1_1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+s2_2 = s2[cB1 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))),ekB1 = kempk(dkB1_1),ctB1 = kem_enc(kempk(dkA1_1),s1_2),opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+goal reachable: b-event(SendRoot(e3,kempk(dkA2_1),kem_enc(kempk(dkA2_1),s3_2),kdf_rk(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))))) && b-event(SendRoot(e2,kempk(dkB1_1),kem_enc(kempk(dkB1_1),s2_2),kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))))) && b-event(SendRoot(e1,kempk(dkA1_1),kem_enc(kempk(dkA1_1),s1_2),kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))))) -> event(RecvRoot(e3,kempk(dkA2_1),kem_enc(kempk(dkA2_1),s3_2),kdf_rk(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2))))))
+Abbreviations:
+ss1_2 = ss1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss2_2 = ss2[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+dkA1_1 = dkA1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s1_2 = s1_1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+dkB1_1 = dkB1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+dkA2_1 = dkA2[cB1 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))),ekB1 = kempk(dkB1_1),ctB1 = kem_enc(kempk(dkA1_1),s1_2),opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s2_2 = s2[cB1 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))),ekB1 = kempk(dkB1_1),ctB1 = kem_enc(kempk(dkA1_1),s1_2),opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s3_2 = s3_1[cA2 = aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1)))),ekA2_1 = kempk(dkA2_1),ctA2_1 = kem_enc(kempk(dkB1_1),s2_2),c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+RESULT event(RecvRoot(e_18,ek,ct,k)) ==> event(SendRoot(e_18,ek,ct,k)) is true.
+-- Query event(RecvRoot(e_18,ek1,ct1_2,k)) && event(SendRoot(e',ek2,ct2_2,k)) ==> ek1 = ek2 in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 185 rules (54 with conclusion selected). Queue: 21 rules.
+400 rules inserted. Base: 268 rules (64 with conclusion selected). Queue: 16 rules.
+Starting query event(RecvRoot(e_18,ek1,ct1_2,k)) && event(SendRoot(e',ek2,ct2_2,k)) ==> ek1 = ek2
+goal reachable: event(RecvRoot(e1,kempk(dkA1_1),kem_enc(kempk(dkA1_1),s1_2),kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))))) && event(SendRoot(e1,kempk(dkA1_1),kem_enc(kempk(dkA1_1),s1_2),kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2))))))
+Abbreviations:
+dkA1_1 = dkA1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss1_2 = ss1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss2_2 = ss2[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s1_2 = s1_1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+goal reachable: event(RecvRoot(e2,kempk(dkB1_1),kem_enc(kempk(dkB1_1),s2_2),kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))))) && event(SendRoot(e2,kempk(dkB1_1),kem_enc(kempk(dkB1_1),s2_2),kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2))))))
+Abbreviations:
+ss1_2 = ss1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss2_2 = ss2[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+dkA1_1 = dkA1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+dkB1_1 = dkB1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+s1_2 = s1_1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+s2_2 = s2[cB1 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))),ekB1 = kempk(dkB1_1),ctB1 = kem_enc(kempk(dkA1_1),s1_2),opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+goal reachable: event(RecvRoot(e3,kempk(dkA2_1),kem_enc(kempk(dkA2_1),s3_2),kdf_rk(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2)))))) && event(SendRoot(e3,kempk(dkA2_1),kem_enc(kempk(dkA2_1),s3_2),kdf_rk(kdf_rk(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),s3_2,ctx2(e3,H(kem_enc(kempk(dkA2_1),s3_2))))))
+Abbreviations:
+ss1_2 = ss1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+ss2_2 = ss2[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+dkA1_1 = dkA1[opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s1_2 = s1_1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+dkB1_1 = dkB1[c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+dkA2_1 = dkA2[cB1 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))),ekB1 = kempk(dkB1_1),ctB1 = kem_enc(kempk(dkA1_1),s1_2),opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s2_2 = s2[cB1 = aead_enc(hmac(kdf_ck(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),b01),m1[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e1,n0,kem_enc(kempk(dkA1_1),s1_2),kempk(dkB1_1)))),ekB1 = kempk(dkB1_1),ctB1 = kem_enc(kempk(dkA1_1),s1_2),opk_sig = sign(ikB[],prekey_tbs(lbl_opk,kempk(opk_dk[]))),opk_ek = kempk(opk_dk[]),spk_sig = sign(ikB[],prekey_tbs(lbl_spk,kempk(spk_dk[]))),spk_ek = kempk(spk_dk[])]
+s3_2 = s3_1[cA2 = aead_enc(hmac(kdf_ck(kdf_rk(x3k_rk(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),s1_2,ctx2(e1,H(kem_enc(kempk(dkA1_1),s1_2)))),s2_2,ctx2(e2,H(kem_enc(kempk(dkB1_1),s2_2)))),b01),m2[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e2,n0,kem_enc(kempk(dkB1_1),s2_2),kempk(dkA2_1)))),ekA2_1 = kempk(dkA2_1),ctA2_1 = kem_enc(kempk(dkB1_1),s2_2),c0 = aead_enc(hmac(x3k_ck(ikm(ss1_2,ss2_2),H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))),b01),m0[],ad(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),hdr0(H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))),e0,n0,kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1),sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1)))))))),sigA_1 = sign(ikA[],init_tbs(lbl_init,H(transcript(lbl_v1,sigpk(ikA[]),sigpk(ikB[]),kempk(spk_dk[]),kempk(opk_dk[]),kem_enc(kempk(spk_dk[]),ss1_2),kem_enc(kempk(opk_dk[]),ss2_2),kempk(dkA1_1))))),ekA1_1 = kempk(dkA1_1),ct2_1 = kem_enc(kempk(opk_dk[]),ss2_2),ct1_1 = kem_enc(kempk(spk_dk[]),ss1_2)]
+RESULT event(RecvRoot(e_18,ek1,ct1_2,k)) && event(SendRoot(e',ek2,ct2_2,k)) ==> ek1 = ek2 is true.
+
+--------------------------------------------------------------
+Verification summary:
+
+Query not event(Done) is false.
+
+Query not attacker(m0[]) is true.
+
+Query not attacker(m1[]) is true.
+
+Query not attacker(m2[]) is true.
+
+Query not attacker(m3[]) is true.
+
+Query event(RecvRoot(e_18,ek,ct,k)) ==> event(SendRoot(e_18,ek,ct,k)) is true.
+
+Query event(RecvRoot(e_18,ek1,ct1_2,k)) && event(SendRoot(e',ek2,ct2_2,k)) ==> ek1 = ek2 is true.
+
+--------------------------------------------------------------
+
+# exit=0 wall_ms=1701

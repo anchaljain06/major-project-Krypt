@@ -1,0 +1,287 @@
+(* ======================================================================
+   Krypt v1 -- handshake + alternating KEM ratchet, 5 epochs unrolled
+   (strategy sections 4.3, 4.4, claims 4.7 rows 2-3)
+
+   One honest session between Alice and Bob (bounded, no replication),
+   with the ratchet unrolled message by message:
+
+     epoch 0  Alice -> Bob   m0           on CK0 (handshake chain)
+     epoch 1  Bob   -> Alice m1           Bob's send-only bootstrap, Encaps(ek_A1)
+     epoch 2  Alice -> Bob   m2           Decaps(dk_A1); Encaps(ek_B1); fresh ek_A2
+     ---------------- phase 1: Alice's FULL state leaks -------------------
+     epoch 2  Alice -> Bob   m2b          second message of the same chain
+     epoch 3  Bob   -> Alice m3           Decaps(dk_B1); Encaps(ek_A2); fresh ek_B3
+     epoch 4  Alice -> Bob   m4           Decaps(dk_A2); Encaps(ek_B3); fresh ek_A4
+     epoch 5  Bob   -> Alice m5           Decaps(dk_B3); Encaps(ek_A4); fresh ek_B5
+
+   Attacker:
+     phase 0  ACTIVE (Dolev-Yao): reads, drops, injects on channel c.
+     phase 1  receives Alice's full state right after she sent m2:
+              RK_2, CKs (after the m2 step), CKr (after the m1 step) and the
+              pending dk_A2; plus BOTH identity keys and Bob's SPK (the OPK
+              was deleted). From then on it is PASSIVE: honest messages are
+              delivered through the table `wire`, which the attacker can read
+              (every message is also output on c) but not write.
+              Section 4.7 claims PCS only against a passive attacker.
+
+   Run:  proverif ratchet.pv
+   ====================================================================== *)
+
+free c: channel.
+
+(* ---------------- Primitives (same as handshake.pv) ---------------- *)
+type kemsk.
+type kempub.
+type coins.
+fun kempk(kemsk): kempub.
+fun kem_ct(kempub, coins): bitstring.
+fun kem_ss(kempub, coins): bitstring.
+fun kem_dec(kemsk, bitstring): bitstring
+  reduc forall sk: kemsk, r: coins;
+        kem_dec(sk, kem_ct(kempk(sk), r)) = kem_ss(kempk(sk), r).
+
+type sigsk.
+type sigpub.
+fun sigpk(sigsk): sigpub.
+fun sign(sigsk, bitstring): bitstring.
+fun verify(sigpub, bitstring, bitstring): bool
+  reduc forall sk: sigsk, m: bitstring; verify(sigpk(sk), m, sign(sk, m)) = true.
+fun getmess(bitstring): bitstring
+  reduc forall sk: sigsk, m: bitstring; getmess(sign(sk, m)) = m.
+
+fun H(bitstring): bitstring.
+fun Hek(kempub): bitstring.             (* H(ek) *)
+
+type key.
+fun x3k_rk(bitstring, bitstring): key.
+fun x3k_ck(bitstring, bitstring): key.
+
+(* Root step (4.4): KDF_RK(RK, ss, ctx) = HKDF(salt = RK, ikm = ss,
+   info = "Krypt-RK" || ctx, 64) -> RK' || CK. *)
+fun kdf_rk(key, bitstring, bitstring): key.   (* -> RK' *)
+fun kdf_ck(key, bitstring, bitstring): key.   (* -> CK  *)
+(* ctx = epoch || H(ek) || H(ct) *)
+fun ctx(bitstring, bitstring, bitstring): bitstring [data].
+
+const b01, b02: bitstring.
+fun hmac(key, bitstring): key.
+
+fun aead_enc(key, bitstring, bitstring): bitstring.
+fun aead_dec(key, bitstring, bitstring): bitstring
+  reduc forall k: key, m: bitstring, ad: bitstring;
+        aead_dec(k, aead_enc(k, m, ad), ad) = m.
+
+const lbl_v1, lbl_spk, lbl_opk, lbl_init: bitstring.
+const e0, e1, e2, e3, e4, e5: bitstring.      (* epoch numbers *)
+const n0, n1: bitstring.                       (* message numbers *)
+fun prekey_tbs(bitstring, kempub): bitstring [data].
+fun init_tbs(bitstring, bitstring): bitstring [data].
+fun transcript(bitstring, sigpub, sigpub, kempub, kempub, bitstring, bitstring, kempub): bitstring [data].
+fun ikm(bitstring, bitstring): bitstring [data].
+fun hdr0(bitstring, bitstring, bitstring, bitstring, bitstring, kempub, bitstring): bitstring [data].
+(* Ratchet header (sessionId, e, n, ct, ek), authenticated as AAD (4.4).
+   pn is omitted: with one message per chain before the switch it is constant. *)
+fun hdr(bitstring, bitstring, bitstring, bitstring, kempub): bitstring [data].
+fun ad(bitstring, bitstring): bitstring [data].
+
+(* Honest-only delivery in phase 1 (passive attacker). *)
+table wire(bitstring, bitstring).
+
+(* ---------------- Secrets and events ---------------- *)
+free m0, m1, m2, m2b, m3, m4, m5: bitstring [private].
+
+event BobGot0.  event AliceGot1.  event BobGot2.
+event AliceGot3. event BobGot4.   event AliceGot5.
+
+(* ---------------- Queries ---------------- *)
+
+(* Sanity: the honest run reaches its last step (expected "is false",
+   i.e. reachable). If this were "true" every secrecy result would be vacuous. *)
+query event(AliceGot5).
+
+(* Forward secrecy (4.7 row 2). Keys of m0, m1, m2 were erased before the
+   phase-1 leak of Alice's state and of all long-term keys.
+   Expected: true, true, true. *)
+query attacker(m0).
+query attacker(m1).
+query attacker(m2).
+
+(* Post-compromise security (4.7 row 3), passive attacker, leak after m2.
+   Exposed by the claim:
+     m2b  Alice's current epoch (attacker holds her CKs)      expected FALSE
+     m3   Bob's next epoch (Bob encapsulates to stolen dk_A2) expected FALSE
+   Healed by the claim ("the first message P sends after receiving the peer's
+   next new ek"):
+     m4   Alice's first send after Bob's epoch-3 reply        expected true
+     m5   Bob's following epoch                              expected true *)
+query attacker(m2b).
+query attacker(m3).
+query attacker(m4).
+query attacker(m5).
+
+(* ---------------- Alice ---------------- *)
+let Alice(ikA: sigsk, ikB_pub: sigpub) =
+  let ikA_pub = sigpk(ikA) in
+  (* -- handshake (4.3), OPK path -- *)
+  in(c, (spk_ek: kempub, spk_sig: bitstring, opk_ek: kempub, opk_sig: bitstring));
+  if verify(ikB_pub, prekey_tbs(lbl_spk, spk_ek), spk_sig) then
+  if verify(ikB_pub, prekey_tbs(lbl_opk, opk_ek), opk_sig) then
+  new r1: coins; new r2: coins;
+  let ct1 = kem_ct(spk_ek, r1) in let ss1 = kem_ss(spk_ek, r1) in
+  let ct2 = kem_ct(opk_ek, r2) in let ss2 = kem_ss(opk_ek, r2) in
+  new dkA1: kemsk;
+  let ekA1 = kempk(dkA1) in
+  let hT = H(transcript(lbl_v1, ikA_pub, ikB_pub, spk_ek, opk_ek, ct1, ct2, ekA1)) in
+  let rk0 = x3k_rk(ikm(ss1, ss2), hT) in
+  let ck0 = x3k_ck(ikm(ss1, ss2), hT) in
+  let sigA = sign(ikA, init_tbs(lbl_init, hT)) in
+
+  (* -- epoch 0: m0 on CK0 -- *)
+  let h0 = hdr0(hT, e0, n0, ct1, ct2, ekA1, sigA) in
+  out(c, (spk_ek, opk_ek, ct1, ct2, ekA1, sigA, aead_enc(hmac(ck0, b01), m0, ad(hT, h0))));
+
+  (* -- receive epoch 1 (Bob's bootstrap) -- *)
+  in(c, (=e1, =n0, ctB1: bitstring, ekB1: kempub, cB1: bitstring));
+  let ssr1 = kem_dec(dkA1, ctB1) in
+  let ctx1 = ctx(e1, Hek(ekA1), H(ctB1)) in
+  let rk1 = kdf_rk(rk0, ssr1, ctx1) in
+  let ckr1 = kdf_ck(rk0, ssr1, ctx1) in
+  let x1 = aead_dec(hmac(ckr1, b01), cB1, ad(hT, hdr(hT, e1, n0, ctB1, ekB1))) in
+  event AliceGot1;
+  let ckr1n = hmac(ckr1, b02) in
+  (* dk_A1 erased from here on *)
+
+  (* -- send step, epoch 2 -- *)
+  new r3: coins;
+  let ctA2 = kem_ct(ekB1, r3) in let sss2 = kem_ss(ekB1, r3) in
+  new dkA2: kemsk;
+  let ekA2 = kempk(dkA2) in
+  let ctx2 = ctx(e2, Hek(ekB1), H(ctA2)) in
+  let rk2 = kdf_rk(rk1, sss2, ctx2) in
+  let cks2 = kdf_ck(rk1, sss2, ctx2) in
+  let msg2 = (e2, n0, ctA2, ekA2, aead_enc(hmac(cks2, b01), m2, ad(hT, hdr(hT, e2, n0, ctA2, ekA2)))) in
+  out(c, msg2);
+  insert wire(e2, msg2);
+  let cks2n = hmac(cks2, b02) in
+
+  phase 1;
+  (* ===== Compromise: Alice's full ratchet state ===== *)
+  out(c, (rk2, cks2n, ckr1n, dkA2));
+
+  (* -- epoch 2, second message (same ct_A2, ek_A2 repeated) -- *)
+  let msg2b = (e2, n1, ctA2, ekA2, aead_enc(hmac(cks2n, b01), m2b, ad(hT, hdr(hT, e2, n1, ctA2, ekA2)))) in
+  out(c, msg2b);
+
+  (* -- receive epoch 3 (passive delivery) -- *)
+  get wire(=e3, (=e3, =n0, ctB3: bitstring, ekB3: kempub, cB3: bitstring)) in
+  let ssr3 = kem_dec(dkA2, ctB3) in
+  let ctx3 = ctx(e3, Hek(ekA2), H(ctB3)) in
+  let rk3 = kdf_rk(rk2, ssr3, ctx3) in
+  let ckr3 = kdf_ck(rk2, ssr3, ctx3) in
+  let x3 = aead_dec(hmac(ckr3, b01), cB3, ad(hT, hdr(hT, e3, n0, ctB3, ekB3))) in
+  event AliceGot3;
+
+  (* -- send step, epoch 4: the healing step -- *)
+  new r5: coins;
+  let ctA4 = kem_ct(ekB3, r5) in let sss4 = kem_ss(ekB3, r5) in
+  new dkA4: kemsk;
+  let ekA4 = kempk(dkA4) in
+  let ctx4 = ctx(e4, Hek(ekB3), H(ctA4)) in
+  let rk4 = kdf_rk(rk3, sss4, ctx4) in
+  let cks4 = kdf_ck(rk3, sss4, ctx4) in
+  let msg4 = (e4, n0, ctA4, ekA4, aead_enc(hmac(cks4, b01), m4, ad(hT, hdr(hT, e4, n0, ctA4, ekA4)))) in
+  out(c, msg4);
+  insert wire(e4, msg4);
+
+  (* -- receive epoch 5 -- *)
+  get wire(=e5, (=e5, =n0, ctB5: bitstring, ekB5: kempub, cB5: bitstring)) in
+  let ssr5 = kem_dec(dkA4, ctB5) in
+  let ctx5 = ctx(e5, Hek(ekA4), H(ctB5)) in
+  let ckr5 = kdf_ck(rk4, ssr5, ctx5) in
+  let x5 = aead_dec(hmac(ckr5, b01), cB5, ad(hT, hdr(hT, e5, n0, ctB5, ekB5))) in
+  event AliceGot5.
+
+(* ---------------- Bob ---------------- *)
+let Bob(ikB: sigsk, ikA_pub: sigpub) =
+  let ikB_pub = sigpk(ikB) in
+  new spk_dk: kemsk; new opk_dk: kemsk;
+  let spk_ek = kempk(spk_dk) in
+  let opk_ek = kempk(opk_dk) in
+  out(c, (spk_ek, sign(ikB, prekey_tbs(lbl_spk, spk_ek)),
+          opk_ek, sign(ikB, prekey_tbs(lbl_opk, opk_ek))));
+  (
+    (* long-term secrets leak in phase 1 (OPK already deleted) *)
+    (phase 1; out(c, (ikB, spk_dk)))
+  | (
+  (* -- handshake, responder side -- *)
+  in(c, (=spk_ek, =opk_ek, ct1: bitstring, ct2: bitstring, ekA1: kempub, sigA: bitstring, c0: bitstring));
+  let hT = H(transcript(lbl_v1, ikA_pub, ikB_pub, spk_ek, opk_ek, ct1, ct2, ekA1)) in
+  if verify(ikA_pub, init_tbs(lbl_init, hT), sigA) then
+  let ss1 = kem_dec(spk_dk, ct1) in
+  let ss2 = kem_dec(opk_dk, ct2) in
+  let rk0 = x3k_rk(ikm(ss1, ss2), hT) in
+  let ck0 = x3k_ck(ikm(ss1, ss2), hT) in
+  let x0 = aead_dec(hmac(ck0, b01), c0, ad(hT, hdr0(hT, e0, n0, ct1, ct2, ekA1, sigA))) in
+  event BobGot0;
+  (* CKr = CK0, CKs = bottom; opk_dk deleted *)
+
+  (* -- send-only bootstrap, epoch 1 (4.4 "Bob's bootstrap") -- *)
+  new dkB1: kemsk;
+  let ekB1 = kempk(dkB1) in
+  new r1: coins;
+  let ctB1 = kem_ct(ekA1, r1) in let ss = kem_ss(ekA1, r1) in
+  let ctx1 = ctx(e1, Hek(ekA1), H(ctB1)) in
+  let rk1 = kdf_rk(rk0, ss, ctx1) in
+  let cks1 = kdf_ck(rk0, ss, ctx1) in
+  let msg1 = (e1, n0, ctB1, ekB1, aead_enc(hmac(cks1, b01), m1, ad(hT, hdr(hT, e1, n0, ctB1, ekB1)))) in
+  out(c, msg1);
+
+  phase 1;
+  (* -- receive epoch 2 (Alice's m2, delivered honestly) -- *)
+  get wire(=e2, (=e2, =n0, ctA2: bitstring, ekA2: kempub, cA2: bitstring)) in
+  let ssr2 = kem_dec(dkB1, ctA2) in
+  let ctx2 = ctx(e2, Hek(ekB1), H(ctA2)) in
+  let rk2 = kdf_rk(rk1, ssr2, ctx2) in
+  let ckr2 = kdf_ck(rk1, ssr2, ctx2) in
+  let x2 = aead_dec(hmac(ckr2, b01), cA2, ad(hT, hdr(hT, e2, n0, ctA2, ekA2))) in
+  event BobGot2;
+
+  (* -- send step, epoch 3: encapsulates to ek_A2, whose dk is stolen -- *)
+  new r3: coins;
+  let ctB3 = kem_ct(ekA2, r3) in let sss3 = kem_ss(ekA2, r3) in
+  new dkB3: kemsk;
+  let ekB3 = kempk(dkB3) in
+  let ctx3 = ctx(e3, Hek(ekA2), H(ctB3)) in
+  let rk3 = kdf_rk(rk2, sss3, ctx3) in
+  let cks3 = kdf_ck(rk2, sss3, ctx3) in
+  let msg3 = (e3, n0, ctB3, ekB3, aead_enc(hmac(cks3, b01), m3, ad(hT, hdr(hT, e3, n0, ctB3, ekB3)))) in
+  out(c, msg3);
+  insert wire(e3, msg3);
+
+  (* -- receive epoch 4 -- *)
+  get wire(=e4, (=e4, =n0, ctA4: bitstring, ekA4: kempub, cA4: bitstring)) in
+  let ssr4 = kem_dec(dkB3, ctA4) in
+  let ctx4 = ctx(e4, Hek(ekB3), H(ctA4)) in
+  let rk4 = kdf_rk(rk3, ssr4, ctx4) in
+  let ckr4 = kdf_ck(rk3, ssr4, ctx4) in
+  let x4 = aead_dec(hmac(ckr4, b01), cA4, ad(hT, hdr(hT, e4, n0, ctA4, ekA4))) in
+  event BobGot4;
+
+  (* -- send step, epoch 5 -- *)
+  new r5: coins;
+  let ctB5 = kem_ct(ekA4, r5) in let sss5 = kem_ss(ekA4, r5) in
+  new dkB5: kemsk;
+  let ekB5 = kempk(dkB5) in
+  let ctx5 = ctx(e5, Hek(ekA4), H(ctB5)) in
+  let cks5 = kdf_ck(rk4, sss5, ctx5) in
+  let msg5 = (e5, n0, ctB5, ekB5, aead_enc(hmac(cks5, b01), m5, ad(hT, hdr(hT, e5, n0, ctB5, ekB5)))) in
+  out(c, msg5);
+  insert wire(e5, msg5)
+  )).
+
+process
+  new ikA: sigsk; new ikB: sigsk;
+  out(c, (sigpk(ikA), sigpk(ikB)));
+  ( Alice(ikA, sigpk(ikB))
+  | Bob(ikB, sigpk(ikA))
+  | (phase 1; out(c, ikA)) )
