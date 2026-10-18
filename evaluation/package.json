@@ -1,0 +1,33 @@
+{
+  "name": "krypt-eval",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Project Krypt C3 benchmarking harness (E1-E5, E7, E10)",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "vite build --config vite.config.ts",
+    "bench": "tsx scripts/run-bench.ts",
+    "bench:quick": "tsx scripts/run-bench.ts --quick --runs 1",
+    "bench:node": "tsx scripts/run-node.ts",
+    "bytes": "tsx scripts/e5-bytes.ts",
+    "aggregate": "tsx scripts/aggregate.ts",
+    "plot": ".venv/bin/python plots/plot.py",
+    "e7": "tsx scripts/e7.ts",
+    "plot:e7": ".venv/bin/python plots/e7_plot.py",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/post-quantum": "^0.7.1",
+    "@oqs/liboqs-js": "^0.15.1",
+    "tinybench": "^6.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "playwright": "^1.64.1",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.7"
+  }
+}

@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+# Playwright caches / reports (browsers themselves live in ~/Library/Caches/ms-playwright)
+.cache/
+playwright-report/
+test-results/
+# Raw results stay local; only curated samples are committed
+results/*
+!results/sample-*/
+# Attack matrix: results + small screenshots are committed as viva evidence
+!results/attack-matrix-*/
+# E7 full runs: summaries and figures are committed, the per-message CSV (~12 MB) is not
+!results/e7-*/
+results/e7-*/messages.csv
+results/e7-*-quick/
