@@ -202,7 +202,6 @@ export class KtClient {
    * publishes heads lazily (up to 5 minutes), so a fresh leaf is not an alert.
    */
   private selfState: "logged" | "pending" = "pending";
-  private readonly legacy: boolean;
 
   constructor(username: string, keys: UserIdentityKeys) {
     this.username = username;
@@ -214,20 +213,15 @@ export class KtClient {
     } catch {
       this.lastSth = null;
     }
-    // Accounts from the oldest builds have no ML-DSA identity key; the log
-    // cannot hold them (a leaf commits to both keys).
-    this.legacy = keys.dsaPublicKey.length === 0;
     if (this.st.selfLogged) this.selfState = "logged";
     if (this.st.alert) {
       globalState = { mode: "alert", reason: this.st.alert };
       emit();
-    } else if (KT_ENABLED && this.legacy) {
-      setGlobal({ mode: "unavailable", reason: "Key transparency is unavailable for legacy accounts" });
     }
   }
 
   get enabled() {
-    return KT_ENABLED && !this.legacy;
+    return KT_ENABLED;
   }
 
   private save() {

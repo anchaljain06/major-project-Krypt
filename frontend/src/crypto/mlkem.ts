@@ -17,7 +17,6 @@ import { fromBase64, toBase64 } from "@krypt/shared";
  * has been removed: all messaging goes through the v1 SessionManager.
  */
 
-
 export interface UserIdentityKeys {
   kemPublicKey: Uint8Array;
   kemSecretKey: Uint8Array;
@@ -68,30 +67,25 @@ export function exportPrivateIdentity(keys: UserIdentityKeys): string {
 }
 
 /**
- * Deserializes private identity keys from encrypted storage. Very old vaults
- * hold only a raw base64 ML-KEM secret key; they load without ML-DSA keys and
- * cannot use Krypt v1.
+ * Deserializes private identity keys from encrypted storage. Bundles from
+ * builds before Krypt v1 (a raw ML-KEM secret key, or JSON without the ML-DSA
+ * keys) are rejected: v1 cannot sign, publish prekeys or join KT without them.
  */
 export function importPrivateIdentity(serialized: string): UserIdentityKeys {
+  let parsed: { kemPub?: unknown; kemSec?: unknown; dsaPub?: unknown; dsaSec?: unknown };
   try {
-    const parsed = JSON.parse(serialized);
-    if (parsed.kemSec && parsed.kemPub) {
-      return {
-        kemPublicKey: fromBase64(parsed.kemPub),
-        kemSecretKey: fromBase64(parsed.kemSec),
-        dsaPublicKey: parsed.dsaPub ? fromBase64(parsed.dsaPub) : new Uint8Array(0),
-        dsaSecretKey: parsed.dsaSec ? fromBase64(parsed.dsaSec) : new Uint8Array(0),
-      };
-    }
+    parsed = JSON.parse(serialized);
   } catch {
-    // Fallback for raw base64 ML-KEM secret key
+    throw new Error("This identity file is not in the Krypt v1 format.");
   }
-  const kemSecretKey = fromBase64(serialized);
-  const kemPublicKey = ml_kem1024.getPublicKey(kemSecretKey);
+  const { kemPub, kemSec, dsaPub, dsaSec } = parsed ?? {};
+  if (typeof kemPub !== "string" || typeof kemSec !== "string" || typeof dsaPub !== "string" || typeof dsaSec !== "string") {
+    throw new Error("This identity file was made before Krypt v1 (no ML-DSA-87 keys) and cannot be used.");
+  }
   return {
-    kemPublicKey,
-    kemSecretKey,
-    dsaPublicKey: new Uint8Array(0),
-    dsaSecretKey: new Uint8Array(0),
+    kemPublicKey: fromBase64(kemPub),
+    kemSecretKey: fromBase64(kemSec),
+    dsaPublicKey: fromBase64(dsaPub),
+    dsaSecretKey: fromBase64(dsaSec),
   };
 }
