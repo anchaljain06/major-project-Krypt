@@ -122,7 +122,7 @@ export const ATTACKS = [
     env: {},
     relay:
       "An unauthenticated REST call accepts a friend request on another user's behalf (POST /api/request/accept with someone else's receiver).",
-    expected: "v1: 401 without a token, 403 when the token user is not the named acting user.",
+    expected: "v1: 401 without a token. With a token, the acting user is always the token user; a name in the body is ignored.",
   },
 ];
 

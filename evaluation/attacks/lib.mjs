@@ -224,7 +224,7 @@ export async function checkBolaV0({ apiUrl, attacker, victim }) {
 
 /**
  * v1 BOLA: accept a friend request on someone else's behalf with no
- * Authorization header. Expect 401 (403 if the token user is not the receiver).
+ * Authorization header. Expect 401: v1 takes the acting user from the token only.
  * v0 is checked end to end by checkBolaV0 instead.
  */
 export async function checkBola({ apiUrl, sender, receiver }) {
@@ -234,7 +234,7 @@ export async function checkBola({ apiUrl, sender, receiver }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sender, receiver }),
     });
-    const refused = res.status === 401 || res.status === 403;
+    const refused = res.status === 401;
     let body = "";
     try {
       body = JSON.stringify(await res.json());

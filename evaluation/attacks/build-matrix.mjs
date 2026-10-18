@@ -8,13 +8,13 @@
  *   default results/attack-matrix-dev.
  */
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ATTACKS } from "./attacks.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVAL = join(HERE, "..");
-const resultsDir = process.argv[2] ? join(process.cwd(), process.argv[2]) : join(EVAL, "results", "attack-matrix-dev");
+const resultsDir = process.argv[2] ? resolve(process.argv[2]) : join(EVAL, "results", "attack-matrix-dev");
 
 function load(dir) {
   const out = {};
