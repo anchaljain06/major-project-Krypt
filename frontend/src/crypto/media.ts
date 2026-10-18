@@ -22,7 +22,7 @@
  */
 import { sha256 } from "@krypt/shared";
 import { lp, toBase64url, fromBase64url, ctEqual } from "./encoding";
-import { bs } from "./kdf";
+import { aesGcmDecrypt, aesGcmEncrypt } from "./kdf";
 
 export const MAX_SOCKET_MESSAGE_BYTES = 16 * 1024 * 1024;
 export const ENVELOPE_RESERVE_BYTES = 64 * 1024;
@@ -64,17 +64,16 @@ export function assertAttachmentFits(size: number, what = "File") {
   }
 }
 
+/** `what` names the file in the size error ("Image", "Audio"). */
 export async function encryptAttachment(
   data: Uint8Array,
   mime: string,
+  what = "File",
 ): Promise<{ meta: AttachmentMeta; ciphertext: Uint8Array }> {
-  assertAttachmentFits(data.length);
+  assertAttachmentFits(data.length, what);
   const rawKey = crypto.getRandomValues(new Uint8Array(32));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await crypto.subtle.importKey("raw", bs(rawKey), "AES-GCM", false, ["encrypt"]);
-  const ciphertext = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv: bs(iv), additionalData: bs(aad(mime)) }, key, bs(data)),
-  );
+  const ciphertext = await aesGcmEncrypt(rawKey, iv, data, aad(mime));
   const meta: AttachmentMeta = {
     key: toBase64url(rawKey),
     iv: toBase64url(iv),
@@ -119,16 +118,9 @@ export async function decryptAttachment(ciphertext: Uint8Array, meta: Attachment
   if (!ctEqual(await sha256(ciphertext), fromBase64url(meta.sha256))) {
     throw new AttachmentError("attachment does not match the hash in the message");
   }
-  const key = await crypto.subtle.importKey("raw", bs(fromBase64url(meta.key)), "AES-GCM", false, ["decrypt"]);
   let plain: Uint8Array;
   try {
-    plain = new Uint8Array(
-      await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: bs(fromBase64url(meta.iv)), additionalData: bs(aad(meta.mime)) },
-        key,
-        bs(ciphertext),
-      ),
-    );
+    plain = await aesGcmDecrypt(fromBase64url(meta.key), fromBase64url(meta.iv), ciphertext, aad(meta.mime));
   } catch {
     throw new AttachmentError("attachment failed authentication");
   }

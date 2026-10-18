@@ -31,7 +31,7 @@ import {
 import { fromBase64url, toBase64url } from "../crypto/encoding";
 import { DecryptError, HandshakeError, type DecryptErrorCode } from "../crypto/errors";
 import { encryptLocal } from "../crypto/localStore";
-import { AttachmentError, assertAttachmentFits, decryptAttachment, encryptAttachment } from "../crypto/media";
+import { AttachmentError, decryptAttachment, encryptAttachment } from "../crypto/media";
 import type { UserIdentityKeys } from "../crypto/mlkem";
 import { db } from "./db";
 import type { OutgoingItem } from "./messageState";
@@ -198,8 +198,8 @@ export async function sendChatMessage(p: Protocol, peer: string, content: Outgoi
     msg.text = content.text;
     display = content.text;
   } else {
-    assertAttachmentFits(content.data.length, content.type === "image" ? "Image" : "Audio");
-    const { meta, ciphertext } = await encryptAttachment(content.data, content.mime);
+    const what = content.type === "image" ? "Image" : "Audio";
+    const { meta, ciphertext } = await encryptAttachment(content.data, content.mime, what);
     msg.file = meta;
     item.attachment = ciphertext;
     display = toDataUrl(content.data, content.mime);
