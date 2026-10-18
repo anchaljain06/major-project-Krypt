@@ -1,0 +1,120 @@
+// Byte helpers shared by every module. Kept dependency-free (no Buffer) so the
+// same code runs in browsers and Node >= 20.
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder("utf-8", { fatal: true });
+
+export function utf8(s: string): Uint8Array {
+  return textEncoder.encode(s);
+}
+
+export function fromUtf8(b: Uint8Array): string {
+  return textDecoder.decode(b);
+}
+
+export function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  let len = 0;
+  for (const p of parts) len += p.length;
+  const out = new Uint8Array(len);
+  let off = 0;
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.length;
+  }
+  return out;
+}
+
+/** Byte equality. Not constant time: every value compared here is public. */
+export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+export function toHex(b: Uint8Array): string {
+  let s = "";
+  for (const x of b) s += x.toString(16).padStart(2, "0");
+  return s;
+}
+
+export function fromHex(hex: string): Uint8Array {
+  if (hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
+    throw new TypeError("invalid hex string");
+  }
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(2 * i, 2 * i + 2), 16);
+  return out;
+}
+
+/** Standard (padded) base64, the encoding used by every JSON wire format here. */
+export function toBase64(b: Uint8Array): string {
+  let bin = "";
+  for (const x of b) bin += String.fromCharCode(x);
+  return btoa(bin);
+}
+
+export function fromBase64(s: string): Uint8Array {
+  // atob silently accepts some malformed input; insist on canonical padded base64
+  // so two different strings never decode to the same bytes.
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(s)) {
+    throw new TypeError("invalid base64 string");
+  }
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  if (toBase64(out) !== s) throw new TypeError("non-canonical base64 string");
+  return out;
+}
+
+export function assertUint(name: string, v: number, max: number): void {
+  if (!Number.isSafeInteger(v) || v < 0 || v > max) {
+    throw new RangeError(`${name} must be an integer in [0, ${max}], got ${v}`);
+  }
+}
+
+export function u8(v: number): Uint8Array {
+  assertUint("u8", v, 0xff);
+  return Uint8Array.of(v);
+}
+
+export function u16be(v: number): Uint8Array {
+  assertUint("u16", v, 0xffff);
+  return Uint8Array.of(v >>> 8, v & 0xff);
+}
+
+export function u32be(v: number): Uint8Array {
+  assertUint("u32", v, 0xffffffff);
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, v, false);
+  return out;
+}
+
+/**
+ * u64 big-endian. Values are JS numbers, so they are limited to 2^53 - 1: a
+ * tree with 9 quadrillion leaves or a timestamp in the year 287396 is not a
+ * concern, and plain numbers keep the JSON wire formats simple.
+ */
+export function u64be(v: number): Uint8Array {
+  assertUint("u64", v, Number.MAX_SAFE_INTEGER);
+  const out = new Uint8Array(8);
+  new DataView(out.buffer).setBigUint64(0, BigInt(v), false);
+  return out;
+}
+
+export function readU32be(b: Uint8Array, off: number): number {
+  return new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(off, false);
+}
+
+export function readU64be(b: Uint8Array, off: number): number {
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength).getBigUint64(off, false);
+  if (v > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError("u64 value exceeds 2^53 - 1");
+  return Number(v);
+}
+
+/** SHA-256 via Web Crypto (browsers, Node >= 20). Async because subtle is. */
+export async function sha256(...parts: Uint8Array[]): Promise<Uint8Array> {
+  // concatBytes always returns a fresh ArrayBuffer-backed array, which is what
+  // the BufferSource type wants (a SharedArrayBuffer view would be rejected).
+  const data = concatBytes(...parts) as Uint8Array<ArrayBuffer>;
+  return new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", data));
+}

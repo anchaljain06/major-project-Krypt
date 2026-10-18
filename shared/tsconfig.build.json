@@ -1,0 +1,15 @@
+{
+  // Emits dist/ (JS + .d.ts) for consumers that cannot compile TS from outside
+  // their own rootDir (primary-backend) and for the vendored witness copy.
+  // rewriteRelativeImportExtensions turns "./merkle.ts" into "./merkle.js".
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": []
+  },
+  "include": ["src"]
+}
