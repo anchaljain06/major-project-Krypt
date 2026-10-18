@@ -14,6 +14,7 @@ import toast from "react-hot-toast";
 import { fromBase64, sha256, toBase64, toHex, utf8 } from "@krypt/shared";
 import { ctEqual } from "../crypto/encoding";
 import { decryptLocal, encryptLocal } from "../crypto/localStore";
+import { parseIdentityKey } from "../crypto/prekeys";
 import type { UserIdentityKeys } from "../crypto/mlkem";
 import { keyFingerprint } from "../crypto/safetyNumber";
 import { db } from "./db";
@@ -48,10 +49,9 @@ async function saveContact(rec: ContactRecord, keys: UserIdentityKeys) {
 export function pinnedDsa(rec: ContactRecord): Uint8Array | null {
   try {
     if (rec.dsa) return fromBase64(rec.dsa);
-    if (rec.publicKey) {
-      const dsa = (JSON.parse(rec.publicKey) as { dsa?: unknown }).dsa;
-      if (typeof dsa === "string" && dsa.length > 0) return fromBase64(dsa);
-    }
+    // A v0 pin is the contact's whole identityKey JSON. Dropping it would turn
+    // an upgraded user's pinned contacts into unpinned ones, so it is still read.
+    if (rec.publicKey) return parseIdentityKey(rec.publicKey);
   } catch {
     // Unparseable legacy pin: treat as no ML-DSA pin.
   }
@@ -96,7 +96,11 @@ export function createTrustIdentity(keys: UserIdentityKeys, kt: KtClient) {
       await saveContact({ ...(contact ?? {}), username: peer, dsa: toBase64(dsaPub), pinnedAt: now }, keys);
       return true;
     }
-    if (ctEqual(pinned, dsaPub)) return true;
+    if (ctEqual(pinned, dsaPub)) {
+      // Rewrite a matching v0 pin in the v1 form, so the legacy field goes away.
+      if (contact!.publicKey) await saveContact({ ...contact!, dsa: toBase64(dsaPub), publicKey: undefined }, keys);
+      return true;
+    }
 
     const from = await keyFingerprint(pinned);
     const to = await keyFingerprint(dsaPub);
