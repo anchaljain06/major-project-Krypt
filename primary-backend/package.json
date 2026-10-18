@@ -2,7 +2,6 @@
   "name": "primary-backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
     "dev": "nodemon src/server.ts",
     "build": "tsc",
@@ -10,7 +9,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "prisma generate",
-    "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "vendor:shared": "node scripts/vendor-shared.mjs",
@@ -23,7 +21,6 @@
   "dependencies": {
     "@noble/post-quantum": "^0.7.1",
     "@prisma/client": "6.19",
-    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
