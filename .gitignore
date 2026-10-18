@@ -13,16 +13,9 @@ pnpm-debug.log*
 
 
 /frontend/dist/
-/backend/dist/
 build/
 *.tsbuildinfo
 
-
-*.o
-*.out
-*.exe
-*.obj
-.emscripten_cache/
 
 .DS_Store
 Thumbs.db

@@ -207,7 +207,7 @@ sequenceDiagram
 ### 7. Memory Routing & Symmetric Encryption
 - **The Problem:** Asymmetric public-key operations are designed for key establishment and small payloads, not large media files, and saving temporary files to a server disk leaves a forensic trail.
 - **Implementation:** The browser's native Web Crypto AES-256-GCM encrypts media on the client. Ciphertext that does not carry the `GCM:` format is rejected (fail closed). The encrypted blobs (Image/Audio) are sent as Base64 strings over the WebSocket. The backend acts as a "Blind Router": it forwards ciphertext to online recipients from RAM, queues it in an offline mailbox only while the recipient is offline, and deletes it on delivery. No plaintext or keys are held server-side.
-- **Note:** An earlier C/WASM AES-CBC engine (`c_source/`) is no longer used for any live encryption or decryption.
+- **Note:** An earlier C/WASM AES-CBC engine (`c_source/`) was removed in v1; it is in the `protocol-v0` tag for reference.
 
 ---
 
