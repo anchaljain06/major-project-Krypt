@@ -5,7 +5,8 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   // The attack specs need a relay in EVIL_MODE; the runners in evaluation/attacks set ATTACK.
-  testIgnore: process.env.ATTACK ? undefined : /attacks.*\.spec\.ts$/,
+  // The benchmarks run only from evaluation/files-bench, which sets BENCH.
+  testIgnore: [...(process.env.ATTACK ? [] : [/attacks.*\.spec\.ts$/]), ...(process.env.BENCH ? [] : [/bench.*\.spec\.ts$/])],
   timeout: 300_000,
   expect: { timeout: 30_000 },
   workers: 1,

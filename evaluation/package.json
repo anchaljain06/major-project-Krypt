@@ -19,7 +19,8 @@
     "attacks:v0": "node attacks/run-v0.mjs",
     "attacks:matrix": "node attacks/build-matrix.mjs",
     "typecheck": "tsc --noEmit",
-    "e5:chunks": "tsx scripts/e5-chunks.ts"
+    "e5:chunks": "tsx scripts/e5-chunks.ts",
+    "bench:files": "node files-bench/run.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",
