@@ -13,7 +13,7 @@ There are no runtime dependencies. Hashing uses `globalThis.crypto.subtle`, so t
 ```
 npm install
 npm test        # tsc typecheck + vitest
-npm run build   # emits dist/ (JS + .d.ts)
+npm run build   # emits dist/ (JS + .d.ts) for the witness copy
 ```
 
 ## How to consume it
@@ -21,8 +21,8 @@ npm run build   # emits dist/ (JS + .d.ts)
 | Consumer | How |
 |---|---|
 | frontend (Vite) | Import the TS sources directly. Add the alias `"@krypt/shared": path.resolve(__dirname, "../shared/src/index.ts")` in `vite.config.ts` and the same path in `tsconfig` `paths`. Vite compiles the `.ts` imports. |
-| primary-backend (tsc, `rootDir: ./src`) | Add `"@krypt/shared": "file:../shared"` to dependencies and run `npm --prefix ../shared run build` before `tsc`, for example in `prebuild`. The package `exports` point at `dist/`. |
-| witness | Uses a vendored JS copy in `witness/lib/krypt-shared/`, because the witness will move to its own repository. Refresh it with `node witness/scripts/vendor-shared.mjs`. |
+| primary-backend (tsc, `rootDir: ./src`) | Uses a vendored TS copy in `primary-backend/src/vendor/krypt-shared/`, because Render builds from `primary-backend/` alone. Refresh it with `npm run vendor:shared` in `primary-backend/`; `test/vendor.test.ts` fails if the copy is stale. |
+| witness | Uses a vendored JS copy (built from `dist/`) in `witness/lib/krypt-shared/`, because the witness will move to its own repository. Refresh it with `node witness/scripts/vendor-shared.mjs`. |
 
 The sources import each other with explicit `.ts` extensions and use only erasable TypeScript syntax. They therefore also run under Node's type stripping (Node 22.18 or later) without a build.
 
